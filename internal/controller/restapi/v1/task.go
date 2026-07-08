@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gin-gonic/gin"
 	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/request"
 	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
-	"github.com/gofiber/fiber/v2"
 )
 
 // @Summary     Create task
@@ -24,34 +24,49 @@ import (
 // @Failure     500     {object} response.Error
 // @Security    BearerAuth
 // @Router      /tasks [post]
-func (r *V1) createTask(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) createTask(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
 	var body request.CreateTask
 
-	if err := ctx.BodyParser(&body); err != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		r.l.Error(err, "restapi - v1 - createTask")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	if err := r.v.Struct(body); err != nil {
 		r.l.Error(err, "restapi - v1 - createTask")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
-	task, err := r.tk.Create(ctx.UserContext(), userID, body.Title, body.Description)
+	task, err := r.tk.Create(c.Request.Context(), id, body.Title, body.Description)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - createTask")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusCreated).JSON(task)
+	c.JSON(http.StatusCreated, task)
 }
 
 // @Summary     List tasks
@@ -67,41 +82,54 @@ func (r *V1) createTask(ctx *fiber.Ctx) error {
 // @Failure     500    {object} response.Error
 // @Security    BearerAuth
 // @Router      /tasks [get]
-func (r *V1) listTasks(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) listTasks(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
 	var status *entity.TaskStatus
 
-	if s := ctx.Query("status"); s != "" {
+	if s := c.Query("status"); s != "" {
 		ts := entity.TaskStatus(s)
 		if !ts.Valid() {
-			return errorResponse(ctx, http.StatusBadRequest, "invalid task status")
+			errorResponse(c, http.StatusBadRequest, "invalid task status")
+
+			return
 		}
 
 		status = &ts
 	}
 
-	limit, err := strconv.Atoi(ctx.Query("limit", "10"))
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	if err != nil {
 		limit = 10
 	}
 
-	offset, err := strconv.Atoi(ctx.Query("offset", "0"))
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	if err != nil {
 		offset = 0
 	}
 
-	tasks, total, err := r.tk.List(ctx.UserContext(), userID, status, limit, offset)
+	tasks, total, err := r.tk.List(c.Request.Context(), id, status, limit, offset)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - listTasks")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.TaskList{
+	c.JSON(http.StatusOK, response.TaskList{
 		Tasks: tasks,
 		Total: total,
 	})
@@ -120,30 +148,45 @@ func (r *V1) listTasks(ctx *fiber.Ctx) error {
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /tasks/{id} [get]
-func (r *V1) getTask(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) getTask(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
-	taskID := ctx.Params("id")
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
 
-	task, err := r.tk.Get(ctx.UserContext(), userID, taskID)
+		return
+	}
+
+	taskID := c.Param("id")
+
+	task, err := r.tk.Get(c.Request.Context(), id, taskID)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - getTask")
 
 		if errors.Is(err, entity.ErrTaskNotFound) {
-			return errorResponse(ctx, http.StatusNotFound, "task not found")
+			errorResponse(c, http.StatusNotFound, "task not found")
+
+			return
 		}
 
 		if errors.Is(err, entity.ErrTaskForbidden) {
-			return errorResponse(ctx, http.StatusForbidden, "forbidden")
+			errorResponse(c, http.StatusForbidden, "forbidden")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(task)
+	c.JSON(http.StatusOK, task)
 }
 
 // @Summary     Update task
@@ -162,44 +205,63 @@ func (r *V1) getTask(ctx *fiber.Ctx) error {
 // @Failure     500     {object} response.Error
 // @Security    BearerAuth
 // @Router      /tasks/{id} [put]
-func (r *V1) updateTask(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) updateTask(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
-	taskID := ctx.Params("id")
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	taskID := c.Param("id")
 
 	var body request.UpdateTask
 
-	if err := ctx.BodyParser(&body); err != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		r.l.Error(err, "restapi - v1 - updateTask")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	if err := r.v.Struct(body); err != nil {
 		r.l.Error(err, "restapi - v1 - updateTask")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
-	task, err := r.tk.Update(ctx.UserContext(), userID, taskID, body.Title, body.Description)
+	task, err := r.tk.Update(c.Request.Context(), id, taskID, body.Title, body.Description)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - updateTask")
 
 		if errors.Is(err, entity.ErrTaskNotFound) {
-			return errorResponse(ctx, http.StatusNotFound, "task not found")
+			errorResponse(c, http.StatusNotFound, "task not found")
+
+			return
 		}
 
 		if errors.Is(err, entity.ErrTaskForbidden) {
-			return errorResponse(ctx, http.StatusForbidden, "forbidden")
+			errorResponse(c, http.StatusForbidden, "forbidden")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(task)
+	c.JSON(http.StatusOK, task)
 }
 
 // @Summary     Transition task status
@@ -218,48 +280,69 @@ func (r *V1) updateTask(ctx *fiber.Ctx) error {
 // @Failure     500     {object} response.Error
 // @Security    BearerAuth
 // @Router      /tasks/{id}/status [patch]
-func (r *V1) transitionTask(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) transitionTask(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
-	taskID := ctx.Params("id")
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	taskID := c.Param("id")
 
 	var body request.TransitionTask
 
-	if err := ctx.BodyParser(&body); err != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		r.l.Error(err, "restapi - v1 - transitionTask")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	if err := r.v.Struct(body); err != nil {
 		r.l.Error(err, "restapi - v1 - transitionTask")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
-	task, err := r.tk.Transition(ctx.UserContext(), userID, taskID, body.Status)
+	task, err := r.tk.Transition(c.Request.Context(), id, taskID, body.Status)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - transitionTask")
 
 		if errors.Is(err, entity.ErrTaskNotFound) {
-			return errorResponse(ctx, http.StatusNotFound, "task not found")
+			errorResponse(c, http.StatusNotFound, "task not found")
+
+			return
 		}
 
 		if errors.Is(err, entity.ErrTaskForbidden) {
-			return errorResponse(ctx, http.StatusForbidden, "forbidden")
+			errorResponse(c, http.StatusForbidden, "forbidden")
+
+			return
 		}
 
 		if errors.Is(err, entity.ErrInvalidTransition) {
-			return errorResponse(ctx, http.StatusBadRequest, "invalid status transition")
+			errorResponse(c, http.StatusBadRequest, "invalid status transition")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(task)
+	c.JSON(http.StatusOK, task)
 }
 
 // @Summary     Delete task
@@ -273,24 +356,37 @@ func (r *V1) transitionTask(ctx *fiber.Ctx) error {
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /tasks/{id} [delete]
-func (r *V1) deleteTask(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) deleteTask(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
-	taskID := ctx.Params("id")
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
 
-	err := r.tk.Delete(ctx.UserContext(), userID, taskID)
+		return
+	}
+
+	taskID := c.Param("id")
+
+	err := r.tk.Delete(c.Request.Context(), id, taskID)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - deleteTask")
 
 		if errors.Is(err, entity.ErrTaskNotFound) {
-			return errorResponse(ctx, http.StatusNotFound, "task not found")
+			errorResponse(c, http.StatusNotFound, "task not found")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.SendStatus(http.StatusNoContent)
+	c.JSON(http.StatusNoContent, nil)
 }
