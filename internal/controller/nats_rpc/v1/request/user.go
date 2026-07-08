@@ -4,11 +4,11 @@ package request
 type Register struct {
 	Username string `json:"username" validate:"required,min=3,max=255"`
 	Email    string `json:"email"    validate:"required,email"`
-	Password string `json:"password" validate:"required,min=6"`
+	Password string `json:"password" validate:"required,min=6"` //nolint:gosec // password field in request DTO
 }
 
 // Login -.
 type Login struct {
 	Email    string `json:"email"    validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+	Password string `json:"password" validate:"required"` //nolint:gosec // password field in request DTO
 }

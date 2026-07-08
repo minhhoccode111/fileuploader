@@ -1,14 +1,14 @@
-package user
+package user //nolint:revive // package name is intentional, matches domain concept
 
 import (
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/pkg/jwt"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 

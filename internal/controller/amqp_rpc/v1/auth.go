@@ -3,9 +3,9 @@ package v1
 import (
 	"fmt"
 
+	"github.com/goccy/go-json"
 	"github.com/minhhoccode111/fileuploader/internal/controller/amqp_rpc/v1/request"
 	"github.com/minhhoccode111/fileuploader/pkg/jwt"
-	"github.com/goccy/go-json"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 

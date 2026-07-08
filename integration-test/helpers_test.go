@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goccy/go-json"
 	protov1 "github.com/minhhoccode111/fileuploader/docs/proto/v1"
 	natsClient "github.com/minhhoccode111/fileuploader/pkg/nats/nats_rpc/client"
 	rmqClient "github.com/minhhoccode111/fileuploader/pkg/rabbitmq/rmq_rpc/client"
-	"github.com/goccy/go-json"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -64,7 +64,7 @@ func doWebRequestWithTimeout(ctx context.Context, method, url string, body io.Re
 
 	req.Header.Set("Content-Type", "application/json")
 
-	return http.DefaultClient.Do(req)
+	return http.DefaultClient.Do(req) //nolint:gosec // integration test helper making HTTP request
 }
 
 // doAuthenticatedRequest sends an HTTP request with a Bearer token.
@@ -77,7 +77,7 @@ func doAuthenticatedRequest(ctx context.Context, method, url string, body io.Rea
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	return http.DefaultClient.Do(req)
+	return http.DefaultClient.Do(req) //nolint:gosec // integration test helper making HTTP request
 }
 
 // registerUser registers a new user via the HTTP REST API.

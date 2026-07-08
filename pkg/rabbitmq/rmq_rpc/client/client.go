@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	rmqrpc "github.com/minhhoccode111/fileuploader/pkg/rabbitmq/rmq_rpc"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
+	rmqrpc "github.com/minhhoccode111/fileuploader/pkg/rabbitmq/rmq_rpc"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"golang.org/x/sync/errgroup"
 )

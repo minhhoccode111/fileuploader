@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/goccy/go-json"
 	"github.com/minhhoccode111/fileuploader/internal/controller/nats_rpc/v1/request"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/pkg/nats/nats_rpc/server"
-	"github.com/goccy/go-json"
 	"github.com/nats-io/nats.go"
 )
 

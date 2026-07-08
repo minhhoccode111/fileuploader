@@ -31,7 +31,7 @@ func newTestApp(t *testing.T) (*gin.Engine, *jwt.Manager) {
 			return
 		}
 
-		c.String(http.StatusOK, userID.(string))
+		c.String(http.StatusOK, userID.(string)) //nolint:errcheck // String returns error not needed in test handler
 	})
 
 	return engine, jwtManager
@@ -90,7 +90,7 @@ func TestAuthMiddleware(t *testing.T) {
 				req.Header.Set("Authorization", localTc.authHeader)
 			}
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := http.DefaultClient.Do(req) //nolint:gosec // test helper making HTTP request
 			require.NoError(t, err)
 
 			defer resp.Body.Close()

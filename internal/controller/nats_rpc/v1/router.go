@@ -1,11 +1,11 @@
 package v1
 
 import (
+	"github.com/go-playground/validator/v10"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/jwt"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
 	"github.com/minhhoccode111/fileuploader/pkg/nats/nats_rpc/server"
-	"github.com/go-playground/validator/v10"
 )
 
 // NewRoutes -.

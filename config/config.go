@@ -64,7 +64,7 @@ type (
 
 	// JWT -.
 	jwt struct {
-		Secret      string        `env:"JWT_SECRET,required"`
+		Secret      string        `env:"JWT_SECRET,required"` //nolint:gosec // secret is intentionally exposed as config field
 		TokenExpiry time.Duration `env:"JWT_TOKEN_EXPIRY" envDefault:"24h"`
 	}
 

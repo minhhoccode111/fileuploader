@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/minhhoccode111/fileuploader/internal/entity"
-	"github.com/minhhoccode111/fileuploader/pkg/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/pkg/postgres"
 )
 
 // UserRepo -.

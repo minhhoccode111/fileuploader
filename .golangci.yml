@@ -25,7 +25,7 @@ linters:
     - gocyclo
     - godot
     - godox
-    - gomodguard_v2
+    - gomodguard
     - goprintffuncname
     - gosec
     - govet
