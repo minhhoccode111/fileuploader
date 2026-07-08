@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/request"
 	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
-	"github.com/gofiber/fiber/v2"
 )
 
 // @Summary     Register
@@ -22,33 +22,41 @@ import (
 // @Failure     409     {object} response.Error
 // @Failure     500     {object} response.Error
 // @Router      /auth/register [post]
-func (r *V1) register(ctx *fiber.Ctx) error {
+func (r *V1) register(c *gin.Context) {
 	var body request.Register
 
-	if err := ctx.BodyParser(&body); err != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		r.l.Error(err, "restapi - v1 - register")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	if err := r.v.Struct(body); err != nil {
 		r.l.Error(err, "restapi - v1 - register")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
-	user, err := r.u.Register(ctx.UserContext(), body.Username, body.Email, body.Password)
+	user, err := r.u.Register(c.Request.Context(), body.Username, body.Email, body.Password)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - register")
 
 		if errors.Is(err, entity.ErrUserAlreadyExists) {
-			return errorResponse(ctx, http.StatusConflict, "user already exists")
+			errorResponse(c, http.StatusConflict, "user already exists")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusCreated).JSON(user)
+	c.JSON(http.StatusCreated, user)
 }
 
 // @Summary     Login
@@ -63,33 +71,41 @@ func (r *V1) register(ctx *fiber.Ctx) error {
 // @Failure     401     {object} response.Error
 // @Failure     500     {object} response.Error
 // @Router      /auth/login [post]
-func (r *V1) login(ctx *fiber.Ctx) error {
+func (r *V1) login(c *gin.Context) {
 	var body request.Login
 
-	if err := ctx.BodyParser(&body); err != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		r.l.Error(err, "restapi - v1 - login")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	if err := r.v.Struct(body); err != nil {
 		r.l.Error(err, "restapi - v1 - login")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
-	token, err := r.u.Login(ctx.UserContext(), body.Email, body.Password)
+	token, err := r.u.Login(c.Request.Context(), body.Email, body.Password)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - login")
 
 		if errors.Is(err, entity.ErrInvalidCredentials) {
-			return errorResponse(ctx, http.StatusUnauthorized, "invalid credentials")
+			errorResponse(c, http.StatusUnauthorized, "invalid credentials")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response.Token{Token: token})
+	c.JSON(http.StatusOK, response.Token{Token: token})
 }
 
 // @Summary     Get profile
@@ -103,22 +119,35 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /user/profile [get]
-func (r *V1) profile(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) profile(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
-	user, err := r.u.GetUser(ctx.UserContext(), userID)
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	user, err := r.u.GetUser(c.Request.Context(), id)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - profile")
 
 		if errors.Is(err, entity.ErrUserNotFound) {
-			return errorResponse(ctx, http.StatusNotFound, "user not found")
+			errorResponse(c, http.StatusNotFound, "user not found")
+
+			return
 		}
 
-		return errorResponse(ctx, http.StatusInternalServerError, "internal server error")
+		errorResponse(c, http.StatusInternalServerError, "internal server error")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(user)
+	c.JSON(http.StatusOK, user)
 }
