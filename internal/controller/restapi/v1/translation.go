@@ -3,10 +3,10 @@ package v1
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/request"
 	_ "github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/response" // for swaggo
 	"github.com/minhhoccode111/fileuploader/internal/entity"
-	"github.com/gofiber/fiber/v2"
 )
 
 // @Summary     Show history
@@ -19,20 +19,31 @@ import (
 // @Failure     500 {object} response.Error
 // @Security    BearerAuth
 // @Router      /translation/history [get]
-func (r *V1) history(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) history(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
-	translationHistory, err := r.t.History(ctx.UserContext(), userID)
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	translationHistory, err := r.t.History(c.Request.Context(), id)
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - history")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "database problems")
+		errorResponse(c, http.StatusInternalServerError, "database problems")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(translationHistory)
+	c.JSON(http.StatusOK, translationHistory)
 }
 
 // @Summary     Translate
@@ -48,29 +59,42 @@ func (r *V1) history(ctx *fiber.Ctx) error {
 // @Failure     500     {object} response.Error
 // @Security    BearerAuth
 // @Router      /translation/do-translate [post]
-func (r *V1) doTranslate(ctx *fiber.Ctx) error {
-	userID, ok := ctx.Locals("userID").(string)
+func (r *V1) doTranslate(c *gin.Context) {
+	userID, ok := c.Get("userID")
 	if !ok {
-		return errorResponse(ctx, http.StatusUnauthorized, "unauthorized")
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
+	}
+
+	id, ok := userID.(string)
+	if !ok {
+		errorResponse(c, http.StatusUnauthorized, "unauthorized")
+
+		return
 	}
 
 	var body request.Translate
 
-	if err := ctx.BodyParser(&body); err != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		r.l.Error(err, "restapi - v1 - doTranslate")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	if err := r.v.Struct(body); err != nil {
 		r.l.Error(err, "restapi - v1 - doTranslate")
 
-		return errorResponse(ctx, http.StatusBadRequest, "invalid request body")
+		errorResponse(c, http.StatusBadRequest, "invalid request body")
+
+		return
 	}
 
 	translation, err := r.t.Translate(
-		ctx.UserContext(),
-		userID,
+		c.Request.Context(),
+		id,
 		entity.Translation{
 			Source:      body.Source,
 			Destination: body.Destination,
@@ -80,8 +104,10 @@ func (r *V1) doTranslate(ctx *fiber.Ctx) error {
 	if err != nil {
 		r.l.Error(err, "restapi - v1 - doTranslate")
 
-		return errorResponse(ctx, http.StatusInternalServerError, "translation service problems")
+		errorResponse(c, http.StatusInternalServerError, "translation service problems")
+
+		return
 	}
 
-	return ctx.Status(http.StatusOK).JSON(translation)
+	c.JSON(http.StatusOK, translation)
 }
