@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/minhhoccode111/fileuploader/pkg/jwt"
-	"github.com/gofiber/fiber/v2"
 )
 
 const _bearerParts = 2
@@ -14,26 +14,32 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// Auth returns a JWT authentication middleware for Fiber.
-func Auth(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
-	return func(ctx *fiber.Ctx) error {
-		header := ctx.Get("Authorization")
+// Auth returns a JWT authentication middleware for Gin.
+func Auth(jwtManager *jwt.Manager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
 		if header == "" {
-			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "missing authorization header"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "missing authorization header"})
+
+			return
 		}
 
 		parts := strings.SplitN(header, " ", _bearerParts)
 		if len(parts) != _bearerParts || parts[0] != "Bearer" {
-			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid authorization header format"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid authorization header format"})
+
+			return
 		}
 
 		userID, err := jwtManager.ParseToken(parts[1])
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(errorResponse{Error: "invalid or expired token"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse{Error: "invalid or expired token"})
+
+			return
 		}
 
-		ctx.Locals("userID", userID)
+		c.Set("userID", userID)
 
-		return ctx.Next()
+		c.Next()
 	}
 }

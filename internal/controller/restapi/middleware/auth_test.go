@@ -7,30 +7,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/middleware"
 	"github.com/minhhoccode111/fileuploader/pkg/jwt"
-	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestApp(t *testing.T) (*fiber.App, *jwt.Manager) {
+func newTestApp(t *testing.T) (*gin.Engine, *jwt.Manager) {
 	t.Helper()
 
 	jwtManager := jwt.New("test-secret", time.Hour)
 
-	app := fiber.New()
-	app.Use(middleware.Auth(jwtManager))
-	app.Get("/test", func(c *fiber.Ctx) error {
-		userID, ok := c.Locals("userID").(string)
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	engine.Use(middleware.Auth(jwtManager))
+	engine.GET("/test", func(c *gin.Context) {
+		userID, ok := c.Get("userID")
 		if !ok {
-			return c.SendStatus(http.StatusUnauthorized)
+			c.Status(http.StatusUnauthorized)
+
+			return
 		}
 
-		return c.SendString(userID)
+		c.String(http.StatusOK, userID.(string))
 	})
 
-	return app, jwtManager
+	return engine, jwtManager
 }
 
 func TestAuthMiddleware(t *testing.T) {
@@ -76,12 +80,17 @@ func TestAuthMiddleware(t *testing.T) {
 		t.Run(localTc.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", http.NoBody)
+			server := httptest.NewServer(app)
+			defer server.Close()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/test", http.NoBody)
+			require.NoError(t, err)
+
 			if localTc.authHeader != "" {
 				req.Header.Set("Authorization", localTc.authHeader)
 			}
 
-			resp, err := app.Test(req)
+			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 
 			defer resp.Body.Close()
