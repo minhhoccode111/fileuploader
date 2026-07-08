@@ -4,13 +4,13 @@ import (
 	"net/http"
 
 	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/evrone/go-clean-template/config"
-	_ "github.com/evrone/go-clean-template/docs" // Swagger docs.
-	"github.com/evrone/go-clean-template/internal/controller/restapi/middleware"
-	v1 "github.com/evrone/go-clean-template/internal/controller/restapi/v1"
-	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/jwt"
-	"github.com/evrone/go-clean-template/pkg/logger"
+	"github.com/minhhoccode111/fileuploader/config"
+	_ "github.com/minhhoccode111/fileuploader/docs" // Swagger docs.
+	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/middleware"
+	v1 "github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/jwt"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/swagger"
 )
@@ -18,7 +18,7 @@ import (
 // NewRouter -.
 // Swagger spec:
 //
-//	@title       Go Clean Template API
+//	@title       File Uploader API
 //	@description Multi-domain clean architecture template with translation, user, and task management
 //	@version     1.0
 //	@host        localhost:8080

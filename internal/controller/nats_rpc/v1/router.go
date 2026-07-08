@@ -1,10 +1,10 @@
 package v1
 
 import (
-	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/jwt"
-	"github.com/evrone/go-clean-template/pkg/logger"
-	"github.com/evrone/go-clean-template/pkg/nats/nats_rpc/server"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/jwt"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
+	"github.com/minhhoccode111/fileuploader/pkg/nats/nats_rpc/server"
 	"github.com/go-playground/validator/v10"
 )
 

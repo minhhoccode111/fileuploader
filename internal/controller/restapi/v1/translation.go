@@ -3,9 +3,9 @@ package v1
 import (
 	"net/http"
 
-	"github.com/evrone/go-clean-template/internal/controller/restapi/v1/request"
-	_ "github.com/evrone/go-clean-template/internal/controller/restapi/v1/response" // for swaggo
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/request"
+	_ "github.com/minhhoccode111/fileuploader/internal/controller/restapi/v1/response" // for swaggo
+	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/gofiber/fiber/v2"
 )
 

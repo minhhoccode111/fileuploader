@@ -3,7 +3,7 @@ package entity_test
 import (
 	"testing"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

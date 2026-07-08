@@ -3,10 +3,10 @@ package v1
 import (
 	"context"
 
-	v1 "github.com/evrone/go-clean-template/docs/proto/v1"
-	grpcmw "github.com/evrone/go-clean-template/internal/controller/grpc/middleware"
-	"github.com/evrone/go-clean-template/internal/controller/grpc/v1/response"
-	"github.com/evrone/go-clean-template/internal/entity"
+	v1 "github.com/minhhoccode111/fileuploader/docs/proto/v1"
+	grpcmw "github.com/minhhoccode111/fileuploader/internal/controller/grpc/middleware"
+	"github.com/minhhoccode111/fileuploader/internal/controller/grpc/v1/response"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/controller/grpc/v1/response"
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/controller/grpc/v1/response"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
