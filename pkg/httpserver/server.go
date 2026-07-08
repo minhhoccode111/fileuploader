@@ -4,11 +4,11 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
-	"github.com/goccy/go-json"
-	"github.com/gofiber/fiber/v2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,11 +24,11 @@ type Server struct {
 	ctx context.Context
 	eg  *errgroup.Group
 
-	App    *fiber.App
+	Engine *gin.Engine
+	server *http.Server
 	notify chan error
 
 	address         string
-	prefork         bool
 	readTimeout     time.Duration
 	writeTimeout    time.Duration
 	shutdownTimeout time.Duration
@@ -44,7 +44,7 @@ func New(l logger.Interface, opts ...Option) *Server {
 	s := &Server{
 		ctx:             ctx,
 		eg:              group,
-		App:             nil,
+		Engine:          nil,
 		notify:          make(chan error, 1),
 		address:         _defaultAddr,
 		readTimeout:     _defaultReadTimeout,
@@ -58,24 +58,27 @@ func New(l logger.Interface, opts ...Option) *Server {
 		opt(s)
 	}
 
-	app := fiber.New(fiber.Config{
-		Prefork:      s.prefork,
-		ReadTimeout:  s.readTimeout,
-		WriteTimeout: s.writeTimeout,
-		JSONDecoder:  json.Unmarshal,
-		JSONEncoder:  json.Marshal,
-	})
+	gin.SetMode(gin.ReleaseMode)
 
-	s.App = app
+	engine := gin.New()
+
+	s.Engine = engine
 
 	return s
 }
 
 // Start -.
 func (s *Server) Start() {
+	s.server = &http.Server{
+		Addr:         s.address,
+		Handler:      s.Engine,
+		ReadTimeout:  s.readTimeout,
+		WriteTimeout: s.writeTimeout,
+	}
+
 	s.eg.Go(func() error {
-		err := s.App.Listen(s.address)
-		if err != nil {
+		err := s.server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.notify <- err
 
 			close(s.notify)
@@ -98,9 +101,12 @@ func (s *Server) Notify() <-chan error {
 func (s *Server) Shutdown() error {
 	var shutdownErrors []error
 
-	err := s.App.ShutdownWithTimeout(s.shutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
+	defer cancel()
+
+	err := s.server.Shutdown(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		s.logger.Error(err, "restapi server - Server - Shutdown - s.App.ShutdownWithTimeout")
+		s.logger.Error(err, "restapi server - Server - Shutdown - s.server.Shutdown")
 
 		shutdownErrors = append(shutdownErrors, err)
 	}
