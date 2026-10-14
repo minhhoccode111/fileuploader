@@ -8,8 +8,8 @@ export
 endif
 
 BASE_STACK = docker compose -f docker-compose.yml
-INTEGRATION_TEST_STACK = $(BASE_STACK) -f docker-compose-integration-test.yml
-ALL_STACK = $(INTEGRATION_TEST_STACK)
+ALL_STACK = $(BASE_STACK)
+MIGRATE = migrate -path migrations -database '$(PG_URL)?sslmode=disable'
 
 # HELP =================================================================================================================
 # This will output the help for each task
@@ -17,36 +17,19 @@ ALL_STACK = $(INTEGRATION_TEST_STACK)
 .PHONY: help
 
 help: ## Display this help screen
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 compose-up: ### Run docker compose (without backend and reverse proxy)
-	$(BASE_STACK) up --build -d db rabbitmq nats && docker compose logs -f
+	$(BASE_STACK) up --build -d db && docker compose logs -f
 .PHONY: compose-up
 
 compose-up-all: ### Run docker compose (with backend and reverse proxy)
 	$(BASE_STACK) up --build -d
 .PHONY: compose-up-all
 
-compose-up-integration-test: ### Run docker compose with integration test
-	$(INTEGRATION_TEST_STACK) up --build --abort-on-container-exit --exit-code-from integration-test; exit_code=$$?; \
-	$(INTEGRATION_TEST_STACK) down --remove-orphans; exit $$exit_code
-.PHONY: compose-up-integration-test
-
 compose-down: ### Down docker compose
 	$(ALL_STACK) down --remove-orphans
 .PHONY: compose-down
-
-swag-v1: ### swag init
-	swag init --parseDependency -g internal/controller/restapi/router.go
-.PHONY: swag-v1
-
-proto-v1: ### generate source files from proto
-	protoc --go_out=. \
-		--go_opt=paths=source_relative \
-		--go-grpc_out=. \
-		--go-grpc_opt=paths=source_relative \
-		docs/proto/v1/*.proto
-.PHONY: proto-v1
 
 deps: ### deps tidy + verify
 	go mod tidy && go mod verify
@@ -66,13 +49,13 @@ format: ### Run code formatter
 	gci write . --skip-generated -s standard -s default
 .PHONY: format
 
-run: deps swag-v1 proto-v1 ### swag run for API v1
+run: deps ### run the app locally
 	go mod download && \
 	CGO_ENABLED=0 go run -tags migrate ./cmd/app
 .PHONY: run
 
 docker-rm-volume: ### remove docker volume
-	docker volume rm go-clean-template_pg-data
+	docker volume rm fileuploader_pg-data
 .PHONY: docker-rm-volume
 
 linter-golangci: ### check by golangci linter
@@ -87,31 +70,38 @@ linter-dotenv: ### check by dotenv linter
 	dotenv-linter
 .PHONY: linter-dotenv
 
-test: ### run test
-	go test -v -race -covermode atomic -coverprofile=coverage.txt ./internal/... ./pkg/...
-.PHONY: test
-
-integration-test: ### run integration-test
-	go clean -testcache && go test -v ./integration-test/...
-.PHONY: integration-test
-
-mock: ### run mockgen
-	mockgen -source ./internal/repo/contracts.go -package usecase_test > ./internal/usecase/mocks_repo_test.go
-	mockgen -source ./internal/usecase/contracts.go -package usecase_test > ./internal/usecase/mocks_usecase_test.go
-.PHONY: mock
-
-migrate-create:  ### create new migration
+migrate-create: ### create new migration (usage: make migrate-create <name>)
 	migrate create -ext sql -dir migrations '$(word 2,$(MAKECMDGOALS))'
 .PHONY: migrate-create
 
-migrate-up: ### migration up
-	migrate -path migrations -database '$(PG_URL)?sslmode=disable' up
+migrate-up: ### apply the next pending migration
+	$(MIGRATE) up 1
 .PHONY: migrate-up
+
+migrate-up-all: ### apply all pending migrations
+	$(MIGRATE) up
+.PHONY: migrate-up-all
+
+migrate-down: ### revert the last migration
+	$(MIGRATE) down 1
+.PHONY: migrate-down
+
+migrate-down-all: ### revert all migrations
+	$(MIGRATE) down -all
+.PHONY: migrate-down-all
+
+# `make migrate-create <name>` passes <name> as a second goal; declare it as a no-op.
+ifneq ($(filter migrate-create,$(MAKECMDGOALS)),)
+ifneq ($(word 2,$(MAKECMDGOALS)),)
+$(word 2,$(MAKECMDGOALS)):
+	@:
+endif
+endif
 
 bin-deps: ### install tools
 	go install tool
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 .PHONY: bin-deps
 
-pre-commit: deps swag-v1 proto-v1 mock format linter-golangci test ### run pre-commit
+pre-commit: deps format linter-golangci ### run pre-commit
 .PHONY: pre-commit

@@ -10,18 +10,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// @Summary     Register
-// @Description Register a new user
-// @ID          register
-// @Tags        auth
-// @Accept      json
-// @Produce     json
-// @Param       request body     request.Register true "Registration data"
-// @Success     201     {object} entity.User
-// @Failure     400     {object} response.Error
-// @Failure     409     {object} response.Error
-// @Failure     500     {object} response.Error
-// @Router      /auth/register [post]
 func (r *V1) register(ctx *fiber.Ctx) error {
 	var body request.Register
 
@@ -51,18 +39,6 @@ func (r *V1) register(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusCreated).JSON(user)
 }
 
-// @Summary     Login
-// @Description Authenticate user and get JWT token
-// @ID          login
-// @Tags        auth
-// @Accept      json
-// @Produce     json
-// @Param       request body     request.Login true "Login credentials"
-// @Success     200     {object} response.Token
-// @Failure     400     {object} response.Error
-// @Failure     401     {object} response.Error
-// @Failure     500     {object} response.Error
-// @Router      /auth/login [post]
 func (r *V1) login(ctx *fiber.Ctx) error {
 	var body request.Login
 
@@ -92,17 +68,6 @@ func (r *V1) login(ctx *fiber.Ctx) error {
 	return ctx.Status(http.StatusOK).JSON(response.Token{Token: token})
 }
 
-// @Summary     Get profile
-// @Description Get current user profile
-// @ID          profile
-// @Tags        user
-// @Produce     json
-// @Success     200 {object} entity.User
-// @Failure     401 {object} response.Error
-// @Failure     404 {object} response.Error
-// @Failure     500 {object} response.Error
-// @Security    BearerAuth
-// @Router      /user/profile [get]
 func (r *V1) profile(ctx *fiber.Ctx) error {
 	userID, ok := ctx.Locals("userID").(string)
 	if !ok {

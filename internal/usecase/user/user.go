@@ -19,12 +19,12 @@ type UseCase struct {
 	jwt  *jwt.Manager
 }
 
-// New returns a User usecase instrumented with OpenTelemetry tracing spans.
+// New returns a User usecase.
 func New(r repo.UserRepo, j *jwt.Manager) usecase.User {
-	return newTraced(&UseCase{
+	return &UseCase{
 		repo: r,
 		jwt:  j,
-	})
+	}
 }
 
 // Register -.

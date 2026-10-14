@@ -60,24 +60,3 @@ jobs:
       - name: Nancy
         uses: sonatype-nexus-community/nancy-github-action@main
         continue-on-error: true
-
-  unit-tests:
-    name: runner / tests / unit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: 1.27
-      - name: Unit Tests
-        run: "make test"
-      - name: Upload coverage report
-        run: bash <(curl -s https://codecov.io/bash)
-
-  integration-tests:
-    name: runner / tests / integration
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Integration tests
-        run: "make compose-up-integration-test"

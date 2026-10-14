@@ -19,9 +19,9 @@ type Repo struct {
 	*postgres.Postgres
 }
 
-// New returns a User repository instrumented with OpenTelemetry tracing spans.
+// New returns a User repository.
 func New(pg *postgres.Postgres) repo.UserRepo {
-	return newTraced(&Repo{pg})
+	return &Repo{pg}
 }
 
 // Store -.
