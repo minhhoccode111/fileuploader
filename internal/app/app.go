@@ -16,6 +16,7 @@ import (
 	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/evrone/go-clean-template/pkg/validatorx"
 )
 
 type useCases struct {
@@ -45,7 +46,10 @@ func initServers(
 		httpserver.Port(cfg.HTTP.Port),
 		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
 	)
-	web.NewRouter(httpServer.App, uc.user, l)
+	// Validator
+	v := validatorx.New()
+
+	web.NewRouter(httpServer.App, uc.user, l, v, cfg)
 
 	return servers{
 		http: httpServer,

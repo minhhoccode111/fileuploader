@@ -77,7 +77,7 @@ func HomeContent() templ.Component {
 			templ_7745c5c3_Var3 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"card bg-base-100 shadow\"><div class=\"card-body gap-4\"><h1 class=\"text-4xl font-bold tracking-tight\">Send large files without clutter.</h1><p class=\"text-base-content/70 max-w-prose\">Upload, share and collect files through one small service. Sign in to manage your uploads, or create an account to start.</p><div class=\"flex flex-wrap gap-2 pt-2\"><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"btn btn-primary\">Login</a> <a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"btn btn-ghost border border-base-300\">Register</a></div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"card bg-base-100 shadow\"><div class=\"card-body gap-4\"><h1 class=\"text-4xl font-bold tracking-tight\">Send large files without clutter.</h1><p class=\"text-base-content/70 max-w-prose\">Upload, share and collect files through one small service. Sign in to manage your uploads, or create an account to start.</p><div class=\"flex flex-wrap gap-2 pt-2\"><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"btn btn-primary\">Login</a> <a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"btn btn-secondary border border-base-300\">Register</a></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

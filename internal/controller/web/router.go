@@ -3,21 +3,36 @@ package web
 import (
 	"net/http"
 
+	"github.com/evrone/go-clean-template/config"
 	"github.com/evrone/go-clean-template/internal/controller/web/middleware"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/pkg/logger"
+	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 )
 
-// Controller renders HTML pages.
+// Controller renders HTML pages and handles page form submissions.
 type Controller struct {
-	u usecase.User
-	l logger.Interface
+	u   usecase.User
+	l   logger.Interface
+	v   *validator.Validate
+	cfg *config.Config
 }
 
 // NewRouter registers the transport middleware, static assets and HTML/page routes.
-func NewRouter(app *fiber.App, u usecase.User, l logger.Interface) {
-	c := &Controller{u: u, l: l}
+func NewRouter(
+	app *fiber.App,
+	u usecase.User,
+	l logger.Interface,
+	v *validator.Validate,
+	cfg *config.Config,
+) {
+	c := &Controller{
+		u:   u,
+		l:   l,
+		v:   v,
+		cfg: cfg,
+	}
 
 	// Options
 	app.Use(middleware.Logger(l))
@@ -36,4 +51,9 @@ func NewRouter(app *fiber.App, u usecase.User, l logger.Interface) {
 	app.Get("/login", c.login)
 	app.Get("/register", c.register)
 	app.Get("/logout", c.logout)
+
+	// HTMX partial endpoints
+	app.Post("/htmx/login", c.loginSubmit)
+	app.Post("/htmx/register", c.registerSubmit)
+	app.Post("/htmx/logout", c.logoutSubmit)
 }

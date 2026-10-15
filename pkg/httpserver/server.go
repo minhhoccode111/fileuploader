@@ -4,6 +4,7 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/evrone/go-clean-template/pkg/logger"
@@ -100,7 +101,7 @@ func (s *Server) Shutdown() error {
 
 	err := s.App.ShutdownWithTimeout(s.shutdownTimeout)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		s.logger.Error(err, "http server - Server - Shutdown - s.App.ShutdownWithTimeout")
+		s.logger.Error(fmt.Errorf("http server - Server - Shutdown - s.App.ShutdownWithTimeout: %w", err))
 
 		shutdownErrors = append(shutdownErrors, err)
 	}
@@ -108,7 +109,7 @@ func (s *Server) Shutdown() error {
 	// Wait for all goroutines to finish and get any error
 	err = s.eg.Wait()
 	if err != nil && !errors.Is(err, context.Canceled) {
-		s.logger.Error(err, "http server - Server - Shutdown - s.eg.Wait")
+		s.logger.Error(fmt.Errorf("http server - Server - Shutdown - s.eg.Wait: %w", err))
 
 		shutdownErrors = append(shutdownErrors, err)
 	}

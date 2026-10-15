@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/evrone/go-clean-template/internal/entity"
@@ -39,13 +40,26 @@ func (r *Repo) Store(ctx context.Context, user *entity.User) error {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return entity.ErrUserAlreadyExists
+			return uniqueViolation(pgErr)
 		}
 
 		return fmt.Errorf("UserRepo - Store - r.Pool.Exec: %w", err)
 	}
 
 	return nil
+}
+
+// uniqueViolation maps a Postgres unique-constraint violation to the sentinel for
+// the column that clashed, so the transport can name the offending field.
+func uniqueViolation(pgErr *pgconn.PgError) error {
+	switch {
+	case strings.Contains(pgErr.ConstraintName, "email"):
+		return entity.ErrEmailAlreadyExists
+	case strings.Contains(pgErr.ConstraintName, "username"):
+		return entity.ErrUsernameAlreadyExists
+	default:
+		return entity.ErrUserAlreadyExists
+	}
 }
 
 // GetByID -.

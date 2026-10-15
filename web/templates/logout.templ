@@ -1,0 +1,35 @@
+package templates
+
+templ Logout() {
+	@Layout("Logout") {
+		@LogoutContent()
+	}
+}
+
+// LogoutContent is the confirmation screen shown before the session is ended.
+// Nothing happens until the user confirms.
+templ LogoutContent() {
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h1 class="text-3xl font-bold tracking-tight">Log out?</h1>
+			<p class="text-base-content/70">You will need to sign in again to upload files.</p>
+			<div class="flex flex-wrap gap-2">
+				<button
+					class="btn btn-error w-fit"
+					type="button"
+					hx-post="/htmx/logout"
+					hx-target="#page-content"
+					hx-swap="innerHTML"
+				>Yes, log out</button>
+				<a
+					href="/"
+					hx-get="/"
+					hx-target="#page-content"
+					hx-swap="innerHTML"
+					hx-push-url="true"
+					class="btn btn-ghost w-fit"
+				>Cancel</a>
+			</div>
+		</div>
+	</section>
+}

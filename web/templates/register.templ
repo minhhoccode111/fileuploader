@@ -1,0 +1,51 @@
+package templates
+
+templ Register() {
+	@Layout("Register") {
+		@RegisterContent()
+	}
+}
+
+// RegisterContent is the fragment htmx swaps into <main>.
+templ RegisterContent() {
+	<section class="card bg-base-100 shadow">
+		<div class="card-body">
+			<h1 class="text-3xl font-bold tracking-tight">Create your account</h1>
+			<p class="text-base-content/70">Choose a username, email and password.</p>
+			<form
+				id="register-form"
+				class="flex flex-col gap-4 py-2"
+				hx-post="/htmx/register"
+				hx-target="#register-error"
+				hx-swap="innerHTML"
+				novalidate
+			>
+				<label class="flex flex-col gap-1">
+					<span class="text-sm font-medium">Username</span>
+					<input class="input input-bordered w-full" type="text" name="username" required minlength="3" maxlength="255" autocomplete="username"/>
+				</label>
+				<label class="flex flex-col gap-1">
+					<span class="text-sm font-medium">Email</span>
+					<input class="input input-bordered w-full" type="email" name="email" required maxlength="255" autocomplete="email"/>
+				</label>
+				<label class="flex flex-col gap-1">
+					<span class="text-sm font-medium">Password</span>
+					<input class="input input-bordered w-full" type="password" name="password" required minlength="6" autocomplete="new-password"/>
+				</label>
+				<button class="btn btn-primary" type="submit">Register</button>
+				<div id="register-error" class="text-sm text-error" role="alert"></div>
+			</form>
+			<p class="text-sm">
+				Already have an account?
+				<a
+					href="/login"
+					hx-get="/login"
+					hx-target="#page-content"
+					hx-swap="innerHTML"
+					hx-push-url="true"
+					class="link link-primary"
+				>Login</a>
+			</p>
+		</div>
+	</section>
+}
