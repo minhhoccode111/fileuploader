@@ -21,9 +21,15 @@ different settings than CI. Use the target, not the tool.
 | Start the whole stack including the app    | `make compose-up-all`                   | `docker compose up`                                                                      |
 | Tear down                                  | `make compose-down`                     | `docker compose down`                                                                    |
 | Run the app locally                        | `make run`                              | `go run ./cmd/app` — the target builds with `-tags migrate`                              |
+| Run the dev stack (hot reload)             | `make dev`                              | running air + tailwind by hand                                                           |
+| Regenerate templ                           | `make templ-generate`                   | `templ generate`                                                                         |
+| Build CSS                                  | `make css-build`                        | invoking the tailwind binary by hand                                                     |
+| Download frontend assets                   | `make assets`                           | `curl`-ing htmx/alpine/daisyUI by hand                                                   |
 | Create a migration                         | `make migrate-create <name>`            | `migrate create ...`                                                                     |
 | Apply the next / all migrations            | `make migrate-up`, `migrate-up-all`     | `migrate -path ... up 1` / `up`                                                          |
 | Revert the last / all migrations           | `make migrate-down`, `migrate-down-all` | `migrate -path ... down 1` / `down -all`                                                 |
+| Redo the last migration                    | `make migrate-redo`                     | `migrate ... down 1 && ... up 1`                                                         |
+| Inspect migrations                         | `make migrate-status`, `migrate-list`   | `migrate ... version` / `ls migrations`                                                   |
 | Full check before pushing                  | `make pre-commit`                       | running the steps by hand                                                                |
 
 `make help` lists every target.
@@ -62,6 +68,7 @@ Decide by asking what the code knows about:
 | SQL, a table, a driver error code                             | `internal/repo/persistent/<domain>/<domain>.go` | method on `Repo`                                   |
 | an outbound HTTP API                                          | `internal/repo/webapi/<name>.go`                | method on the webapi struct (add the package back) |
 | an HTTP status or a message envelope                          | `internal/controller/restapi/v1/<domain>.go`    | handler                                            |
+| a browser page or fragment                                    | `web/templates/<name>.templ`                    | templ component                                    |
 | a server, pool, client or middleware with no domain knowledge | `pkg/<name>/`                                   | reusable package                                   |
 
 Layout rules:
@@ -72,6 +79,29 @@ Layout rules:
   dependencies as arguments. No package-level state — `gochecknoglobals` and `gochecknoinits` are on.
 - Unexported package constants are prefixed with an underscore (`_defaultEntityCap`). `mnd` rejects
   bare numeric literals, so add a constant rather than inlining one.
+
+## Frontend
+
+`web/` holds everything the browser gets. It is plain static output — no Node at runtime.
+
+- `web/templates/*.templ` — pages, compiled to Go by templ. `*_templ.go` is generated and
+  **committed**; run `make templ-generate` after every `.templ` edit or the build serves stale HTML.
+- `web/app.css` — the Tailwind input. `@plugin "./plugins/daisyui.js"` pulls in daisyUI.
+- `web/static/css/app.css` — the Tailwind output. **Committed**, so the Docker image needs no Node.
+  Never hand-edit it: change classes or `web/app.css`, then `make css-build`.
+- `web/plugins/daisyui.js` and `web/static/js/{htmx,alpine}.min.js` — pinned vendor files,
+  fetched by `make assets`. All versions live in the `Makefile` (and `tool` in `go.mod`); bump them
+  there, never in the file.
+
+The app serves `web/static` at `/static` (`app.Static`) and renders `web/templates` at `/`.
+
+`make dev` runs air (rebuilds Go and templ on save) together with the Tailwind watcher. It needs
+Postgres up first: `make compose-up`. air only watches `.go` and `.templ`; CSS changes are handled
+by the Tailwind watcher, so a class edit does not restart the server.
+
+Alpine shorthands (`@click`, `:class`) pass through templ unchanged; use `x-on:` / `x-bind:` only if
+you prefer the long form. To feed Go data into `x-data`, use a templ expression:
+`<div x-data={ templ.JSONString(data) }>`. See `.opencode/skills/alpinejs/SKILL.md`.
 
 ## The handler contract
 
@@ -155,3 +185,12 @@ the same layout, registered alongside v1 in the transport's top-level `router.go
 only when built with the `migrate` build tag (`internal/app/migrate.go`) — that is what `make run`
 and the Dockerfile do. Queries are built with Squirrel via the embedded `*postgres.Postgres`;
 there is no ORM and no raw string concatenation.
+
+`make migrate-up` / `make migrate-down` run exactly one step and print `no change` when there is
+nothing to do. golang-migrate's raw `up 1` / `down 1` demand _exactly_ one migration and fail with a
+misleading `error: file does not exist` when none is left, so the Makefile wraps them — do not call
+the subcommand bare. Never run a bare `migrate down`: with no argument it prompts to revert _all_
+migrations.
+
+Object storage is S3-compatible, run as the `minio` service (`docker.io/pgsty/silo`, a maintained
+MinIO fork — the upstream image is no longer published) on `:9000` (S3) and `:9001` (console).

@@ -2,7 +2,7 @@ x-db-environment: &x-db-environment
   POSTGRES_SSL_MODE: "disable"
   POSTGRES_HOST: "db"
   POSTGRES_PORT: "5432"
-  POSTGRES_DB: "db"
+  POSTGRES_DB: "fileuploader"
   POSTGRES_PASSWORD: "password"
   POSTGRES_USER: "user"
 
@@ -38,6 +38,23 @@ services:
       app_network:
         aliases:
           - db.lvh.me
+
+  minio:
+    container_name: minio-fileuploader
+    image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "minioadmin"
+      MINIO_ROOT_PASSWORD: "P@55w0rd"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      app_network:
+        aliases:
+          - minio.lvh.me
 
   app:
     container_name: app-fileuploader
@@ -86,3 +103,4 @@ networks:
 
 volumes:
   db_data:
+  minio_data:

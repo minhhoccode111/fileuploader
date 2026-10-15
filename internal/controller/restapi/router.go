@@ -20,6 +20,10 @@ func NewRouter(app *fiber.App, u usecase.User, jwtManager *jwt.Manager, l logger
 	// K8s probe
 	app.Get("/healthz", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
 
+	// Static assets and home page
+	app.Static("/static", "./web/static")
+	app.Get("/", index(l))
+
 	// Routers
 	apiV1Group := app.Group("/v1")
 	v1.NewRoutes(apiV1Group, u, jwtManager, l)

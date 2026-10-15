@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* daisyUI ships as a JS bundle for the Tailwind CLI. Exclude it from content
+   scanning, or Tailwind mines the minified bundle for class names. */
+@source not "./plugins/daisyui.mjs";
+@source not "../static";
+
+@plugin "./plugins/daisyui.mjs" {
+	themes: light --default, dark --prefersdark;
+}
+
+@source "./templates";
+@source "../internal";
+
+[x-cloak] {
+	display: none !important;
+}
