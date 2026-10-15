@@ -1,0 +1,134 @@
+package templates
+
+templ Login() {
+	@Layout("Login") {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body">
+				<h1 class="text-3xl font-bold tracking-tight">Welcome back</h1>
+				<p class="text-base-content/70">Sign in with your email and password.</p>
+				<form id="login-form" class="flex flex-col gap-4 py-2" novalidate>
+					<label class="flex flex-col gap-1">
+						<span class="text-sm font-medium">Email</span>
+						<input class="input input-bordered w-full" type="email" name="email" required autocomplete="email"/>
+					</label>
+					<label class="flex flex-col gap-1">
+						<span class="text-sm font-medium">Password</span>
+						<input class="input input-bordered w-full" type="password" name="password" required autocomplete="current-password"/>
+					</label>
+					<button class="btn btn-primary" type="submit">Login</button>
+					<p id="login-error" class="hidden text-sm text-error"></p>
+				</form>
+				<p class="text-sm">
+					No account? <a href="/register" class="link link-primary">Register</a>
+				</p>
+			</div>
+		</section>
+		<script>
+			document.addEventListener("DOMContentLoaded", function() {
+				var form = document.getElementById("login-form");
+				var error = document.getElementById("login-error");
+				form.addEventListener("submit", async function(event) {
+					event.preventDefault();
+					error.classList.add("hidden");
+					error.textContent = "";
+					var payload = {
+						email: form.elements.email.value,
+						password: form.elements.password.value
+					};
+					var response = await fetch("/v1/auth/login", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify(payload)
+					});
+					if (!response.ok) {
+						error.textContent = "Invalid email or password.";
+						error.classList.remove("hidden");
+						return;
+					}
+					var data = await response.json();
+					localStorage.setItem("fileuploader_token", data.token);
+					window.location.href = "/";
+				});
+			});
+		</script>
+	}
+}
+
+templ Register() {
+	@Layout("Register") {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body">
+				<h1 class="text-3xl font-bold tracking-tight">Create your account</h1>
+				<p class="text-base-content/70">Choose a username, email and password.</p>
+				<form id="register-form" class="flex flex-col gap-4 py-2" novalidate>
+					<label class="flex flex-col gap-1">
+						<span class="text-sm font-medium">Username</span>
+						<input class="input input-bordered w-full" type="text" name="username" required minlength="3" autocomplete="username"/>
+					</label>
+					<label class="flex flex-col gap-1">
+						<span class="text-sm font-medium">Email</span>
+						<input class="input input-bordered w-full" type="email" name="email" required autocomplete="email"/>
+					</label>
+					<label class="flex flex-col gap-1">
+						<span class="text-sm font-medium">Password</span>
+						<input class="input input-bordered w-full" type="password" name="password" required minlength="6" autocomplete="new-password"/>
+					</label>
+					<button class="btn btn-primary" type="submit">Register</button>
+					<p id="register-error" class="hidden text-sm text-error"></p>
+				</form>
+				<p class="text-sm">
+					Already have an account? <a href="/login" class="link link-primary">Login</a>
+				</p>
+			</div>
+		</section>
+		<script>
+			document.addEventListener("DOMContentLoaded", function() {
+				var form = document.getElementById("register-form");
+				var error = document.getElementById("register-error");
+				form.addEventListener("submit", async function(event) {
+					event.preventDefault();
+					error.classList.add("hidden");
+					error.textContent = "";
+					var payload = {
+						username: form.elements.username.value,
+						email: form.elements.email.value,
+						password: form.elements.password.value
+					};
+					var response = await fetch("/v1/auth/register", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify(payload)
+					});
+					if (response.status === 409) {
+						error.textContent = "This email is already in use.";
+						error.classList.remove("hidden");
+						return;
+					}
+					if (!response.ok) {
+						error.textContent = "Could not create the account.";
+						error.classList.remove("hidden");
+						return;
+					}
+					window.location.href = "/login";
+				});
+			});
+		</script>
+	}
+}
+
+templ Logout() {
+	@Layout("Logout") {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-3">
+				<h1 class="text-3xl font-bold tracking-tight">You have been logged out</h1>
+				<p class="text-base-content/70">Your local session has been cleared.</p>
+				<a href="/" class="btn btn-primary w-fit">Home</a>
+			</div>
+		</section>
+		<script>
+			document.addEventListener("DOMContentLoaded", function() {
+				localStorage.removeItem("fileuploader_token");
+			});
+		</script>
+	}
+}

@@ -12,7 +12,7 @@ x-backend-app-environment: &x-backend-app-environment
   APP_NAME: "file-uploader"
   APP_VERSION: "1.0.0"
   # HTTP settings
-  HTTP_PORT: "8080"
+  HTTP_PORT: "8090"
   HTTP_USE_PREFORK_MODE: "true"
   # Logger
   LOG_LEVEL: "debug"
@@ -33,7 +33,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       app_network:
         aliases:
@@ -65,7 +65,7 @@ services:
     environment:
       <<: *x-backend-app-environment
     ports:
-      - "8080:8080"
+      - "8090:8090"
     depends_on:
       - db
     deploy:

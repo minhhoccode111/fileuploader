@@ -20,97 +20,45 @@ daisyUI 5 is a CSS library for Tailwind CSS 4. It supplies class names for commo
   daisyUI, component, UI, Tailwind, layout, template, theme, color, design
 - Even if the user does not request this skill, use it.
 
-## Install daisyUI 5
+## Install daisyUI 5 (this project)
 
-[Installation guide](https://daisyui.com/docs/install/)
+daisyUI is already wired up. **Do not add Node, npm, or `tailwind.config.js`.** This repo has no
+`package.json` and the Docker image installs no Node — the frontend is vendored static output.
 
-1. You must use Tailwind CSS 4 with daisyUI 5.
-2. The `tailwind.config.js` file is deprecated in Tailwind CSS v4. Do not use `tailwind.config.js`. If Tailwind CSS v4 is a Node.js dependency, add only `@import "tailwindcss";` to the CSS file.
-3. To install daisyUI 5, run `npm i -D daisyui@latest`. Then, add `@plugin "daisyui";` to the CSS file.
-4. Install daisyUI as a dependency when possible. If you have a specific reason to use a CDN instead, use the Tailwind CSS and daisyUI CDN files:
+daisyUI ships as a JS plugin bundle that the Tailwind CLI loads. Three files matter:
 
-```html
-<link
-  href="https://cdn.jsdelivr.net/npm/daisyui@5"
-  rel="stylesheet"
-  type="text/css"
-/>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-```
+| File                      | Role                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `web/plugins/daisyui.mjs` | the daisyUI bundle, pinned by `DAISYUI_VERSION` in the `Makefile`, fetched by `make assets` |
+| `web/app.css`             | the Tailwind input; loads the plugin with `@plugin "./plugins/daisyui.mjs"`                 |
+| `web/static/css/app.css`  | the Tailwind output, **committed** — never hand-edit, run `make css-build`                  |
 
-5. If Tailwind CSS and daisyUI are Node.js dependencies, use this CSS file:
+The plugin block in `web/app.css`:
 
 ```css
-@import "tailwindcss";
-@plugin "daisyui";
+@plugin "./plugins/daisyui.mjs" {
+  themes:
+    light --default,
+    dark --prefersdark;
+}
 ```
 
-### CDN
+To add or change daisyUI classes, edit `web/templates/*.templ` or `web/app.css`, then run
+`make css-build`. Nothing gets installed and no dependency is added.
 
-For a browser setup with no installation, load the precompiled daisyUI CSS and the Tailwind browser build:
+To bump the version, edit `DAISYUI_VERSION` in the `Makefile`, then:
 
-```html
-<link
-  href="https://cdn.jsdelivr.net/npm/daisyui@5"
-  rel="stylesheet"
-  type="text/css"
-/>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+```bash
+rm web/plugins/daisyui.mjs
+make assets
+make css-build
 ```
 
-The main CDN file includes the light and dark themes. To load all built-in themes, use:
+The `rm` is required. The Makefile's asset rules declare no prerequisites, so `make assets` reports
+`Nothing to be done` and silently keeps the old bundle when the file already exists.
 
-```html
-<link
-  href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css"
-  rel="stylesheet"
-  type="text/css"
-/>
-```
-
-You can also combine separate daisyUI CSS modules from the CDN. The CDN files do not include the `is-drawer-open:` and `is-drawer-close:` variants.
-
-### Standalone and framework-specific setup
-
-- If you use the Tailwind CSS standalone executable without Node.js, use the [standalone guide](https://daisyui.com/docs/install/standalone/).
-- For other installations, select the guide for the applicable framework or build tool:
-  [11ty](https://daisyui.com/docs/install/11ty/),
-  [Angular](https://daisyui.com/docs/install/angular/),
-  [Astro](https://daisyui.com/docs/install/astro/),
-  [Bun](https://daisyui.com/docs/install/bun/),
-  [Tailwind CLI](https://daisyui.com/docs/install/cli/),
-  [Dioxus](https://daisyui.com/docs/install/dioxus/),
-  [Django](https://daisyui.com/docs/install/django/),
-  [Electron](https://daisyui.com/docs/install/electron/),
-  [Elysia](https://daisyui.com/docs/install/elysia/),
-  [Ember](https://daisyui.com/docs/install/ember/),
-  [Fresh](https://daisyui.com/docs/install/fresh/),
-  [HTMX](https://daisyui.com/docs/install/htmx/),
-  [Laravel](https://daisyui.com/docs/install/laravel/),
-  [Lit](https://daisyui.com/docs/install/lit/),
-  [Next.js](https://daisyui.com/docs/install/nextjs/),
-  [Nuxt](https://daisyui.com/docs/install/nuxt/),
-  [Phoenix](https://daisyui.com/docs/install/phoenix/),
-  [PostCSS](https://daisyui.com/docs/install/postcss/),
-  [Preact](https://daisyui.com/docs/install/preact/),
-  [Qwik](https://daisyui.com/docs/install/qwik/),
-  [Rails](https://daisyui.com/docs/install/rails/),
-  [React](https://daisyui.com/docs/install/react/),
-  [React Router](https://daisyui.com/docs/install/reactrouter/),
-  [Rsbuild](https://daisyui.com/docs/install/rsbuild/),
-  [Solid](https://daisyui.com/docs/install/solid/),
-  [SolidStart](https://daisyui.com/docs/install/solid-start/),
-  [SvelteKit](https://daisyui.com/docs/install/sveltekit/),
-  [UnoCSS](https://daisyui.com/docs/install/unocss/),
-  [Vike](https://daisyui.com/docs/install/vike/),
-  [Vite](https://daisyui.com/docs/install/vite/),
-  [Vue](https://daisyui.com/docs/install/vue/),
-  [Waku](https://daisyui.com/docs/install/waku/),
-  [WordPress](https://daisyui.com/docs/install/wordpress/),
-  [Yew](https://daisyui.com/docs/install/yew/), or
-  [Zola](https://daisyui.com/docs/install/zola/).
-
-Use the file paths and integration steps in the selected guide. Each framework can use a different CSS entry.
+This project never uses a CDN or a framework-specific install. For upstream options outside this
+repo, see https://daisyui.com/docs/install/.
 
 ## daisyUI 5 usage rules
 

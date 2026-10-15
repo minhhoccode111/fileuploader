@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/evrone/go-clean-template/config"
-	"github.com/evrone/go-clean-template/internal/controller/restapi"
+	"github.com/evrone/go-clean-template/internal/controller/web"
 	persistUserRepo "github.com/evrone/go-clean-template/internal/repo/persistent/user"
 	"github.com/evrone/go-clean-template/internal/usecase"
 	"github.com/evrone/go-clean-template/internal/usecase/user"
@@ -37,7 +37,6 @@ func initUseCases(pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
 func initServers(
 	cfg *config.Config,
 	uc useCases,
-	jwtManager *jwt.Manager,
 	l logger.Interface,
 ) servers {
 	// HTTP Server
@@ -46,7 +45,7 @@ func initServers(
 		httpserver.Port(cfg.HTTP.Port),
 		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
 	)
-	restapi.NewRouter(httpServer.App, uc.user, jwtManager, l)
+	web.NewRouter(httpServer.App, uc.user, l)
 
 	return servers{
 		http: httpServer,
@@ -92,7 +91,7 @@ func Run(cfg *config.Config) {
 	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)
 
 	uc := initUseCases(pg, jwtManager)
-	s := initServers(cfg, uc, jwtManager, l)
+	s := initServers(cfg, uc, l)
 	s.startServers()
 	s.waitForShutdown(l)
 }
