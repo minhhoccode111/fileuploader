@@ -19,6 +19,10 @@ const (
 	// _genericErrorMessage is shown when the server fails for a reason the caller
 	// must not see. The real error is logged instead.
 	_genericErrorMessage = "Something went wrong. Please try again."
+
+	// _userIDLocal is where the auth guard parks the resolved user ID, which is
+	// how a handler tells an authenticated request from an anonymous one.
+	_userIDLocal = "userID"
 )
 
 // renderErrors renders the error fragment htmx swaps into a form's error target.
@@ -52,19 +56,25 @@ func (c *Controller) render(ctx *fiber.Ctx, full, fragment templ.Component) erro
 }
 
 func (c *Controller) home(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Home(), templates.HomeContent())
+	return c.render(ctx, templates.Home(c.isAuthenticated(ctx)), templates.HomeContent())
 }
 
 func (c *Controller) login(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Login(), templates.LoginContent())
+	return c.render(ctx, templates.Login(c.isAuthenticated(ctx)), templates.LoginContent())
 }
 
 func (c *Controller) register(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Register(), templates.RegisterContent())
+	return c.render(ctx, templates.Register(c.isAuthenticated(ctx)), templates.RegisterContent())
 }
 
 // logout renders the confirmation screen. It is a GET because it changes nothing:
 // the session is ended only by the POST to /htmx/logout that the screen triggers.
 func (c *Controller) logout(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Logout(), templates.LogoutContent())
+	return c.render(ctx, templates.Logout(c.isAuthenticated(ctx)), templates.LogoutContent())
+}
+
+// isAuthenticated reports whether the auth guard resolved a user for this
+// request. Anonymous requests never reach a protected handler.
+func (c *Controller) isAuthenticated(ctx *fiber.Ctx) bool {
+	return ctx.Locals(_userIDLocal) != nil
 }

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"github.com/a-h/templ"
 	"github.com/evrone/go-clean-template/web/templates"
 	"github.com/gofiber/fiber/v2"
 )
@@ -18,7 +19,13 @@ func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
 	// The POST URL is not a page, so tell htmx which URL the browser should show.
 	ctx.Set(_hxPushURL, _loginPath)
 
-	return c.render(ctx, templates.Login(), templates.LoginContent())
+	// The session is gone, so the sidebar must drop the logout item and show the
+	// guest links again: swap it out of band alongside the login fragment.
+	return c.render(
+		ctx,
+		templates.Login(false),
+		templ.Join(templates.LoginContent(), templates.SidebarNavUpdate(false)),
+	)
 }
 
 // clearAuthCookie expires the session cookie. It repeats the attributes used when

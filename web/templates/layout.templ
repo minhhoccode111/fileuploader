@@ -3,7 +3,7 @@ package templates
 // sidebarState seeds the drawer from the viewport width: expanded on lg+, collapsed below.
 const sidebarState = "{ open: window.matchMedia('(min-width: 1024px)').matches }"
 
-templ Layout(title string) {
+templ Layout(title string, authenticated bool) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -13,6 +13,7 @@ templ Layout(title string) {
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<script src="/static/js/htmx.min.js"></script>
 			<script defer src="/static/js/alpine.min.js"></script>
+			<script defer src="/static/js/app.js"></script>
 		</head>
 		<body class="min-h-screen bg-base-200 antialiased">
 			<div class="drawer lg:drawer-open" x-data={ sidebarState }>
@@ -54,85 +55,117 @@ templ Layout(title string) {
 							<span class="text-xl font-bold is-drawer-close:hidden">File Uploader</span>
 							<span class="hidden text-xl font-bold is-drawer-close:inline">FU</span>
 						</div>
-						<ul class="menu w-full grow gap-1 px-2">
-							<li>
-								<a
-									href="/"
-									hx-get="/"
-									hx-target="#page-content"
-									hx-swap="innerHTML"
-									hx-push-url="true"
-									class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
-									data-tip="Home"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
-										<path d="M3 10.5 12 3l9 7.5"></path>
-										<path d="M5 9.5V21h14V9.5"></path>
-									</svg>
-									<span class="is-drawer-close:hidden">Home</span>
-								</a>
-							</li>
-							<li>
-								<a
-									href="/login"
-									hx-get="/login"
-									hx-target="#page-content"
-									hx-swap="innerHTML"
-									hx-push-url="true"
-									class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
-									data-tip="Login"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
-										<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
-										<path d="m10 17 5-5-5-5"></path>
-										<path d="M15 12H3"></path>
-									</svg>
-									<span class="is-drawer-close:hidden">Login</span>
-								</a>
-							</li>
-							<li>
-								<a
-									href="/register"
-									hx-get="/register"
-									hx-target="#page-content"
-									hx-swap="innerHTML"
-									hx-push-url="true"
-									class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
-									data-tip="Register"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
-										<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-										<circle cx="9" cy="7" r="4"></circle>
-										<path d="M19 8v6"></path>
-										<path d="M22 11h-6"></path>
-									</svg>
-									<span class="is-drawer-close:hidden">Register</span>
-								</a>
-							</li>
-						</ul>
-						<ul class="menu w-full px-2 pb-2">
-							<li>
-								<a
-									href="/logout"
-									hx-get="/logout"
-									hx-target="#page-content"
-									hx-swap="innerHTML"
-									hx-push-url="true"
-									class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
-									data-tip="Logout"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
-										<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-										<path d="m16 17 5-5-5-5"></path>
-										<path d="M21 12H9"></path>
-									</svg>
-									<span class="is-drawer-close:hidden">Logout</span>
-								</a>
-							</li>
-						</ul>
+						@SidebarNav(authenticated)
 					</aside>
 				</div>
 			</div>
 		</body>
 	</html>
+}
+
+// SidebarNav is the auth-dependent sidebar navigation, rendered as part of a
+// full page.
+templ SidebarNav(authenticated bool) {
+	@sidebarNav(authenticated, false)
+}
+
+// SidebarNavUpdate is the same navigation tagged as an out-of-band swap. A
+// partial response that changes the auth state (login, register, logout)
+// includes it so the nav follows the response without a full reload.
+templ SidebarNavUpdate(authenticated bool) {
+	@sidebarNav(authenticated, true)
+}
+
+// sidebarNav renders the navigation in a single #sidebar-nav element so a
+// partial response can replace the whole nav. When oob is true the element
+// carries hx-swap-oob so htmx swaps it by id instead of into the request target.
+templ sidebarNav(authenticated bool, oob bool) {
+	<div
+		id="sidebar-nav"
+		if oob {
+			hx-swap-oob="true"
+		}
+		class="flex grow flex-col"
+	>
+		<ul class="menu w-full grow gap-1 px-2">
+			<li>
+				<a
+					href="/"
+					hx-get="/"
+					hx-target="#page-content"
+					hx-swap="innerHTML"
+					hx-push-url="true"
+					class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
+					data-tip="Home"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+						<path d="M3 10.5 12 3l9 7.5"></path>
+						<path d="M5 9.5V21h14V9.5"></path>
+					</svg>
+					<span class="is-drawer-close:hidden">Home</span>
+				</a>
+			</li>
+			if !authenticated {
+				<li>
+					<a
+						href="/login"
+						hx-get="/login"
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
+						data-tip="Login"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+							<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+							<path d="m10 17 5-5-5-5"></path>
+							<path d="M15 12H3"></path>
+						</svg>
+						<span class="is-drawer-close:hidden">Login</span>
+					</a>
+				</li>
+				<li>
+					<a
+						href="/register"
+						hx-get="/register"
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
+						data-tip="Register"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+							<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+							<circle cx="9" cy="7" r="4"></circle>
+							<path d="M19 8v6"></path>
+							<path d="M22 11h-6"></path>
+						</svg>
+						<span class="is-drawer-close:hidden">Register</span>
+					</a>
+				</li>
+			}
+		</ul>
+		if authenticated {
+			<ul class="menu w-full px-2 pb-2">
+				<li>
+					<a
+						href="/logout"
+						hx-get="/logout"
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
+						data-tip="Logout"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+							<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+							<path d="m16 17 5-5-5-5"></path>
+							<path d="M21 12H9"></path>
+						</svg>
+						<span class="is-drawer-close:hidden">Logout</span>
+					</a>
+				</li>
+			</ul>
+		}
+	</div>
 }

@@ -1,7 +1,7 @@
 package templates
 
-templ Login() {
-	@Layout("Login") {
+templ Login(authenticated bool) {
+	@Layout("Login", authenticated) {
 		@LoginContent()
 	}
 }

@@ -1,7 +1,7 @@
 package templates
 
-templ Register() {
-	@Layout("Register") {
+templ Register(authenticated bool) {
+	@Layout("Register", authenticated) {
 		@RegisterContent()
 	}
 }

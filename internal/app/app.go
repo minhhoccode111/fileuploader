@@ -39,6 +39,7 @@ func initServers(
 	cfg *config.Config,
 	uc useCases,
 	l logger.Interface,
+	jwtManager *jwt.Manager,
 ) servers {
 	// HTTP Server
 	httpServer := httpserver.New(
@@ -49,7 +50,7 @@ func initServers(
 	// Validator
 	v := validatorx.New()
 
-	web.NewRouter(httpServer.App, uc.user, l, v, cfg)
+	web.NewRouter(httpServer.App, uc.user, l, v, cfg, jwtManager)
 
 	return servers{
 		http: httpServer,
@@ -95,7 +96,7 @@ func Run(cfg *config.Config) {
 	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)
 
 	uc := initUseCases(pg, jwtManager)
-	s := initServers(cfg, uc, l)
+	s := initServers(cfg, uc, l, jwtManager)
 	s.startServers()
 	s.waitForShutdown(l)
 }

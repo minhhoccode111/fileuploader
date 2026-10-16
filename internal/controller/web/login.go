@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/evrone/go-clean-template/internal/controller/web/request"
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/pkg/validatorx"
@@ -53,7 +54,8 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 }
 
 // renderAuthenticated stores the token in an HTTP-only cookie and swaps the home
-// fragment into <main>, pushing "/" so the address bar follows the new page.
+// fragment into <main>, pushing "/" so the address bar follows the new page. It
+// also updates the sidebar out of band, since the nav changed with the auth state.
 func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string) error {
 	c.setAuthCookie(ctx, token)
 
@@ -61,7 +63,10 @@ func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string) error {
 	ctx.Set(_hxReswap, _swapInnerHTML)
 	ctx.Set(_hxPushURL, _homePath)
 
-	return c.renderPage(ctx, templates.HomeContent())
+	return c.renderPage(ctx, templ.Join(
+		templates.HomeContent(),
+		templates.SidebarNavUpdate(true),
+	))
 }
 
 func (c *Controller) setAuthCookie(ctx *fiber.Ctx, token string) {
