@@ -74,7 +74,7 @@ func (c *Controller) setAuthCookie(ctx *fiber.Ctx, token string) {
 		Name:     _authCookieName,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   int(c.cfg.JWT.TokenExpiry.Seconds()),
+		MaxAge:   int(c.cfg.Session.TTL.Seconds()),
 		HTTPOnly: true,
 		Secure:   ctx.Protocol() == "https",
 		SameSite: fiber.CookieSameSiteLaxMode,

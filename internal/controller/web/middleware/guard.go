@@ -1,9 +1,9 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -24,11 +24,17 @@ const (
 	_hxRequestTrue    = "true"
 )
 
+// sessionAuthenticator resolves a session identifier to its user ID. The web
+// controller's use case implements it.
+type sessionAuthenticator interface {
+	Authenticate(ctx context.Context, sessionID string) (string, error)
+}
+
 // RequireAuth lets authenticated visitors through and sends anonymous ones to
 // the login page. The resolved user ID is parked in ctx.Locals("userID").
-func RequireAuth(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
+func RequireAuth(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
-		userID, ok := authenticatedUser(ctx, jwtManager)
+		userID, ok := authenticatedUser(ctx, auth)
 		if !ok {
 			return redirectTo(ctx, _loginPath)
 		}
@@ -41,9 +47,9 @@ func RequireAuth(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
 
 // RequireGuest lets anonymous visitors through and sends authenticated ones to
 // the home page.
-func RequireGuest(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
+func RequireGuest(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
-		if _, ok := authenticatedUser(ctx, jwtManager); ok {
+		if _, ok := authenticatedUser(ctx, auth); ok {
 			return redirectTo(ctx, _homePath)
 		}
 
@@ -51,15 +57,16 @@ func RequireGuest(jwtManager *jwt.Manager) func(*fiber.Ctx) error {
 	}
 }
 
-// authenticatedUser resolves the session cookie to a user ID. A missing or
-// invalid cookie is not an error: the visitor is simply anonymous.
-func authenticatedUser(ctx *fiber.Ctx, jwtManager *jwt.Manager) (string, bool) {
-	token := ctx.Cookies(_authCookieName)
-	if token == "" {
+// authenticatedUser resolves the session cookie to a user ID. A missing cookie,
+// an unknown session or a store error all mean anonymous: the guard redirects
+// rather than failing the request.
+func authenticatedUser(ctx *fiber.Ctx, auth sessionAuthenticator) (string, bool) {
+	sessionID := ctx.Cookies(_authCookieName)
+	if sessionID == "" {
 		return "", false
 	}
 
-	userID, err := jwtManager.ParseToken(token)
+	userID, err := auth.Authenticate(ctx.UserContext(), sessionID)
 	if err != nil {
 		return "", false
 	}

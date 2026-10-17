@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -9,22 +11,27 @@ import (
 	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/internal/repo"
 	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// _sessionIDBytes is the size of the random session identifier. 32 bytes (256
+// bits) makes guessing a live session infeasible.
+const _sessionIDBytes = 32
+
 // UseCase -.
 type UseCase struct {
-	repo repo.UserRepo
-	jwt  *jwt.Manager
+	repo       repo.UserRepo
+	sessions   repo.SessionRepo
+	sessionTTL time.Duration
 }
 
 // New returns a User usecase.
-func New(r repo.UserRepo, j *jwt.Manager) usecase.User {
+func New(r repo.UserRepo, s repo.SessionRepo, sessionTTL time.Duration) usecase.User {
 	return &UseCase{
-		repo: r,
-		jwt:  j,
+		repo:       r,
+		sessions:   s,
+		sessionTTL: sessionTTL,
 	}
 }
 
@@ -64,7 +71,8 @@ func (uc *UseCase) Register(
 	return user, nil
 }
 
-// Login -.
+// Login verifies the credentials and opens a session, returning the opaque
+// session identifier the caller stores in its cookie.
 func (uc *UseCase) Login(ctx context.Context, email, password string) (string, error) {
 	user, err := uc.repo.GetByEmail(ctx, email)
 	if err != nil {
@@ -84,12 +92,38 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (string, e
 		return "", fmt.Errorf("UserUseCase - Login - bcrypt.CompareHashAndPassword: %w", err)
 	}
 
-	token, err := uc.jwt.GenerateToken(user.ID)
+	sessionID, err := newSessionID()
 	if err != nil {
-		return "", fmt.Errorf("UserUseCase - Login - uc.jwt.GenerateToken: %w", err)
+		return "", fmt.Errorf("UserUseCase - Login - newSessionID: %w", err)
 	}
 
-	return token, nil
+	err = uc.sessions.Store(ctx, sessionID, user.ID, uc.sessionTTL)
+	if err != nil {
+		return "", fmt.Errorf("UserUseCase - Login - uc.sessions.Store: %w", err)
+	}
+
+	return sessionID, nil
+}
+
+// Authenticate resolves a session identifier to its user ID. An unknown or
+// expired session returns ErrSessionNotFound via the repository.
+func (uc *UseCase) Authenticate(ctx context.Context, sessionID string) (string, error) {
+	userID, err := uc.sessions.GetUserID(ctx, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("UserUseCase - Authenticate - uc.sessions.GetUserID: %w", err)
+	}
+
+	return userID, nil
+}
+
+// Logout ends a session.
+func (uc *UseCase) Logout(ctx context.Context, sessionID string) error {
+	err := uc.sessions.Delete(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("UserUseCase - Logout - uc.sessions.Delete: %w", err)
+	}
+
+	return nil
 }
 
 // GetUser -.
@@ -100,4 +134,16 @@ func (uc *UseCase) GetUser(ctx context.Context, userID string) (entity.User, err
 	}
 
 	return user, nil
+}
+
+// newSessionID returns a cryptographically random, URL-safe session identifier.
+func newSessionID() (string, error) {
+	buf := make([]byte, _sessionIDBytes)
+
+	_, err := rand.Read(buf)
+	if err != nil {
+		return "", fmt.Errorf("UserUseCase - newSessionID - rand.Read: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }

@@ -1,7 +1,11 @@
 package web
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/a-h/templ"
+	"github.com/evrone/go-clean-template/internal/entity"
 	"github.com/evrone/go-clean-template/web/templates"
 	"github.com/gofiber/fiber/v2"
 )
@@ -14,6 +18,11 @@ const _cookieDeleteMaxAge = -1
 // page an anonymous visitor may reach. It only runs when the user confirms on the
 // /logout screen, which is why it is a POST and not a link.
 func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
+	if err := c.u.Logout(ctx.UserContext(), ctx.Cookies(_authCookieName)); err != nil &&
+		!errors.Is(err, entity.ErrSessionNotFound) {
+		c.l.Error(fmt.Errorf("web - logoutSubmit - uc.Logout: %w", err))
+	}
+
 	c.clearAuthCookie(ctx)
 
 	// The POST URL is not a page, so tell htmx which URL the browser should show.

@@ -12,8 +12,9 @@ import (
 )
 
 // registerSubmit creates the account and then signs the new user in. On success
-// it swaps the home fragment into <main>, pushes "/", and stores the JWT in an
-// HTTP-only cookie. On failure it returns an error fragment for #register-error.
+// it swaps the home fragment into <main>, pushes "/", and stores the session ID
+// in an HTTP-only cookie. On failure it returns an error fragment for
+// #register-error.
 func (c *Controller) registerSubmit(ctx *fiber.Ctx) error {
 	var req request.Register
 

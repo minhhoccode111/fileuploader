@@ -10,11 +10,12 @@ import (
 type (
 	// Config -.
 	Config struct {
-		App  app
-		HTTP http
-		Log  log
-		PG   pg
-		JWT  jwt
+		App     app
+		HTTP    http
+		Log     log
+		PG      pg
+		Redis   redis
+		Session session
 	}
 
 	// App -.
@@ -40,10 +41,14 @@ type (
 		URL     string `env:"PG_URL,required"`
 	}
 
-	// JWT -.
-	jwt struct {
-		Secret      string        `env:"JWT_SECRET,required"`
-		TokenExpiry time.Duration `env:"JWT_TOKEN_EXPIRY"    envDefault:"24h"`
+	// Redis -.
+	redis struct {
+		Addr string `env:"REDIS_ADDR,required"`
+	}
+
+	// Session -.
+	session struct {
+		TTL time.Duration `env:"SESSION_TTL" envDefault:"24h"`
 	}
 )
 

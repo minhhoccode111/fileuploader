@@ -19,9 +19,10 @@ x-backend-app-environment: &x-backend-app-environment
   # PG
   PG_POOL_MAX: "10"
   PG_URL: "postgres://user:password@db:5432/fileuploader"
-  # JWT
-  JWT_SECRET: "1f7b167a-a5df-49f8-8978-869322382aa6"
-  JWT_TOKEN_EXPIRY: "24h"
+  # Redis
+  REDIS_ADDR: "redis:6379"
+  # Session
+  SESSION_TTL: "24h"
 
 
 services:
@@ -38,6 +39,19 @@ services:
       app_network:
         aliases:
           - db.lvh.me
+
+  redis:
+    container_name: redis-fileuploader
+    image: redis:8.10.2-alpine
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 256mb --maxmemory-policy noeviction
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      app_network:
+        aliases:
+          - redis.lvh.me
 
   minio:
     container_name: minio-fileuploader
@@ -68,6 +82,7 @@ services:
       - "8090:8090"
     depends_on:
       - db
+      - redis
     deploy:
       resources:
         limits:
@@ -104,3 +119,4 @@ networks:
 volumes:
   db_data:
   minio_data:
+  redis_data:

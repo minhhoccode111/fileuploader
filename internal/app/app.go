@@ -6,16 +6,18 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/evrone/go-clean-template/config"
 	"github.com/evrone/go-clean-template/internal/controller/web"
-	persistUserRepo "github.com/evrone/go-clean-template/internal/repo/persistent/user"
+	"github.com/evrone/go-clean-template/internal/repo/persistent/user"
+	"github.com/evrone/go-clean-template/internal/repo/session"
 	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/internal/usecase/user"
+	usecaseUser "github.com/evrone/go-clean-template/internal/usecase/user"
 	"github.com/evrone/go-clean-template/pkg/httpserver"
-	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/evrone/go-clean-template/pkg/postgres"
+	"github.com/evrone/go-clean-template/pkg/redis"
 	"github.com/evrone/go-clean-template/pkg/validatorx"
 )
 
@@ -27,11 +29,12 @@ type servers struct {
 	http *httpserver.Server
 }
 
-func initUseCases(pg *postgres.Postgres, jwtManager *jwt.Manager) useCases {
-	userRepo := persistUserRepo.New(pg)
+func initUseCases(pg *postgres.Postgres, rdb *redis.Redis, sessionTTL time.Duration) useCases {
+	userRepo := user.New(pg)
+	sessionRepo := session.New(rdb)
 
 	return useCases{
-		user: user.New(userRepo, jwtManager),
+		user: usecaseUser.New(userRepo, sessionRepo, sessionTTL),
 	}
 }
 
@@ -39,7 +42,6 @@ func initServers(
 	cfg *config.Config,
 	uc useCases,
 	l logger.Interface,
-	jwtManager *jwt.Manager,
 ) servers {
 	// HTTP Server
 	httpServer := httpserver.New(
@@ -50,7 +52,7 @@ func initServers(
 	// Validator
 	v := validatorx.New()
 
-	web.NewRouter(httpServer.App, uc.user, l, v, cfg, jwtManager)
+	web.NewRouter(httpServer.App, uc.user, l, v, cfg)
 
 	return servers{
 		http: httpServer,
@@ -92,11 +94,15 @@ func Run(cfg *config.Config) {
 	}
 	defer pg.Close()
 
-	// JWT
-	jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)
+	// Redis
+	redisConn, err := redis.New(cfg.Redis.Addr)
+	if err != nil {
+		l.Fatal(fmt.Errorf("app - Run - redis.New: %w", err))
+	}
+	defer redisConn.Close()
 
-	uc := initUseCases(pg, jwtManager)
-	s := initServers(cfg, uc, l, jwtManager)
+	uc := initUseCases(pg, redisConn, cfg.Session.TTL)
+	s := initServers(cfg, uc, l)
 	s.startServers()
 	s.waitForShutdown(l)
 }

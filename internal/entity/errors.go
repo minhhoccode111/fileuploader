@@ -9,4 +9,5 @@ var (
 	ErrUsernameAlreadyExists = errors.New("username already exists")
 	ErrInvalidCredentials    = errors.New("invalid credentials")
 	ErrPasswordTooLong       = errors.New("password too long")
+	ErrSessionNotFound       = errors.New("session not found")
 )

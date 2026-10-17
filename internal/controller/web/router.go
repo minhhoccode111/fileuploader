@@ -6,7 +6,6 @@ import (
 	"github.com/evrone/go-clean-template/config"
 	"github.com/evrone/go-clean-template/internal/controller/web/middleware"
 	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/jwt"
 	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -27,7 +26,6 @@ func NewRouter(
 	l logger.Interface,
 	v *validator.Validate,
 	cfg *config.Config,
-	jwtManager *jwt.Manager,
 ) {
 	c := &Controller{
 		u:   u,
@@ -49,10 +47,10 @@ func NewRouter(
 	app.Static("/static", "./web/static")
 
 	// Pages
-	app.Get("/", middleware.RequireAuth(jwtManager), c.home)
-	app.Get("/login", middleware.RequireGuest(jwtManager), c.login)
-	app.Get("/register", middleware.RequireGuest(jwtManager), c.register)
-	app.Get("/logout", middleware.RequireAuth(jwtManager), c.logout)
+	app.Get("/", middleware.RequireAuth(u), c.home)
+	app.Get("/login", middleware.RequireGuest(u), c.login)
+	app.Get("/register", middleware.RequireGuest(u), c.register)
+	app.Get("/logout", middleware.RequireAuth(u), c.logout)
 
 	// HTMX partial endpoints
 	app.Post("/htmx/login", c.loginSubmit)
