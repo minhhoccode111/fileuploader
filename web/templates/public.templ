@@ -1,0 +1,17 @@
+package templates
+
+templ Public(authenticated bool) {
+	@Layout("Public", authenticated) {
+		@PublicContent()
+	}
+}
+
+// PublicContent is the fragment htmx swaps into <main> on client-side navigation.
+templ PublicContent() {
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h1 class="text-4xl font-bold tracking-tight">Hello from Public</h1>
+			<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in.</p>
+		</div>
+	</section>
+}

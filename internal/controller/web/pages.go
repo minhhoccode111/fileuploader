@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/a-h/templ"
-	"github.com/evrone/go-clean-template/internal/controller/web/response"
-	"github.com/evrone/go-clean-template/web/templates"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+	"github.com/minhhoccode111/fileuploader/web/templates"
 )
 
 // _hxRequestTypeHeader carries htmx's swap kind: "partial" for a targeted swap, "full" for body swaps.
@@ -65,6 +65,18 @@ func (c *Controller) login(ctx *fiber.Ctx) error {
 
 func (c *Controller) register(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.Register(c.isAuthenticated(ctx)), templates.RegisterContent())
+}
+
+// share renders a placeholder page for the Share section. It is auth-only, so
+// the guard has already resolved a user before it runs.
+func (c *Controller) share(ctx *fiber.Ctx) error {
+	return c.render(ctx, templates.Share(c.isAuthenticated(ctx)), templates.ShareContent())
+}
+
+// public renders a placeholder page for the Public section. It is auth-only,
+// so the guard has already resolved a user before it runs.
+func (c *Controller) public(ctx *fiber.Ctx) error {
+	return c.render(ctx, templates.Public(c.isAuthenticated(ctx)), templates.PublicContent())
 }
 
 // logout renders the confirmation screen. It is a GET because it changes nothing:

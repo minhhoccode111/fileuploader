@@ -8,17 +8,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/evrone/go-clean-template/config"
-	"github.com/evrone/go-clean-template/internal/controller/web"
-	"github.com/evrone/go-clean-template/internal/repo/persistent/user"
-	"github.com/evrone/go-clean-template/internal/repo/session"
-	"github.com/evrone/go-clean-template/internal/usecase"
-	usecaseUser "github.com/evrone/go-clean-template/internal/usecase/user"
-	"github.com/evrone/go-clean-template/pkg/httpserver"
-	"github.com/evrone/go-clean-template/pkg/logger"
-	"github.com/evrone/go-clean-template/pkg/postgres"
-	"github.com/evrone/go-clean-template/pkg/redis"
-	"github.com/evrone/go-clean-template/pkg/validatorx"
+	"github.com/minhhoccode111/fileuploader/config"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web"
+	"github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
+	"github.com/minhhoccode111/fileuploader/internal/repo/session"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	usecaseUser "github.com/minhhoccode111/fileuploader/internal/usecase/user"
+	"github.com/minhhoccode111/fileuploader/pkg/httpserver"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
+	"github.com/minhhoccode111/fileuploader/pkg/minio"
+	"github.com/minhhoccode111/fileuploader/pkg/postgres"
+	"github.com/minhhoccode111/fileuploader/pkg/redis"
+	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 )
 
 type useCases struct {
@@ -100,6 +101,18 @@ func Run(cfg *config.Config) {
 		l.Fatal(fmt.Errorf("app - Run - redis.New: %w", err))
 	}
 	defer redisConn.Close()
+
+	// MinIO
+	minioClient, err := minio.New(
+		cfg.MinIO.Endpoint,
+		cfg.MinIO.AccessKey,
+		cfg.MinIO.SecretKey,
+		minio.UseSSL(cfg.MinIO.UseSSL),
+	)
+	if err != nil {
+		l.Fatal(fmt.Errorf("app - Run - minio.New: %w", err))
+	}
+	defer minioClient.Close()
 
 	uc := initUseCases(pg, redisConn, cfg.Session.TTL)
 	s := initServers(cfg, uc, l)

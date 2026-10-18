@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -4,7 +4,7 @@ package usecase
 import (
 	"context"
 
-	"github.com/evrone/go-clean-template/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
 type (

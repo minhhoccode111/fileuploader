@@ -15,6 +15,7 @@ type (
 		Log     log
 		PG      pg
 		Redis   redis
+		MinIO   minio
 		Session session
 	}
 
@@ -44,6 +45,14 @@ type (
 	// Redis -.
 	redis struct {
 		Addr string `env:"REDIS_ADDR,required"`
+	}
+
+	// MinIO -.
+	minio struct {
+		Endpoint  string `env:"MINIO_ENDPOINT,required"`
+		AccessKey string `env:"MINIO_ACCESS_KEY,required"`
+		SecretKey string `env:"MINIO_SECRET_KEY,required"`
+		UseSSL    bool   `env:"MINIO_USE_SSL" envDefault:"false"`
 	}
 
 	// Session -.

@@ -21,6 +21,11 @@ x-backend-app-environment: &x-backend-app-environment
   PG_URL: "postgres://user:password@db:5432/fileuploader"
   # Redis
   REDIS_ADDR: "redis:6379"
+  # MinIO
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_ACCESS_KEY: "minioadmin"
+  MINIO_SECRET_KEY: "P@55w0rd"
+  MINIO_USE_SSL: "false"
   # Session
   SESSION_TTL: "24h"
 
@@ -83,6 +88,7 @@ services:
     depends_on:
       - db
       - redis
+      - minio
     deploy:
       resources:
         limits:

@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/a-h/templ"
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/web/templates"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/web/templates"
 )
 
 // _cookieDeleteMaxAge is a negative Max-Age, which tells the browser to drop the

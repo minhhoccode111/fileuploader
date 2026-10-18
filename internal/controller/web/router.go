@@ -3,12 +3,12 @@ package web
 import (
 	"net/http"
 
-	"github.com/evrone/go-clean-template/config"
-	"github.com/evrone/go-clean-template/internal/controller/web/middleware"
-	"github.com/evrone/go-clean-template/internal/usecase"
-	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
 )
 
 // Controller renders HTML pages and handles page form submissions.
@@ -48,6 +48,8 @@ func NewRouter(
 
 	// Pages
 	app.Get("/", middleware.RequireAuth(u), c.home)
+	app.Get("/share", middleware.RequireAuth(u), c.share)
+	app.Get("/public", middleware.RequireAuth(u), c.public)
 	app.Get("/login", middleware.RequireGuest(u), c.login)
 	app.Get("/register", middleware.RequireGuest(u), c.register)
 	app.Get("/logout", middleware.RequireAuth(u), c.logout)

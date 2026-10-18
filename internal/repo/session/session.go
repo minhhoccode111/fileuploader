@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/evrone/go-clean-template/internal/entity"
-	"github.com/evrone/go-clean-template/internal/repo"
-	"github.com/evrone/go-clean-template/pkg/redis"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/repo"
+	"github.com/minhhoccode111/fileuploader/pkg/redis"
 	goredis "github.com/redis/go-redis/v9"
 )
 

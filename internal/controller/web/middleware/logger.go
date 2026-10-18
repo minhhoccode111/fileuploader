@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/evrone/go-clean-template/pkg/logger"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
 )
 
 func buildRequestMessage(ctx *fiber.Ctx) string {

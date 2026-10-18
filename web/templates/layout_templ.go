@@ -183,23 +183,29 @@ func sidebarNav(authenticated bool, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if !authenticated {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<li><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Login\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"></path> <path d=\"m10 17 5-5-5-5\"></path> <path d=\"M15 12H3\"></path></svg> <span class=\"is-drawer-close:hidden\">Login</span></a></li><li><a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Register\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M19 8v6\"></path> <path d=\"M22 11h-6\"></path></svg> <span class=\"is-drawer-close:hidden\">Register</span></a></li>")
+		if authenticated {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<li><a href=\"/share\" hx-get=\"/share\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Share\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><circle cx=\"18\" cy=\"5\" r=\"3\"></circle> <circle cx=\"6\" cy=\"12\" r=\"3\"></circle> <circle cx=\"18\" cy=\"19\" r=\"3\"></circle> <path d=\"m8.6 13.5 6.8 4\"></path> <path d=\"m15.4 6.5-6.8 4\"></path></svg> <span class=\"is-drawer-close:hidden\">Share</span></a></li><li><a href=\"/public\" hx-get=\"/public\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Public\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <path d=\"M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z\"></path> <path d=\"M2 12h20\"></path></svg> <span class=\"is-drawer-close:hidden\">Public</span></a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</ul>")
+		if !authenticated {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Login\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"></path> <path d=\"m10 17 5-5-5-5\"></path> <path d=\"M15 12H3\"></path></svg> <span class=\"is-drawer-close:hidden\">Login</span></a></li><li><a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Register\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M19 8v6\"></path> <path d=\"M22 11h-6\"></path></svg> <span class=\"is-drawer-close:hidden\">Register</span></a></li>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if authenticated {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<ul class=\"menu w-full px-2 pb-2\"><li><a href=\"/logout\" hx-get=\"/logout\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Logout\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"></path> <path d=\"m16 17 5-5-5-5\"></path> <path d=\"M21 12H9\"></path></svg> <span class=\"is-drawer-close:hidden\">Logout</span></a></li></ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<ul class=\"menu w-full px-2 pb-2\"><li><a href=\"/logout\" hx-get=\"/logout\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Logout\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"></path> <path d=\"m16 17 5-5-5-5\"></path> <path d=\"M21 12H9\"></path></svg> <span class=\"is-drawer-close:hidden\">Logout</span></a></li></ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -1,7 +1,7 @@
 # File Uploader — The Odin Project
 
 Go clean-architecture service. One domain (`user`) exposed over REST (Fiber) from a shared
-use-case layer. Module path: `github.com/evrone/go-clean-template`. The Go version is declared in
+use-case layer. Module path: `github.com/minhhoccode111/fileuploader`. The Go version is declared in
 `go.mod`.
 
 ## Commands — drive everything through the Makefile
@@ -29,7 +29,7 @@ different settings than CI. Use the target, not the tool.
 | Apply the next / all migrations            | `make migrate-up`, `migrate-up-all`     | `migrate -path ... up 1` / `up`                                                          |
 | Revert the last / all migrations           | `make migrate-down`, `migrate-down-all` | `migrate -path ... down 1` / `down -all`                                                 |
 | Redo the last migration                    | `make migrate-redo`                     | `migrate ... down 1 && ... up 1`                                                         |
-| Inspect migrations                         | `make migrate-status`, `migrate-list`   | `migrate ... version` / `ls migrations`                                                   |
+| Inspect migrations                         | `make migrate-status`, `migrate-list`   | `migrate ... version` / `ls migrations`                                                  |
 | Full check before pushing                  | `make pre-commit`                       | running the steps by hand                                                                |
 
 `make help` lists every target.

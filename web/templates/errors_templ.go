@@ -8,7 +8,7 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "github.com/evrone/go-clean-template/internal/controller/web/response"
+import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 
 // ErrorList is the fragment htmx swaps into a form's error target. It renders
 // every message at once so the user sees all problems together.
