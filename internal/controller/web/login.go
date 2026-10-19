@@ -39,7 +39,7 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
 	}
 
-	token, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
+	token, user, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, entity.ErrInvalidCredentials) {
 			return c.renderErrors(ctx, http.StatusUnauthorized, []string{"Invalid email or password."})
@@ -50,13 +50,13 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	return c.renderAuthenticated(ctx, token)
+	return c.renderAuthenticated(ctx, token, &user)
 }
 
 // renderAuthenticated stores the token in an HTTP-only cookie and swaps the home
 // fragment into <main>, pushing "/" so the address bar follows the new page. It
 // also updates the sidebar out of band, since the nav changed with the auth state.
-func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string) error {
+func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string, user *entity.User) error {
 	c.setAuthCookie(ctx, token)
 
 	ctx.Set(_hxRetarget, _pageContent)
@@ -65,7 +65,10 @@ func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string) error {
 
 	return c.renderPage(ctx, templ.Join(
 		templates.HomeContent(),
-		templates.SidebarNavUpdate(true),
+		templates.SidebarNavUpdate(templates.View{
+			Authenticated: true,
+			Admin:         user.Role == entity.UserRoleAdmin,
+		}),
 	))
 }
 

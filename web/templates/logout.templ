@@ -1,7 +1,7 @@
 package templates
 
-templ Logout(authenticated bool) {
-	@Layout("Logout", authenticated) {
+templ Logout(view View) {
+	@Layout("Logout", view) {
 		@LogoutContent()
 	}
 }

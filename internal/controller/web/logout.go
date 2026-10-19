@@ -32,8 +32,8 @@ func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
 	// guest links again: swap it out of band alongside the login fragment.
 	return c.render(
 		ctx,
-		templates.Login(false),
-		templ.Join(templates.LoginContent(), templates.SidebarNavUpdate(false)),
+		templates.Login(templates.View{}),
+		templ.Join(templates.LoginContent(), templates.SidebarNavUpdate(templates.View{})),
 	)
 }
 

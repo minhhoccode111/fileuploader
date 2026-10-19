@@ -10,4 +10,5 @@ var (
 	ErrInvalidCredentials    = errors.New("invalid credentials")
 	ErrPasswordTooLong       = errors.New("password too long")
 	ErrSessionNotFound       = errors.New("session not found")
+	ErrInvalidRole           = errors.New("invalid role")
 )

@@ -11,7 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 // sidebarState seeds the drawer from the viewport width: expanded on lg+, collapsed below.
 const sidebarState = "{ open: window.matchMedia('(min-width: 1024px)').matches }"
 
-func Layout(title string, authenticated bool) templ.Component {
+func Layout(title string, view View) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -45,14 +45,14 @@ func Layout(title string, authenticated bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " · File Uploader</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><script src=\"/static/js/htmx.min.js\"></script><script defer src=\"/static/js/alpine.min.js\"></script><script defer src=\"/static/js/app.js\"></script></head><body class=\"min-h-screen bg-base-200 antialiased\"><div class=\"drawer lg:drawer-open\" x-data=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " · File Uploader</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><style>\n\t\t\t\t.sidebar-head { position: relative; display: flex; height: 4rem; align-items: center; }\n\t\t\t\t.sidebar-mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 1; transition: opacity .1s ease-out .2s; }\n\t\t\t\t.sidebar-title { position: absolute; left: 1rem; top: 0; height: 100%; display: flex; align-items: center; white-space: nowrap; clip-path: inset(0 100% 0 0); transition: clip-path .2s ease-out; }\n\t\t\t\t.drawer-toggle:checked ~ .drawer-side .sidebar-mark { opacity: 0; transition-delay: 0s; }\n\t\t\t\t.drawer-toggle:checked ~ .drawer-side .sidebar-title { clip-path: inset(0 0% 0 0); transition-delay: .1s; }\n\t\t\t</style><script src=\"/static/js/htmx.min.js\"></script><script defer src=\"/static/js/alpine.min.js\"></script><script defer src=\"/static/js/app.js\"></script></head><body class=\"min-h-screen bg-base-200 antialiased\"><div class=\"drawer lg:drawer-open\" x-data=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(sidebarState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 19, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 30, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -66,11 +66,11 @@ func Layout(title string, authenticated bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</main></div><div class=\"drawer-side z-30 is-drawer-close:overflow-visible\"><label for=\"app-drawer\" aria-label=\"Close sidebar\" class=\"drawer-overlay\"></label><aside class=\"flex min-h-full flex-col bg-base-100 is-drawer-close:w-14 is-drawer-open:w-64\"><div class=\"flex h-16 items-center gap-2 px-4 is-drawer-close:justify-center is-drawer-close:px-0\"><span class=\"text-xl font-bold is-drawer-close:hidden\">File Uploader</span> <span class=\"hidden text-xl font-bold is-drawer-close:inline\">FU</span></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</main></div><div class=\"drawer-side z-30 is-drawer-close:overflow-visible\"><label for=\"app-drawer\" aria-label=\"Close sidebar\" class=\"drawer-overlay\"></label><aside class=\"flex min-h-full flex-col bg-base-100 is-drawer-close:w-14 is-drawer-open:w-64\"><div class=\"sidebar-head px-4 is-drawer-close:px-0\"><span class=\"sidebar-mark text-xl font-bold\">FU</span> <span class=\"sidebar-title text-xl font-bold\">File Uploader</span></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = SidebarNav(authenticated).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = SidebarNav(view).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -84,7 +84,7 @@ func Layout(title string, authenticated bool) templ.Component {
 
 // SidebarNav is the auth-dependent sidebar navigation, rendered as part of a
 // full page.
-func SidebarNav(authenticated bool) templ.Component {
+func SidebarNav(view View) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -105,7 +105,7 @@ func SidebarNav(authenticated bool) templ.Component {
 			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = sidebarNav(authenticated, false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = sidebarNav(view, false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -116,7 +116,7 @@ func SidebarNav(authenticated bool) templ.Component {
 // SidebarNavUpdate is the same navigation tagged as an out-of-band swap. A
 // partial response that changes the auth state (login, register, logout)
 // includes it so the nav follows the response without a full reload.
-func SidebarNavUpdate(authenticated bool) templ.Component {
+func SidebarNavUpdate(view View) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -137,7 +137,7 @@ func SidebarNavUpdate(authenticated bool) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = sidebarNav(authenticated, true).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = sidebarNav(view, true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -148,7 +148,7 @@ func SidebarNavUpdate(authenticated bool) templ.Component {
 // sidebarNav renders the navigation in a single #sidebar-nav element so a
 // partial response can replace the whole nav. When oob is true the element
 // carries hx-swap-oob so htmx swaps it by id instead of into the request target.
-func sidebarNav(authenticated bool, oob bool) templ.Component {
+func sidebarNav(view View, oob bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -183,29 +183,35 @@ func sidebarNav(authenticated bool, oob bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if authenticated {
+		if view.Authenticated {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<li><a href=\"/share\" hx-get=\"/share\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Share\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><circle cx=\"18\" cy=\"5\" r=\"3\"></circle> <circle cx=\"6\" cy=\"12\" r=\"3\"></circle> <circle cx=\"18\" cy=\"19\" r=\"3\"></circle> <path d=\"m8.6 13.5 6.8 4\"></path> <path d=\"m15.4 6.5-6.8 4\"></path></svg> <span class=\"is-drawer-close:hidden\">Share</span></a></li><li><a href=\"/public\" hx-get=\"/public\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Public\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle> <path d=\"M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z\"></path> <path d=\"M2 12h20\"></path></svg> <span class=\"is-drawer-close:hidden\">Public</span></a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		if !authenticated {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Login\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"></path> <path d=\"m10 17 5-5-5-5\"></path> <path d=\"M15 12H3\"></path></svg> <span class=\"is-drawer-close:hidden\">Login</span></a></li><li><a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Register\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M19 8v6\"></path> <path d=\"M22 11h-6\"></path></svg> <span class=\"is-drawer-close:hidden\">Register</span></a></li>")
+		if view.Admin {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li><a href=\"/admin\" hx-get=\"/admin\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Admin\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"></path></svg> <span class=\"is-drawer-close:hidden\">Admin</span></a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</ul>")
+		if !view.Authenticated {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<li><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Login\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"></path> <path d=\"m10 17 5-5-5-5\"></path> <path d=\"M15 12H3\"></path></svg> <span class=\"is-drawer-close:hidden\">Login</span></a></li><li><a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Register\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M19 8v6\"></path> <path d=\"M22 11h-6\"></path></svg> <span class=\"is-drawer-close:hidden\">Register</span></a></li>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if authenticated {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<ul class=\"menu w-full px-2 pb-2\"><li><a href=\"/logout\" hx-get=\"/logout\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Logout\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"></path> <path d=\"m16 17 5-5-5-5\"></path> <path d=\"M21 12H9\"></path></svg> <span class=\"is-drawer-close:hidden\">Logout</span></a></li></ul>")
+		if view.Authenticated {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<ul class=\"menu w-full px-2 pb-2\"><li><a href=\"/logout\" hx-get=\"/logout\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Logout\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"></path> <path d=\"m16 17 5-5-5-5\"></path> <path d=\"M21 12H9\"></path></svg> <span class=\"is-drawer-close:hidden\">Logout</span></a></li></ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

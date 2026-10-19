@@ -3,6 +3,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -13,8 +14,13 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
-// _keyPrefix namespaces session keys so they cannot collide with other data.
-const _keyPrefix = "session:"
+// Key prefixes. The first namespaces the sessions themselves, the second the
+// per-user indexes that list the live sessions of one account, so a role
+// change can end them all.
+const (
+	_keyPrefix     = "session:"
+	_userKeyPrefix = "user-sessions:"
+)
 
 // Repo -.
 type Repo struct {
@@ -26,37 +32,100 @@ func New(rdb *redis.Redis) repo.SessionRepo {
 	return &Repo{rdb: rdb}
 }
 
-// Store saves a session that expires after ttl. Redis enforces the expiry, so
-// there is nothing to clean up.
-func (r *Repo) Store(ctx context.Context, id, userID string, ttl time.Duration) error {
-	err := r.rdb.Client.Set(ctx, key(id), userID, ttl).Err()
+// Store saves a session that expires after ttl. The session carries the role
+// of the account, and the account's index of live sessions is kept next to it,
+// so a role change can end every session that account holds.
+func (r *Repo) Store(ctx context.Context, id string, session entity.Session, ttl time.Duration) error {
+	payload, err := json.Marshal(session)
 	if err != nil {
-		return fmt.Errorf("SessionRepo - Store - rdb.Client.Set: %w", err)
+		return fmt.Errorf("SessionRepo - Store - json.Marshal: %w", err)
+	}
+
+	pipe := r.rdb.Client.TxPipeline()
+	pipe.Set(ctx, key(id), payload, ttl)
+	pipe.SAdd(ctx, userKey(session.UserID), id)
+	pipe.Expire(ctx, userKey(session.UserID), ttl)
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("SessionRepo - Store - pipe.Exec: %w", err)
 	}
 
 	return nil
 }
 
-// GetUserID returns the user ID for a live session. A missing or expired key
+// Get returns the session behind a live identifier. A missing or expired key
 // maps to ErrSessionNotFound.
-func (r *Repo) GetUserID(ctx context.Context, id string) (string, error) {
-	userID, err := r.rdb.Client.Get(ctx, key(id)).Result()
+func (r *Repo) Get(ctx context.Context, id string) (entity.Session, error) {
+	payload, err := r.rdb.Client.Get(ctx, key(id)).Bytes()
 	if err != nil {
 		if errors.Is(err, goredis.Nil) {
-			return "", entity.ErrSessionNotFound
+			return entity.Session{}, entity.ErrSessionNotFound
 		}
 
-		return "", fmt.Errorf("SessionRepo - GetUserID - rdb.Client.Get: %w", err)
+		return entity.Session{}, fmt.Errorf("SessionRepo - Get - r.rdb.Client.Get: %w", err)
 	}
 
-	return userID, nil
+	var session entity.Session
+
+	err = json.Unmarshal(payload, &session)
+	if err != nil {
+		return entity.Session{}, fmt.Errorf("SessionRepo - Get - json.Unmarshal: %w", err)
+	}
+
+	return session, nil
 }
 
-// Delete ends a session.
+// Delete ends a session and drops it from the index of its account.
 func (r *Repo) Delete(ctx context.Context, id string) error {
-	err := r.rdb.Client.Del(ctx, key(id)).Err()
+	session, err := r.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("SessionRepo - Delete - rdb.Client.Del: %w", err)
+		if errors.Is(err, entity.ErrSessionNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf("SessionRepo - Delete - r.Get: %w", err)
+	}
+
+	pipe := r.rdb.Client.TxPipeline()
+	pipe.Del(ctx, key(id))
+	pipe.SRem(ctx, userKey(session.UserID), id)
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("SessionRepo - Delete - pipe.Exec: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteUserSessions ends every live session of an account. A role change
+// calls it, so the account picks up its new role on the next sign-in instead
+// of keeping the role its session was created with.
+func (r *Repo) DeleteUserSessions(ctx context.Context, userID string) error {
+	index := userKey(userID)
+
+	ids, err := r.rdb.Client.SMembers(ctx, index).Result()
+	if err != nil {
+		return fmt.Errorf("SessionRepo - DeleteUserSessions - r.rdb.Client.SMembers: %w", err)
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(ids))
+	for _, id := range ids {
+		keys = append(keys, key(id))
+	}
+
+	pipe := r.rdb.Client.TxPipeline()
+	pipe.Del(ctx, keys...)
+	pipe.Del(ctx, index)
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("SessionRepo - DeleteUserSessions - pipe.Exec: %w", err)
 	}
 
 	return nil
@@ -65,4 +134,9 @@ func (r *Repo) Delete(ctx context.Context, id string) error {
 // key builds the Redis key for a session identifier.
 func key(id string) string {
 	return _keyPrefix + id
+}
+
+// userKey builds the Redis key for the index of the sessions of an account.
+func userKey(userID string) string {
+	return _userKeyPrefix + userID
 }

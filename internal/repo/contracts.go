@@ -23,12 +23,14 @@ type (
 		Store(ctx context.Context, user *entity.User) error
 		GetByID(ctx context.Context, id string) (entity.User, error)
 		GetByEmail(ctx context.Context, email string) (entity.User, error)
+		UpdateRole(ctx context.Context, userID string, role entity.UserRole) error
 	}
 
 	// SessionRepo -.
 	SessionRepo interface {
-		Store(ctx context.Context, id, userID string, ttl time.Duration) error
-		GetUserID(ctx context.Context, id string) (string, error)
+		Store(ctx context.Context, id string, session entity.Session, ttl time.Duration) error
+		Get(ctx context.Context, id string) (entity.Session, error)
 		Delete(ctx context.Context, id string) error
+		DeleteUserSessions(ctx context.Context, userID string) error
 	}
 )

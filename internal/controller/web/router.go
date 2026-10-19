@@ -50,6 +50,7 @@ func NewRouter(
 	app.Get("/", middleware.RequireAuth(u), c.home)
 	app.Get("/share", middleware.RequireAuth(u), c.share)
 	app.Get("/public", middleware.RequireAuth(u), c.public)
+	app.Get("/admin", middleware.RequireAdmin(u), c.admin)
 	app.Get("/login", middleware.RequireGuest(u), c.login)
 	app.Get("/register", middleware.RequireGuest(u), c.register)
 	app.Get("/logout", middleware.RequireAuth(u), c.logout)
@@ -58,4 +59,5 @@ func NewRouter(
 	app.Post("/htmx/login", c.loginSubmit)
 	app.Post("/htmx/register", c.registerSubmit)
 	app.Post("/htmx/logout", c.logoutSubmit)
+	app.Post("/htmx/admin/role", middleware.RequireAdmin(u), c.roleSubmit)
 }

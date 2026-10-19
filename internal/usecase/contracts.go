@@ -11,9 +11,10 @@ type (
 	// User -.
 	User interface {
 		Register(ctx context.Context, username, email, password string) (entity.User, error)
-		Login(ctx context.Context, email, password string) (string, error)
-		Authenticate(ctx context.Context, sessionID string) (string, error)
+		Login(ctx context.Context, email, password string) (string, entity.User, error)
+		Authenticate(ctx context.Context, sessionID string) (entity.Session, error)
 		Logout(ctx context.Context, sessionID string) error
 		GetUser(ctx context.Context, userID string) (entity.User, error)
+		SetRole(ctx context.Context, email string, role entity.UserRole) error
 	}
 )

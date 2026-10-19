@@ -3,7 +3,7 @@ package templates
 // sidebarState seeds the drawer from the viewport width: expanded on lg+, collapsed below.
 const sidebarState = "{ open: window.matchMedia('(min-width: 1024px)').matches }"
 
-templ Layout(title string, authenticated bool) {
+templ Layout(title string, view View) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -11,6 +11,17 @@ templ Layout(title string, authenticated bool) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } · File Uploader</title>
 			<link rel="stylesheet" href="/static/css/app.css"/>
+			// The sidebar title is revealed with a clip that follows the drawer
+			// width animation, so it never wraps while the sidebar expands.
+			// These rules live in the document, not in the Tailwind build, so
+			// the toggle keeps working with any web/static/css/app.css.
+			<style>
+				.sidebar-head { position: relative; display: flex; height: 4rem; align-items: center; }
+				.sidebar-mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 1; transition: opacity .1s ease-out .2s; }
+				.sidebar-title { position: absolute; left: 1rem; top: 0; height: 100%; display: flex; align-items: center; white-space: nowrap; clip-path: inset(0 100% 0 0); transition: clip-path .2s ease-out; }
+				.drawer-toggle:checked ~ .drawer-side .sidebar-mark { opacity: 0; transition-delay: 0s; }
+				.drawer-toggle:checked ~ .drawer-side .sidebar-title { clip-path: inset(0 0% 0 0); transition-delay: .1s; }
+			</style>
 			<script src="/static/js/htmx.min.js"></script>
 			<script defer src="/static/js/alpine.min.js"></script>
 			<script defer src="/static/js/app.js"></script>
@@ -51,11 +62,14 @@ templ Layout(title string, authenticated bool) {
 				<div class="drawer-side z-30 is-drawer-close:overflow-visible">
 					<label for="app-drawer" aria-label="Close sidebar" class="drawer-overlay"></label>
 					<aside class="flex min-h-full flex-col bg-base-100 is-drawer-close:w-14 is-drawer-open:w-64">
-						<div class="flex h-16 items-center gap-2 px-4 is-drawer-close:justify-center is-drawer-close:px-0">
-							<span class="text-xl font-bold is-drawer-close:hidden">File Uploader</span>
-							<span class="hidden text-xl font-bold is-drawer-close:inline">FU</span>
+						// The short mark fades out first, the title wipes in after
+						// it, and on close the title clears before the mark
+						// comes back.
+						<div class="sidebar-head px-4 is-drawer-close:px-0">
+							<span class="sidebar-mark text-xl font-bold">FU</span>
+							<span class="sidebar-title text-xl font-bold">File Uploader</span>
 						</div>
-						@SidebarNav(authenticated)
+						@SidebarNav(view)
 					</aside>
 				</div>
 			</div>
@@ -65,21 +79,21 @@ templ Layout(title string, authenticated bool) {
 
 // SidebarNav is the auth-dependent sidebar navigation, rendered as part of a
 // full page.
-templ SidebarNav(authenticated bool) {
-	@sidebarNav(authenticated, false)
+templ SidebarNav(view View) {
+	@sidebarNav(view, false)
 }
 
 // SidebarNavUpdate is the same navigation tagged as an out-of-band swap. A
 // partial response that changes the auth state (login, register, logout)
 // includes it so the nav follows the response without a full reload.
-templ SidebarNavUpdate(authenticated bool) {
-	@sidebarNav(authenticated, true)
+templ SidebarNavUpdate(view View) {
+	@sidebarNav(view, true)
 }
 
 // sidebarNav renders the navigation in a single #sidebar-nav element so a
 // partial response can replace the whole nav. When oob is true the element
 // carries hx-swap-oob so htmx swaps it by id instead of into the request target.
-templ sidebarNav(authenticated bool, oob bool) {
+templ sidebarNav(view View, oob bool) {
 	<div
 		id="sidebar-nav"
 		if oob {
@@ -105,7 +119,7 @@ templ sidebarNav(authenticated bool, oob bool) {
 					<span class="is-drawer-close:hidden">Home</span>
 				</a>
 			</li>
-			if authenticated {
+			if view.Authenticated {
 				<li>
 					<a
 						href="/share"
@@ -145,7 +159,25 @@ templ sidebarNav(authenticated bool, oob bool) {
 					</a>
 				</li>
 			}
-			if !authenticated {
+			if view.Admin {
+				<li>
+					<a
+						href="/admin"
+						hx-get="/admin"
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
+						data-tip="Admin"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+							<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path>
+						</svg>
+						<span class="is-drawer-close:hidden">Admin</span>
+					</a>
+				</li>
+			}
+			if !view.Authenticated {
 				<li>
 					<a
 						href="/login"
@@ -185,7 +217,7 @@ templ sidebarNav(authenticated bool, oob bool) {
 				</li>
 			}
 		</ul>
-		if authenticated {
+		if view.Authenticated {
 			<ul class="menu w-full px-2 pb-2">
 				<li>
 					<a

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
 // Cookie, target and redirect names shared by the page guards. The cookie name
@@ -15,6 +16,7 @@ const (
 	_homePath       = "/"
 	_loginPath      = "/login"
 	_userIDLocal    = "userID"
+	_sessionLocal   = "session"
 
 	_pageContent   = "#page-content"
 	_swapInnerHTML = "innerHTML"
@@ -24,22 +26,44 @@ const (
 	_hxRequestTrue    = "true"
 )
 
-// sessionAuthenticator resolves a session identifier to its user ID. The web
-// controller's use case implements it.
+// sessionAuthenticator resolves a session identifier to the session behind it.
+// The web controller's use case implements it.
 type sessionAuthenticator interface {
-	Authenticate(ctx context.Context, sessionID string) (string, error)
+	Authenticate(ctx context.Context, sessionID string) (entity.Session, error)
 }
 
 // RequireAuth lets authenticated visitors through and sends anonymous ones to
-// the login page. The resolved user ID is parked in ctx.Locals("userID").
+// the login page. The resolved session is parked in ctx.Locals("session") and
+// the user ID it holds in ctx.Locals("userID").
 func RequireAuth(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
-		userID, ok := authenticatedUser(ctx, auth)
+		session, ok := authenticatedSession(ctx, auth)
 		if !ok {
 			return redirectTo(ctx, _loginPath)
 		}
 
-		ctx.Locals(_userIDLocal, userID)
+		parkSession(ctx, session)
+
+		return ctx.Next()
+	}
+}
+
+// RequireAdmin lets administrators through and sends everyone else away: an
+// anonymous visitor to the login page, a signed-in visitor without the admin
+// role to the home page. The admin link is hidden from non-admins, so a direct
+// request must not hand them the page either.
+func RequireAdmin(auth sessionAuthenticator) func(*fiber.Ctx) error {
+	return func(ctx *fiber.Ctx) error {
+		session, ok := authenticatedSession(ctx, auth)
+		if !ok {
+			return redirectTo(ctx, _loginPath)
+		}
+
+		if session.Role != entity.UserRoleAdmin {
+			return redirectTo(ctx, _homePath)
+		}
+
+		parkSession(ctx, session)
 
 		return ctx.Next()
 	}
@@ -49,7 +73,7 @@ func RequireAuth(auth sessionAuthenticator) func(*fiber.Ctx) error {
 // the home page.
 func RequireGuest(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
-		if _, ok := authenticatedUser(ctx, auth); ok {
+		if _, ok := authenticatedSession(ctx, auth); ok {
 			return redirectTo(ctx, _homePath)
 		}
 
@@ -57,21 +81,27 @@ func RequireGuest(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	}
 }
 
-// authenticatedUser resolves the session cookie to a user ID. A missing cookie,
-// an unknown session or a store error all mean anonymous: the guard redirects
-// rather than failing the request.
-func authenticatedUser(ctx *fiber.Ctx, auth sessionAuthenticator) (string, bool) {
+// parkSession stores the resolved session where the handlers can find it.
+func parkSession(ctx *fiber.Ctx, session entity.Session) {
+	ctx.Locals(_sessionLocal, session)
+	ctx.Locals(_userIDLocal, session.UserID)
+}
+
+// authenticatedSession resolves the session cookie to the session behind it. A
+// missing cookie, an unknown session or a store error all mean anonymous: the
+// guard redirects rather than failing the request.
+func authenticatedSession(ctx *fiber.Ctx, auth sessionAuthenticator) (entity.Session, bool) {
 	sessionID := ctx.Cookies(_authCookieName)
 	if sessionID == "" {
-		return "", false
+		return entity.Session{}, false
 	}
 
-	userID, err := auth.Authenticate(ctx.UserContext(), sessionID)
+	session, err := auth.Authenticate(ctx.UserContext(), sessionID)
 	if err != nil {
-		return "", false
+		return entity.Session{}, false
 	}
 
-	return userID, true
+	return session, true
 }
 
 // redirectTo sends the visitor to a path. htmx requests receive HX-Location so

@@ -1,0 +1,55 @@
+package templates
+
+templ Admin(view View) {
+	@Layout("Admin", view) {
+		@AdminContent()
+	}
+}
+
+// AdminContent is the fragment htmx swaps into <main> on client-side navigation.
+templ AdminContent() {
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h1 class="text-4xl font-bold tracking-tight">Hello from Admin</h1>
+			<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in as an admin.</p>
+		</div>
+	</section>
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h2 class="text-2xl font-bold tracking-tight">Change a role</h2>
+			<p class="text-base-content/70 max-w-prose">The role travels with the session, so the account is signed out everywhere and picks the new role up on its next sign-in.</p>
+			<form
+				id="role-form"
+				class="flex flex-col gap-4 py-2"
+				hx-post="/htmx/admin/role"
+				hx-target="#role-message"
+				hx-swap="innerHTML"
+				novalidate
+			>
+				<label class="flex flex-col gap-1">
+					<span class="text-sm font-medium">Email</span>
+					<input class="input w-full" type="email" name="email" required maxlength="255" autocomplete="off"/>
+				</label>
+				<label class="flex flex-col gap-1">
+					<span class="text-sm font-medium">Role</span>
+					<select class="select w-full" name="role">
+						<option value="user">user</option>
+						<option value="admin">admin</option>
+					</select>
+				</label>
+				<button class="btn btn-primary w-fit" type="submit">Apply</button>
+				<div id="role-message" role="status"></div>
+			</form>
+		</div>
+	</section>
+}
+
+// RoleUpdated reports that the role of an account was changed.
+templ RoleUpdated(email, role string) {
+	<div role="alert" class="alert alert-success">
+		<svg xmlns="http://www.w3.org/2000/svg" class="size-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+		</svg>
+		<span>{ email } is now { role }. Their sessions were ended, so the new role applies on the next sign-in.</span>
+	</div>
+}

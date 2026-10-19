@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -29,8 +30,8 @@ func New(pg *postgres.Postgres) repo.UserRepo {
 func (r *Repo) Store(ctx context.Context, user *entity.User) error {
 	sql, args, err := r.Builder.
 		Insert("users").
-		Columns("id, username, email, password_hash, created_at, updated_at").
-		Values(user.ID, user.Username, user.Email, user.PasswordHash, user.CreatedAt, user.UpdatedAt).
+		Columns("id, username, email, password_hash, role, created_at, updated_at").
+		Values(user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.CreatedAt, user.UpdatedAt).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - Store - r.Builder: %w", err)
@@ -72,9 +73,34 @@ func (r *Repo) GetByEmail(ctx context.Context, email string) (entity.User, error
 	return r.getUser(ctx, "email", email)
 }
 
+// UpdateRole changes the role of an account. A missing account maps to
+// ErrUserNotFound.
+func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRole) error {
+	sql, args, err := r.Builder.
+		Update("users").
+		Set("role", role).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{"id": userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - UpdateRole - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("UserRepo - UpdateRole - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
+}
+
 func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, error) {
 	sql, args, err := r.Builder.
-		Select("id, username, email, password_hash, created_at, updated_at").
+		Select("id, username, email, password_hash, role, created_at, updated_at").
 		From("users").
 		Where(sq.Eq{column: value}).
 		ToSql()
@@ -85,7 +111,7 @@ func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, 
 	var user entity.User
 
 	err = r.Querier(ctx).QueryRow(ctx, sql, args...).
-		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.User{}, entity.ErrUserNotFound
