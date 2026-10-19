@@ -9,6 +9,15 @@ import (
 )
 
 type (
+	// UnitOfWork runs a group of repository calls inside a single database
+	// transaction. The context it hands to the callback carries the
+	// transaction, so every repository called with it writes inside the same
+	// transaction. The transaction is committed when the callback returns nil
+	// and rolled back when it returns an error.
+	UnitOfWork interface {
+		Do(ctx context.Context, fn func(ctx context.Context) error) error
+	}
+
 	// UserRepo -.
 	UserRepo interface {
 		Store(ctx context.Context, user *entity.User) error

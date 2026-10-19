@@ -35,7 +35,7 @@ func initUseCases(pg *postgres.Postgres, rdb *redis.Redis, sessionTTL time.Durat
 	sessionRepo := session.New(rdb)
 
 	return useCases{
-		user: usecaseUser.New(userRepo, sessionRepo, sessionTTL),
+		user: usecaseUser.New(userRepo, sessionRepo, pg, sessionTTL),
 	}
 }
 

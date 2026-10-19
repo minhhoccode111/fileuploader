@@ -36,14 +36,14 @@ func (r *Repo) Store(ctx context.Context, user *entity.User) error {
 		return fmt.Errorf("UserRepo - Store - r.Builder: %w", err)
 	}
 
-	_, err = r.Pool.Exec(ctx, sql, args...)
+	_, err = r.Querier(ctx).Exec(ctx, sql, args...)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return uniqueViolation(pgErr)
 		}
 
-		return fmt.Errorf("UserRepo - Store - r.Pool.Exec: %w", err)
+		return fmt.Errorf("UserRepo - Store - r.Querier(ctx).Exec: %w", err)
 	}
 
 	return nil
@@ -84,14 +84,14 @@ func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, 
 
 	var user entity.User
 
-	err = r.Pool.QueryRow(ctx, sql, args...).
+	err = r.Querier(ctx).QueryRow(ctx, sql, args...).
 		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.User{}, entity.ErrUserNotFound
 		}
 
-		return entity.User{}, fmt.Errorf("UserRepo - getUser - r.Pool.QueryRow: %w", err)
+		return entity.User{}, fmt.Errorf("UserRepo - getUser - r.Querier(ctx).QueryRow: %w", err)
 	}
 
 	return user, nil

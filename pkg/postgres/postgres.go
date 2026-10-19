@@ -25,7 +25,8 @@ type Postgres struct {
 	connTimeout  time.Duration
 
 	Builder squirrel.StatementBuilderType
-	Pool    *pgxpool.Pool
+
+	pool Pool
 }
 
 // New -.
@@ -50,8 +51,10 @@ func New(url string, opts ...Option) (*Postgres, error) {
 
 	poolConfig.MaxConns = safeIntToInt32(pg.maxPoolSize)
 
+	var pool *pgxpool.Pool
+
 	for pg.connAttempts > 0 {
-		pg.Pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
+		pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
 		if err == nil {
 			break
 		}
@@ -67,13 +70,15 @@ func New(url string, opts ...Option) (*Postgres, error) {
 		return nil, fmt.Errorf("postgres - NewPostgres - connAttempts == 0: %w", err)
 	}
 
+	pg.pool = pool
+
 	return pg, nil
 }
 
 // Close -.
 func (p *Postgres) Close() {
-	if p.Pool != nil {
-		p.Pool.Close()
+	if p.pool != nil {
+		p.pool.Close()
 	}
 }
 

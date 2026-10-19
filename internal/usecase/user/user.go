@@ -23,14 +23,16 @@ const _sessionIDBytes = 32
 type UseCase struct {
 	repo       repo.UserRepo
 	sessions   repo.SessionRepo
+	uow        repo.UnitOfWork
 	sessionTTL time.Duration
 }
 
 // New returns a User usecase.
-func New(r repo.UserRepo, s repo.SessionRepo, sessionTTL time.Duration) usecase.User {
+func New(r repo.UserRepo, s repo.SessionRepo, u repo.UnitOfWork, sessionTTL time.Duration) usecase.User {
 	return &UseCase{
 		repo:       r,
 		sessions:   s,
+		uow:        u,
 		sessionTTL: sessionTTL,
 	}
 }
@@ -63,9 +65,16 @@ func (uc *UseCase) Register(
 		UpdatedAt:    now,
 	}
 
-	err = uc.repo.Store(ctx, &user)
+	err = uc.uow.Do(ctx, func(ctx context.Context) error {
+		storeErr := uc.repo.Store(ctx, &user)
+		if storeErr != nil {
+			return fmt.Errorf("uc.repo.Store: %w", storeErr)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return entity.User{}, fmt.Errorf("UserUseCase - Register - uc.repo.Store: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - Register - uc.uow.Do: %w", err)
 	}
 
 	return user, nil
