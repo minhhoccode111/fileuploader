@@ -30,6 +30,7 @@ different settings than CI. Use the target, not the tool.
 | Revert the last / all migrations           | `make migrate-down`, `migrate-down-all` | `migrate -path ... down 1` / `down -all`                                                 |
 | Redo the last migration                    | `make migrate-redo`                     | `migrate ... down 1 && ... up 1`                                                         |
 | Inspect migrations                         | `make migrate-status`, `migrate-list`   | `migrate ... version` / `ls migrations`                                                  |
+| Dump the current schema                    | `make schema`                           | `atlas schema inspect` by hand                                                           |
 | Full check before pushing                  | `make pre-commit`                       | running the steps by hand                                                                |
 
 `make help` lists every target.
@@ -70,6 +71,7 @@ Decide by asking what the code knows about:
 | an HTTP status or a message envelope                          | `internal/controller/restapi/v1/<domain>.go`    | handler                                            |
 | a browser page or fragment                                    | `web/templates/<name>.templ`                    | templ component                                    |
 | a server, pool, client or middleware with no domain knowledge | `pkg/<name>/`                                   | reusable package                                   |
+| a transaction boundary over several repositories              | `internal/repo/contracts.go` + `pkg/postgres`   | `UnitOfWork.Do`                                    |
 
 Layout rules:
 
@@ -95,6 +97,12 @@ Layout rules:
 
 The app serves `web/static` at `/static` (`app.Static`) and renders `web/templates` at `/`.
 
+Pages take a `templates.View` (`web/templates/view.go`) that carries the per-request state: whether
+the visitor is signed in and whether they hold the admin role. The web controller builds it from
+the account the guard parked, so a template never asks who the visitor is. A role-gated link (the
+`Admin` item in the sidebar) is only a hint — the route behind it carries its own guard
+(`middleware.RequireAdmin`), so a direct request is refused too.
+
 `make dev` runs air (rebuilds Go and templ on save) together with the Tailwind watcher. It needs
 Postgres up first: `make compose-up`. air only watches `.go` and `.templ`; CSS changes are handled
 by the Tailwind watcher, so a class edit does not restart the server.
@@ -108,7 +116,8 @@ you prefer the long form. To feed Go data into `x-data`, use a templ expression:
 Every REST controller method does the same six things in the same order. Copy the shape from a
 neighbouring handler.
 
-1. **Get the caller.** `ctx.Locals("userID").(string)`. A failure here is an auth error, not a 500.
+1. **Get the caller.** The auth guard parks the session it resolved in `ctx.Locals("session")`
+   (and the user ID it holds in `ctx.Locals("userID")`). A failure here is an auth error, not a 500.
 2. **Decode into a DTO** from `restapi/v1/request/`. Never decode into an `entity` type, and never
    pass a `request.*` type into a use case.
 3. **Validate the DTO** with the injected `*validator.Validate` (`r.v.Struct(req)`). Structural
@@ -149,7 +158,8 @@ around blocks), `funlen` (65 lines / 40 statements), `gocyclo` (10), `gocognit` 
 2. Implement it in `internal/usecase/<domain>/<domain>.go`.
 3. If it needs new persistence, repeat the same steps in `internal/repo/contracts.go` and
    `internal/repo/persistent/<domain>/`.
-4. Expose it on REST: handler in `internal/controller/restapi/v1/<domain>.go` + route in that
+4. If it writes to more than one table, wrap the writes in the unit of work — see below.
+5. Expose it on REST: handler in `internal/controller/restapi/v1/<domain>.go` + route in that
    package's `router.go`.
 
 ## Adding a whole domain
@@ -172,6 +182,38 @@ before writing.
    `restapi/v1/<domain>.go`, registration in that transport's `v1/router.go`, and the use case
    added to the `V1` controller struct in `restapi/v1/controller.go`.
 
+## Unit of Work
+
+`repo.UnitOfWork` (`internal/repo/contracts.go`) is the transaction boundary a use case writes
+through. `*postgres.Postgres` implements it (`pkg/postgres/tx.go`), so the unit of work _is_ the
+connection pool — there is no second object to wire. `internal/app/app.go` passes `pg` as the unit
+of work.
+
+```go
+err = uc.uow.Do(ctx, func(ctx context.Context) error {
+    if err := uc.repo.Store(ctx, &user); err != nil {
+        return fmt.Errorf("uc.repo.Store: %w", err)
+    }
+
+    return uc.folders.CreateRoot(ctx, rootFolder)
+})
+if err != nil {
+    return fmt.Errorf("UserUseCase - Register - uc.uow.Do: %w", err)
+}
+```
+
+Rules:
+
+- The context handed to the callback carries the transaction. Repositories pick it up with
+  `r.Querier(ctx)`, so a repository joins a transaction without a new interface method and without
+  a second constructor.
+- The transaction is committed when the callback returns nil and rolled back when it returns an
+  error. Sentinel errors survive the wrapping, so `errors.Is` still reaches `entity.Err*`.
+- `Do` on a context that already carries a transaction reuses it. Nested use cases therefore do not
+  open a second transaction, which would deadlock on a pool with one connection.
+- Only Postgres is transactional here. Redis sessions and MinIO blobs stay outside the unit of
+  work; compensate for them in the use case if a failure must not leave them behind.
+
 ## API versioning
 
 Routes are grouped under a version package (`restapi/v1/`). A v2 means a new sibling package with
@@ -192,5 +234,27 @@ misleading `error: file does not exist` when none is left, so the Makefile wraps
 the subcommand bare. Never run a bare `migrate down`: with no argument it prompts to revert _all_
 migrations.
 
+`make schema` dumps the live schema to `docs/schema.sql` with Atlas
+(`atlas schema inspect`). It reads the running database, so it needs one up; when none is
+reachable it prints `schema: database not reachable, skipping` and exits 0, which keeps it
+safe in scripts that may run without the stack. Regenerate the file after any migration
+change and commit it — the diff is the schema change.
+
+`users.role` holds `admin` or `user`, and the database enforces it with a CHECK constraint
+(`users_role_check`). Registration always creates a `user`; the first admin is granted out of band
+with `UPDATE users SET role = 'admin' WHERE email = '...';` — the admin page cannot do it, because
+the page itself needs an admin.
+
+The role travels with the session: Redis holds `{user_id, role}` under `session:<id>`, next to the
+index of that account's live sessions under `user-sessions:<user_id>`. A guard therefore reads the
+role from Redis and never touches the database. The price is that the role in a session is a
+snapshot, so changing a role has to end the sessions that carry the old one: `SetRole` updates the
+role and then calls `DeleteUserSessions`, and the account picks the new role up on its next sign-in.
+
 Object storage is S3-compatible, run as the `minio` service (`docker.io/pgsty/silo`, a maintained
 MinIO fork — the upstream image is no longer published) on `:9000` (S3) and `:9001` (console).
+
+The bucket name comes from `MINIO_BUCKET` (default `files`) and the app creates the bucket itself at
+startup (`pkg/minio.EnsureBucket`), the same way it applies migrations — a fresh volume needs no
+console step, and a second start is a no-op. Keep the bucket private: the browser reaches objects
+through presigned URLs, not through the console or a public policy.
