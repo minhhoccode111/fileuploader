@@ -53,6 +53,7 @@ type (
 		AccessKey string `env:"MINIO_ACCESS_KEY,required"`
 		SecretKey string `env:"MINIO_SECRET_KEY,required"`
 		UseSSL    bool   `env:"MINIO_USE_SSL" envDefault:"false"`
+		Bucket    string `env:"MINIO_BUCKET" envDefault:"files"`
 	}
 
 	// Session -.

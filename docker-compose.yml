@@ -26,6 +26,7 @@ x-backend-app-environment: &x-backend-app-environment
   MINIO_ACCESS_KEY: "minioadmin"
   MINIO_SECRET_KEY: "P@55w0rd"
   MINIO_USE_SSL: "false"
+  MINIO_BUCKET: "files"
   # Session
   SESSION_TTL: "24h"
 

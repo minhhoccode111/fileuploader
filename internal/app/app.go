@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -113,6 +114,12 @@ func Run(cfg *config.Config) {
 		l.Fatal(fmt.Errorf("app - Run - minio.New: %w", err))
 	}
 	defer minioClient.Close()
+
+	// Bucket
+	err = minioClient.EnsureBucket(context.Background(), cfg.MinIO.Bucket)
+	if err != nil {
+		l.Fatal(fmt.Errorf("app - Run - minioClient.EnsureBucket: %w", err))
+	}
 
 	uc := initUseCases(pg, redisConn, cfg.Session.TTL)
 	s := initServers(cfg, uc, l)

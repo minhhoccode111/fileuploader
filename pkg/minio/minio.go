@@ -28,6 +28,8 @@ type MinIO struct {
 	transport *http.Transport
 
 	Client *miniogo.Client
+
+	buckets bucketClient
 }
 
 // New -.
@@ -55,6 +57,7 @@ func New(endpoint, accessKey, secretKey string, opts ...Option) (*MinIO, error) 
 	}
 
 	m.Client = client
+	m.buckets = client
 
 	err = m.check(context.Background())
 	if err != nil {
