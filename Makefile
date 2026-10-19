@@ -10,6 +10,7 @@ endif
 BASE_STACK = docker compose -f docker-compose.yml
 ALL_STACK = $(BASE_STACK)
 MIGRATE = migrate -path migrations -database '$(PG_URL)?sslmode=disable'
+SCHEMA_FILE = docs/schema.sql
 
 # Frontend tooling — pin every version.
 TAILWIND_VERSION = v4.3.3
@@ -197,6 +198,21 @@ migrate-redo: ### revert and re-apply the last migration (no-op if none)
 	$(MIGRATE) down 1 && $(MIGRATE) up 1
 .PHONY: migrate-redo
 
+# Dump the live schema with Atlas. It reads the running database, so the target
+# skips instead of failing when no database is reachable.
+schema: ### dump the current database schema to docs/schema.sql
+	@if ! pg_isready -d "$(PG_URL)" -q; then \
+		echo "schema: database not reachable, skipping"; exit 0; \
+	fi; \
+	if ! command -v atlas >/dev/null 2>&1; then \
+		echo "schema: atlas not found, install it from https://atlasgo.io"; exit 1; \
+	fi; \
+	mkdir -p $(dir $(SCHEMA_FILE)) && \
+	atlas schema inspect -u "$(PG_URL)?sslmode=disable" --format '{{ sql . }}' > $(SCHEMA_FILE).tmp && \
+	mv $(SCHEMA_FILE).tmp $(SCHEMA_FILE) || { rm -f $(SCHEMA_FILE).tmp; echo "schema: dump failed"; exit 1; }; \
+	echo "schema: wrote $(SCHEMA_FILE)"
+.PHONY: schema
+
 # `make migrate-create <name>` passes <name> as a second goal; declare it as a no-op.
 ifneq ($(filter migrate-create,$(MAKECMDGOALS)),)
 ifneq ($(word 2,$(MAKECMDGOALS)),)
@@ -210,5 +226,5 @@ bin-deps: $(TAILWIND) ### install pinned tool binaries (air, templ, migrate, tai
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 .PHONY: bin-deps
 
-pre-commit: deps templ-generate assets css-build format linter-golangci ### run pre-commit
+pre-commit: deps templ-generate assets css-build format schema linter-golangci ### run pre-commit
 .PHONY: pre-commit
