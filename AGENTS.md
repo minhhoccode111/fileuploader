@@ -100,8 +100,19 @@ The app serves `web/static` at `/static` (`app.Static`) and renders `web/templat
 Pages take a `templates.View` (`web/templates/view.go`) that carries the per-request state: whether
 the visitor is signed in and whether they hold the admin role. The web controller builds it from
 the account the guard parked, so a template never asks who the visitor is. A role-gated link (the
-`Admin` item in the sidebar) is only a hint — the route behind it carries its own guard
-(`middleware.RequireAdmin`), so a direct request is refused too.
+items of the admin section in the sidebar) is only a hint — the route behind it carries its own
+guard (`middleware.RequireAdmin`), so a direct request is refused too.
+
+The admin area is a namespace: `/admin` holds no page of its own and sends the visitor to
+`/admin/users`, the landing page of the area. The sidebar shows the area as a toggle, not a link:
+it opens the links of the pages under it, and it starts open when the page on screen lives in the
+area. Every redirect goes through `middleware.Redirect`, which answers an htmx request with
+`HX-Location` and every other request with a 302, so both navigation styles land on the same page.
+
+The account list on `/admin/users` loads itself: the page renders a skeleton, then htmx asks
+`/htmx/admin/users` for the rows and swaps them in. The same element reloads the rows when a role
+changes, because the role form answers with `HX-Trigger: usersUpdated`. The list is a read model
+(`entity.UserListItem`), so the password hash never leaves the database.
 
 `make dev` runs air (rebuilds Go and templ on save) together with the Tailwind watcher. It needs
 Postgres up first: `make compose-up`. air only watches `.go` and `.templ`; CSS changes are handled
@@ -110,6 +121,11 @@ by the Tailwind watcher, so a class edit does not restart the server.
 Alpine shorthands (`@click`, `:class`) pass through templ unchanged; use `x-on:` / `x-bind:` only if
 you prefer the long form. To feed Go data into `x-data`, use a templ expression:
 `<div x-data={ templ.JSONString(data) }>`. See `.opencode/skills/alpinejs/SKILL.md`.
+
+`middleware.Latency` (`internal/controller/web/middleware/latency.go`) sleeps before every request
+for a random duration between `HTTP_FAKE_LATENCY_MIN` and `HTTP_FAKE_LATENCY_MAX` (100ms and 200ms
+by default), so the pages can be checked against a slow network. A non-positive max turns the delay
+off. The liveness probe at `/healthz` waits for it too, so keep the range small in production.
 
 ## The handler contract
 

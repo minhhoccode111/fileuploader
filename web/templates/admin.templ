@@ -1,13 +1,16 @@
 package templates
 
-templ Admin(view View) {
-	@Layout("Admin", view) {
-		@AdminContent()
+import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+
+// AdminUsers is the user management page of the admin area.
+templ AdminUsers(view View) {
+	@Layout("Admin · Users", view) {
+		@AdminUsersContent()
 	}
 }
 
-// AdminContent is the fragment htmx swaps into <main> on client-side navigation.
-templ AdminContent() {
+// AdminUsersContent is the fragment htmx swaps into <main> on client-side navigation.
+templ AdminUsersContent() {
 	<section class="card bg-base-100 shadow">
 		<div class="card-body gap-4">
 			<h1 class="text-4xl font-bold tracking-tight">Hello from Admin</h1>
@@ -16,8 +19,26 @@ templ AdminContent() {
 	</section>
 	<section class="card bg-base-100 shadow">
 		<div class="card-body gap-4">
-			<h2 class="text-2xl font-bold tracking-tight">Change a role</h2>
-			<p class="text-base-content/70 max-w-prose">The role travels with the session, so the account is signed out everywhere and picks the new role up on its next sign-in.</p>
+			<h2 class="text-2xl font-bold tracking-tight">Users</h2>
+			<p class="text-base-content/70 max-w-prose">The account list arrives on its own, right after the page.</p>
+			// The rows are fetched by htmx once the page is on the screen, so
+			// the page itself never waits for the query. The same element
+			// reloads the rows when a role changes.
+			<div
+				id="admin-users"
+				class="overflow-x-auto"
+				hx-get="/htmx/admin/users"
+				hx-trigger="load, usersUpdated from:body"
+				hx-swap="innerHTML"
+			>
+				@AdminUsersLoading()
+			</div>
+		</div>
+	</section>
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h2 class="text-2xl font-bold tracking-tight">Role</h2>
+			<p class="text-base-content/70 max-w-prose">A role can still be changed by email.</p>
 			<form
 				id="role-form"
 				class="flex flex-col gap-4 py-2"
@@ -40,6 +61,76 @@ templ AdminContent() {
 				<button class="btn btn-primary w-fit" type="submit">Apply</button>
 				<div id="role-message" role="status"></div>
 			</form>
+		</div>
+	</section>
+}
+
+// AdminUsersLoading is what the account table shows while the rows are on their
+// way.
+templ AdminUsersLoading() {
+	<div class="flex w-full flex-col gap-3">
+		<div class="skeleton h-10 w-full"></div>
+		<div class="skeleton h-10 w-full"></div>
+		<div class="skeleton h-10 w-full"></div>
+	</div>
+}
+
+// AdminUsersTable is the table of accounts. The admin page asks for it with
+// htmx once the page is on the screen.
+templ AdminUsersTable(rows []response.UserRow) {
+	<table class="table table-zebra">
+		<thead>
+			<tr>
+				<th>Username</th>
+				<th>Email</th>
+				<th>Role</th>
+				<th>Joined</th>
+			</tr>
+		</thead>
+		<tbody>
+			if len(rows) == 0 {
+				<tr>
+					<td class="text-base-content/70" colspan="4">No accounts yet.</td>
+				</tr>
+			} else {
+				for _, row := range rows {
+					<tr>
+						<td class="font-medium">{ row.Username }</td>
+						<td>{ row.Email }</td>
+						<td>
+							if row.IsAdmin {
+								<span class="badge badge-primary">admin</span>
+							} else {
+								<span class="badge badge-neutral">user</span>
+							}
+						</td>
+						<td>{ row.Joined }</td>
+					</tr>
+				}
+			}
+		</tbody>
+	</table>
+}
+
+// AdminSettings is the settings page of the admin area.
+templ AdminSettings(view View) {
+	@Layout("Admin · Settings", view) {
+		@AdminSettingsContent()
+	}
+}
+
+// AdminSettingsContent is the fragment htmx swaps into <main> on client-side navigation.
+templ AdminSettingsContent() {
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h1 class="text-4xl font-bold tracking-tight">Hello from Admin Settings</h1>
+			<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in as an admin.</p>
+		</div>
+	</section>
+	<section class="card bg-base-100 shadow">
+		<div class="card-body gap-4">
+			<h2 class="text-2xl font-bold tracking-tight">Settings</h2>
+			<p class="text-base-content/70 max-w-prose">The settings of the app land here. Until then, this page only says hello.</p>
 		</div>
 	</section>
 }

@@ -14,6 +14,9 @@ x-backend-app-environment: &x-backend-app-environment
   # HTTP settings
   HTTP_PORT: "8090"
   HTTP_USE_PREFORK_MODE: "true"
+  # Fake network latency
+  HTTP_FAKE_LATENCY_MIN: "100ms"
+  HTTP_FAKE_LATENCY_MAX: "200ms"
   # Logger
   LOG_LEVEL: "debug"
   # PG

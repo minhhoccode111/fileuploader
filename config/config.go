@@ -29,6 +29,10 @@ type (
 	http struct {
 		Port           string `env:"HTTP_PORT,required"`
 		UsePreforkMode bool   `env:"HTTP_USE_PREFORK_MODE" envDefault:"false"`
+		// FakeLatencyMin and FakeLatencyMax bound the delay every request
+		// waits for. A non-positive max turns the fake latency off.
+		FakeLatencyMin time.Duration `env:"HTTP_FAKE_LATENCY_MIN" envDefault:"100ms"`
+		FakeLatencyMax time.Duration `env:"HTTP_FAKE_LATENCY_MAX" envDefault:"200ms"`
 	}
 
 	// Log -.

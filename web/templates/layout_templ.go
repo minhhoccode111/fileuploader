@@ -11,6 +11,10 @@ import templruntime "github.com/a-h/templ/runtime"
 // sidebarState seeds the drawer from the viewport width: expanded on lg+, collapsed below.
 const sidebarState = "{ open: window.matchMedia('(min-width: 1024px)').matches }"
 
+// adminMenuState opens the admin section when the page on screen lives in it,
+// so a visitor who lands on an admin page sees where they are.
+const adminMenuState = "{ adminOpen: window.location.pathname.startsWith('/admin') }"
+
 func Layout(title string, view View) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -39,7 +43,7 @@ func Layout(title string, view View) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 12, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 16, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -52,7 +56,7 @@ func Layout(title string, view View) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(sidebarState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 30, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 34, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -190,28 +194,41 @@ func sidebarNav(view View, oob bool) templ.Component {
 			}
 		}
 		if view.Admin {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li><a href=\"/admin\" hx-get=\"/admin\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Admin\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"></path></svg> <span class=\"is-drawer-close:hidden\">Admin</span></a></li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li x-data=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var7 string
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(adminMenuState)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 167, Col: 31}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"><button type=\"button\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Admin\" @click=\"adminOpen = !adminOpen\" :aria-expanded=\"adminOpen\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"></path></svg> <span class=\"is-drawer-close:hidden\">Admin</span> <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"is-drawer-close:hidden size-4 transition-transform\" :class=\"adminOpen ? 'rotate-180' : ''\"><path d=\"m6 9 6 6 6-6\"></path></svg></button><ul class=\"is-drawer-close:hidden grid grid-rows-[0fr] transition-[grid-template-rows] duration-300\" :class=\"adminOpen ? 'grid-rows-[1fr]' : ''\"><li class=\"min-h-0 flex-nowrap gap-1 overflow-hidden\"><a class=\"shrink-0\" href=\"/admin/users\" hx-get=\"/admin/users\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"></path> <path d=\"M16 3.13a4 4 0 0 1 0 7.75\"></path></svg> <span class=\"is-drawer-close:hidden\">Users</span></a> <a class=\"shrink-0\" href=\"/admin/settings\" hx-get=\"/admin/settings\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><circle cx=\"12\" cy=\"12\" r=\"3\"></circle> <path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"></path></svg> <span class=\"is-drawer-close:hidden\">Settings</span></a></li></ul></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if !view.Authenticated {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<li><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Login\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"></path> <path d=\"m10 17 5-5-5-5\"></path> <path d=\"M15 12H3\"></path></svg> <span class=\"is-drawer-close:hidden\">Login</span></a></li><li><a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Register\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M19 8v6\"></path> <path d=\"M22 11h-6\"></path></svg> <span class=\"is-drawer-close:hidden\">Register</span></a></li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<li><a href=\"/login\" hx-get=\"/login\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Login\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"></path> <path d=\"m10 17 5-5-5-5\"></path> <path d=\"M15 12H3\"></path></svg> <span class=\"is-drawer-close:hidden\">Login</span></a></li><li><a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Register\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"></path> <circle cx=\"9\" cy=\"7\" r=\"4\"></circle> <path d=\"M19 8v6\"></path> <path d=\"M22 11h-6\"></path></svg> <span class=\"is-drawer-close:hidden\">Register</span></a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</ul>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</ul>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if view.Authenticated {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<ul class=\"menu w-full px-2 pb-2\"><li><a href=\"/logout\" hx-get=\"/logout\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Logout\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"></path> <path d=\"m16 17 5-5-5-5\"></path> <path d=\"M21 12H9\"></path></svg> <span class=\"is-drawer-close:hidden\">Logout</span></a></li></ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<ul class=\"menu w-full px-2 pb-2\"><li><a href=\"/logout\" hx-get=\"/logout\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"is-drawer-close:tooltip is-drawer-close:tooltip-right\" data-tip=\"Logout\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-5\"><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"></path> <path d=\"m16 17 5-5-5-5\"></path> <path d=\"M21 12H9\"></path></svg> <span class=\"is-drawer-close:hidden\">Logout</span></a></li></ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

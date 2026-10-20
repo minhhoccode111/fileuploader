@@ -7,6 +7,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/web/templates"
@@ -24,6 +25,17 @@ const (
 	// _sessionLocal is where the auth guard parks the session it resolved, which
 	// is how a handler learns who the visitor is and what role they hold.
 	_sessionLocal = "session"
+
+	// _adminPath is the admin area. It holds no page of its own: it sends the
+	// visitor to the landing page of the area.
+	_adminPath = "/admin"
+
+	// _adminUsersPath is the user management page, the landing page of the
+	// admin area.
+	_adminUsersPath = "/admin/users"
+
+	// _adminSettingsPath is the settings page of the admin area.
+	_adminSettingsPath = "/admin/settings"
 )
 
 // renderErrors renders the error fragment htmx swaps into a form's error target.
@@ -68,10 +80,23 @@ func (c *Controller) register(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.Register(c.view(ctx)), templates.RegisterContent())
 }
 
-// admin renders the admin page. The guard has already checked the role, so the
-// handler only renders.
+// admin sends the visitor to the landing page of the admin area. The area is a
+// namespace: every admin page lives under it, and the area itself holds no
+// page of its own. The guard has already checked the role.
 func (c *Controller) admin(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Admin(c.view(ctx)), templates.AdminContent())
+	return middleware.Redirect(ctx, _adminUsersPath)
+}
+
+// adminUsers renders the user management page. The guard has already checked
+// the role, so the handler only renders.
+func (c *Controller) adminUsers(ctx *fiber.Ctx) error {
+	return c.render(ctx, templates.AdminUsers(c.view(ctx)), templates.AdminUsersContent())
+}
+
+// adminSettings renders the settings page. The guard has already checked the
+// role, so the handler only renders.
+func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
+	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent())
 }
 
 // share renders a placeholder page for the Share section. It is auth-only, so

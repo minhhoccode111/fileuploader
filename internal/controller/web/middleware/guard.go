@@ -2,28 +2,19 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
-// Cookie, target and redirect names shared by the page guards. The cookie name
-// mirrors the one the web controller uses when it sets and clears the session,
-// and the target matches the <main> element htmx swaps on client-side navigation.
+// Cookie and redirect names shared by the page guards. The cookie name
+// mirrors the one the web controller uses when it sets and clears the session.
 const (
 	_authCookieName = "access_token"
 	_homePath       = "/"
 	_loginPath      = "/login"
 	_userIDLocal    = "userID"
 	_sessionLocal   = "session"
-
-	_pageContent   = "#page-content"
-	_swapInnerHTML = "innerHTML"
-
-	_hxRequestHeader  = "HX-Request"
-	_hxLocationHeader = "HX-Location"
-	_hxRequestTrue    = "true"
 )
 
 // sessionAuthenticator resolves a session identifier to the session behind it.
@@ -39,7 +30,7 @@ func RequireAuth(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
 		session, ok := authenticatedSession(ctx, auth)
 		if !ok {
-			return redirectTo(ctx, _loginPath)
+			return Redirect(ctx, _loginPath)
 		}
 
 		parkSession(ctx, session)
@@ -56,11 +47,11 @@ func RequireAdmin(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
 		session, ok := authenticatedSession(ctx, auth)
 		if !ok {
-			return redirectTo(ctx, _loginPath)
+			return Redirect(ctx, _loginPath)
 		}
 
 		if session.Role != entity.UserRoleAdmin {
-			return redirectTo(ctx, _homePath)
+			return Redirect(ctx, _homePath)
 		}
 
 		parkSession(ctx, session)
@@ -74,7 +65,7 @@ func RequireAdmin(auth sessionAuthenticator) func(*fiber.Ctx) error {
 func RequireGuest(auth sessionAuthenticator) func(*fiber.Ctx) error {
 	return func(ctx *fiber.Ctx) error {
 		if _, ok := authenticatedSession(ctx, auth); ok {
-			return redirectTo(ctx, _homePath)
+			return Redirect(ctx, _homePath)
 		}
 
 		return ctx.Next()
@@ -102,24 +93,4 @@ func authenticatedSession(ctx *fiber.Ctx, auth sessionAuthenticator) (entity.Ses
 	}
 
 	return session, true
-}
-
-// redirectTo sends the visitor to a path. htmx requests receive HX-Location so
-// htmx swaps the destination fragment into #page-content and pushes the URL,
-// matching the app's normal client-side navigation. Every other request gets a
-// 302, which the browser follows as a full page load.
-func redirectTo(ctx *fiber.Ctx, path string) error {
-	if ctx.Get(_hxRequestHeader) == _hxRequestTrue {
-		ctx.Set(_hxLocationHeader, partialLocation(path))
-
-		return nil
-	}
-
-	return ctx.Redirect(path, fiber.StatusFound)
-}
-
-// partialLocation builds the HX-Location value for an in-page redirect: load
-// path, swap the fragment into #page-content, and let htmx push the path.
-func partialLocation(path string) string {
-	return fmt.Sprintf(`{"path":%q,"target":%q,"swap":%q}`, path, _pageContent, _swapInnerHTML)
 }
