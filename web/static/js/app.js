@@ -12,3 +12,17 @@ document.addEventListener("htmx:before:request", (event) => {
   if (ctx.request.action !== window.location.pathname + window.location.search) return;
   event.preventDefault();
 });
+
+// Show the top bar while a request is in flight. The whole page swaps in one
+// step, so without this a slow response looks like a dead click. The bar is
+// hidden by htmx's own .htmx-indicator rule until the class is added.
+const progressBar = document.getElementById("nav-progress");
+
+document.addEventListener("htmx:before:request", (event) => {
+  if (event.defaultPrevented) return;
+  progressBar.classList.add("htmx-request");
+});
+
+document.addEventListener("htmx:finally:request", () => {
+  progressBar.classList.remove("htmx-request");
+});

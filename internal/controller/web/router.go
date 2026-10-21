@@ -37,6 +37,7 @@ func NewRouter(
 	// Options
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
+	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
 
 	// K8s probe
 	app.Get("/healthz", func(ctx *fiber.Ctx) error {
@@ -51,6 +52,8 @@ func NewRouter(
 	app.Get("/share", middleware.RequireAuth(u), c.share)
 	app.Get("/public", middleware.RequireAuth(u), c.public)
 	app.Get("/admin", middleware.RequireAdmin(u), c.admin)
+	app.Get(_adminUsersPath, middleware.RequireAdmin(u), c.adminUsers)
+	app.Get(_adminSettingsPath, middleware.RequireAdmin(u), c.adminSettings)
 	app.Get("/login", middleware.RequireGuest(u), c.login)
 	app.Get("/register", middleware.RequireGuest(u), c.register)
 	app.Get("/logout", middleware.RequireAuth(u), c.logout)
@@ -60,4 +63,6 @@ func NewRouter(
 	app.Post("/htmx/register", c.registerSubmit)
 	app.Post("/htmx/logout", c.logoutSubmit)
 	app.Post("/htmx/admin/role", middleware.RequireAdmin(u), c.roleSubmit)
+
+	app.Get(_adminUsersTablePath, middleware.RequireAdmin(u), c.adminUsersTable)
 }

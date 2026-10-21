@@ -151,6 +151,16 @@ func (uc *UseCase) GetUser(ctx context.Context, userID string) (entity.User, err
 	return user, nil
 }
 
+// ListUsers returns every account as the read model a list renders.
+func (uc *UseCase) ListUsers(ctx context.Context) ([]entity.UserListItem, error) {
+	users, err := uc.repo.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("UserUseCase - ListUsers - uc.repo.List: %w", err)
+	}
+
+	return users, nil
+}
+
 // SetRole changes the role of an account and ends its live sessions. The role
 // travels with the session, so the sessions have to go: the account picks the
 // new role up on its next sign-in, and nobody keeps a role that was taken away.

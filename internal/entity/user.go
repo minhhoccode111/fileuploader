@@ -25,6 +25,16 @@ func (r UserRole) IsValid() bool {
 	}
 }
 
+// UserListItem is the read model of an account in a list. It carries no
+// password hash, so the hash never leaves the database.
+type UserListItem struct {
+	Username  string
+	Email     string
+	Role      UserRole
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // User -.
 type User struct {
 	ID           string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`

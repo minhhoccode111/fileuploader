@@ -7,10 +7,37 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 	"github.com/minhhoccode111/fileuploader/web/templates"
 )
+
+// _hxTriggerHeader carries the event htmx fires on the client. The account list
+// listens for it, so a role change reloads the rows it just altered.
+const (
+	_hxTriggerHeader   = "HX-Trigger"
+	_usersUpdatedEvent = "usersUpdated"
+)
+
+// adminUsersTable renders the account table htmx swaps into the list on the
+// page. It is a request of its own, so the page itself never waits for the
+// query.
+func (c *Controller) adminUsersTable(ctx *fiber.Ctx) error {
+	list, err := c.u.ListUsers(ctx.UserContext())
+	if err != nil {
+		c.l.Error(fmt.Errorf("web - adminUsersTable - uc.ListUsers: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	rows := make([]response.UserRow, 0, len(list))
+	for i := range list {
+		rows = append(rows, response.NewUserRow(&list[i]))
+	}
+
+	return c.renderPage(ctx, templates.AdminUsersTable(rows))
+}
 
 // roleSubmit changes the role of an account. The role travels with the
 // session, so the account is signed out everywhere: it picks the new role up
@@ -36,6 +63,8 @@ func (c *Controller) roleSubmit(ctx *fiber.Ctx) error {
 	if err != nil {
 		return c.roleError(ctx, err)
 	}
+
+	ctx.Set(_hxTriggerHeader, _usersUpdatedEvent)
 
 	return c.renderPage(ctx, templates.RoleUpdated(req.Email, req.Role))
 }

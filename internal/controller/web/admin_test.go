@@ -106,13 +106,13 @@ func TestAdminPagesRenderTheGreeting(t *testing.T) {
 		headers     map[string]string
 		notWantBody string
 	}{
-		{name: "the users page", path: _adminUsersPath, want: "Hello from Admin"},
-		{name: "the users page with a trailing slash", path: _adminUsersPath + "/", want: "Hello from Admin"},
+		{name: "the users page", path: _adminUsersPath, want: "Users"},
+		{name: "the users page with a trailing slash", path: _adminUsersPath + "/", want: "Users"},
 		{name: "the settings page", path: _adminSettingsPath, want: "Hello from Admin Settings"},
 		{
 			name:        "the fragment",
 			path:        _adminUsersPath,
-			want:        "Hello from Admin",
+			want:        "Users",
 			headers:     map[string]string{"HX-Request-Type": "partial"},
 			notWantBody: "<!DOCTYPE html>",
 		},

@@ -4,19 +4,13 @@ import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 
 // AdminUsers is the user management page of the admin area.
 templ AdminUsers(view View) {
-	@Layout("Admin · Users", view) {
+	@AdminLayout("Admin · Users", view) {
 		@AdminUsersContent()
 	}
 }
 
 // AdminUsersContent is the fragment htmx swaps into <main> on client-side navigation.
 templ AdminUsersContent() {
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h1 class="text-4xl font-bold tracking-tight">Hello from Admin</h1>
-			<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in as an admin.</p>
-		</div>
-	</section>
 	<section class="card bg-base-100 shadow">
 		<div class="card-body gap-4">
 			<h2 class="text-2xl font-bold tracking-tight">Users</h2>
@@ -35,34 +29,6 @@ templ AdminUsersContent() {
 			</div>
 		</div>
 	</section>
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h2 class="text-2xl font-bold tracking-tight">Role</h2>
-			<p class="text-base-content/70 max-w-prose">A role can still be changed by email.</p>
-			<form
-				id="role-form"
-				class="flex flex-col gap-4 py-2"
-				hx-post="/htmx/admin/role"
-				hx-target="#role-message"
-				hx-swap="innerHTML"
-				novalidate
-			>
-				<label class="flex flex-col gap-1">
-					<span class="text-sm font-medium">Email</span>
-					<input class="input w-full" type="email" name="email" required maxlength="255" autocomplete="off"/>
-				</label>
-				<label class="flex flex-col gap-1">
-					<span class="text-sm font-medium">Role</span>
-					<select class="select w-full" name="role">
-						<option value="user">user</option>
-						<option value="admin">admin</option>
-					</select>
-				</label>
-				<button class="btn btn-primary w-fit" type="submit">Apply</button>
-				<div id="role-message" role="status"></div>
-			</form>
-		</div>
-	</section>
 }
 
 // AdminUsersLoading is what the account table shows while the rows are on their
@@ -78,19 +44,20 @@ templ AdminUsersLoading() {
 // AdminUsersTable is the table of accounts. The admin page asks for it with
 // htmx once the page is on the screen.
 templ AdminUsersTable(rows []response.UserRow) {
-	<table class="table table-zebra">
+	<table class="table table-zebra w-full">
 		<thead>
 			<tr>
 				<th>Username</th>
 				<th>Email</th>
 				<th>Role</th>
 				<th>Joined</th>
+				<th>Updated</th>
 			</tr>
 		</thead>
 		<tbody>
 			if len(rows) == 0 {
 				<tr>
-					<td class="text-base-content/70" colspan="4">No accounts yet.</td>
+					<td class="text-base-content/70" colspan="5">No accounts yet.</td>
 				</tr>
 			} else {
 				for _, row := range rows {
@@ -105,6 +72,7 @@ templ AdminUsersTable(rows []response.UserRow) {
 							}
 						</td>
 						<td>{ row.Joined }</td>
+						<td>{ row.Updated }</td>
 					</tr>
 				}
 			}
@@ -114,7 +82,7 @@ templ AdminUsersTable(rows []response.UserRow) {
 
 // AdminSettings is the settings page of the admin area.
 templ AdminSettings(view View) {
-	@Layout("Admin · Settings", view) {
+	@AdminLayout("Admin · Settings", view) {
 		@AdminSettingsContent()
 	}
 }

@@ -98,6 +98,45 @@ func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRo
 	return nil
 }
 
+// List returns every account, newest first, as the read model a list renders.
+// The password hash is not selected, so it never leaves the database.
+func (r *Repo) List(ctx context.Context) ([]entity.UserListItem, error) {
+	sql, args, err := r.Builder.
+		Select("username, email, role, created_at, updated_at").
+		From("users").
+		OrderBy("created_at DESC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - List - r.Builder: %w", err)
+	}
+
+	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo - List - r.Querier(ctx).Query: %w", err)
+	}
+
+	defer rows.Close()
+
+	var users []entity.UserListItem
+
+	for rows.Next() {
+		var user entity.UserListItem
+
+		err = rows.Scan(&user.Username, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("UserRepo - List - rows.Scan: %w", err)
+		}
+
+		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("UserRepo - List - rows.Err: %w", err)
+	}
+
+	return users, nil
+}
+
 func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, error) {
 	sql, args, err := r.Builder.
 		Select("id, username, email, password_hash, role, created_at, updated_at").

@@ -3,8 +3,8 @@ tmp_dir = "tmp"
 
 [build]
   cmd = "templ generate && go build -tags migrate -o ./tmp/app ./cmd/app"
-  bin = "./tmp/app"
-  include_ext = ["go", "templ"]
+  bin = "./dev-run.sh"
+  include_ext = ["go", "templ", "env"]
   exclude_dir = ["tmp", "bin", "web/static", "web/plugins", ".git", "migrations"]
   exclude_regex = ["_templ.go", "_test.go"]
   delay = 500

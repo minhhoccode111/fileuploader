@@ -40,6 +40,10 @@ func (f *fakeUserRepo) GetByEmail(_ context.Context, _ string) (entity.User, err
 	return f.user, f.err
 }
 
+func (f *fakeUserRepo) List(_ context.Context) ([]entity.UserListItem, error) {
+	return nil, f.err
+}
+
 func (f *fakeUserRepo) UpdateRole(_ context.Context, _ string, role entity.UserRole) error {
 	if f.err != nil {
 		return f.err

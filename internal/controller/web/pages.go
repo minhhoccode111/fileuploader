@@ -34,6 +34,10 @@ const (
 	// admin area.
 	_adminUsersPath = "/admin/users"
 
+	// _adminUsersTablePath serves the account table the user management page
+	// asks for once it is on the screen.
+	_adminUsersTablePath = "/htmx/admin/users"
+
 	// _adminSettingsPath is the settings page of the admin area.
 	_adminSettingsPath = "/admin/settings"
 )
