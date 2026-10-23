@@ -18,6 +18,9 @@ DAISYUI_VERSION  = v5.7.50
 HTMX_VERSION     = 4.0.0
 ALPINE_VERSION   = 3.17.4
 
+# Backend tooling that ships a release binary.
+ATLAS_VERSION = v1.3.0
+
 WEB_DIR     = web
 WEB_SRC     = $(WEB_DIR)/app.css
 WEB_OUT     = $(WEB_DIR)/static
@@ -25,20 +28,28 @@ WEB_PLUGINS = $(WEB_DIR)/plugins
 
 BIN_DIR  = $(CURDIR)/bin
 TAILWIND = $(BIN_DIR)/tailwindcss
+ATLAS    = $(BIN_DIR)/atlas
 
-# Tailwind ships prebuilt binaries per platform; pick the right one.
+# Tailwind and Atlas ship prebuilt binaries per platform; pick the right one.
 OS   := $(shell uname -s | tr 'A-Z' 'a-z')
 ARCH := $(shell uname -m)
 ifeq ($(OS),darwin)
   ifeq ($(ARCH),arm64)
     TAILWIND_PLATFORM := macos-arm64
+    ATLAS_PLATFORM    := darwin-arm64
   else
     TAILWIND_PLATFORM := macos-x64
+    ATLAS_PLATFORM    := darwin-amd64
   endif
 else ifeq ($(ARCH),aarch64)
   TAILWIND_PLATFORM := linux-arm64
+  ATLAS_PLATFORM    := linux-arm64
+else ifeq ($(ARCH),arm64)
+  TAILWIND_PLATFORM := linux-arm64
+  ATLAS_PLATFORM    := linux-arm64
 else
   TAILWIND_PLATFORM := linux-x64
+  ATLAS_PLATFORM    := linux-amd64
 endif
 
 # HELP =================================================================================================================
@@ -87,6 +98,11 @@ run: deps ### run the app locally
 $(TAILWIND):
 	@mkdir -p $(BIN_DIR)
 	curl -fsSL -o $@ https://github.com/tailwindlabs/tailwindcss/releases/download/$(TAILWIND_VERSION)/tailwindcss-$(TAILWIND_PLATFORM)
+	@chmod +x $@
+
+$(ATLAS):
+	@mkdir -p $(BIN_DIR)
+	curl -fsSL -o $@ https://release.ariga.io/atlas/atlas-$(ATLAS_PLATFORM)-$(ATLAS_VERSION)
 	@chmod +x $@
 
 $(WEB_OUT)/js/htmx.min.js:
@@ -200,15 +216,12 @@ migrate-redo: ### revert and re-apply the last migration (no-op if none)
 
 # Dump the live schema with Atlas. It reads the running database, so the target
 # skips instead of failing when no database is reachable.
-schema: ### dump the current database schema to docs/schema.sql
+schema: $(ATLAS) ### dump the current database schema to docs/schema.sql
 	@if ! pg_isready -d "$(PG_URL)" -q; then \
 		echo "schema: database not reachable, skipping"; exit 0; \
 	fi; \
-	if ! command -v atlas >/dev/null 2>&1; then \
-		echo "schema: atlas not found, install it from https://atlasgo.io"; exit 1; \
-	fi; \
 	mkdir -p $(dir $(SCHEMA_FILE)) && \
-	atlas schema inspect -u "$(PG_URL)?sslmode=disable" --format '{{ sql . }}' > $(SCHEMA_FILE).tmp && \
+	$(ATLAS) schema inspect -u "$(PG_URL)?sslmode=disable" --format '{{ sql . }}' > $(SCHEMA_FILE).tmp && \
 	mv $(SCHEMA_FILE).tmp $(SCHEMA_FILE) || { rm -f $(SCHEMA_FILE).tmp; echo "schema: dump failed"; exit 1; }; \
 	echo "schema: wrote $(SCHEMA_FILE)"
 .PHONY: schema
@@ -221,7 +234,7 @@ $(word 2,$(MAKECMDGOALS)):
 endif
 endif
 
-bin-deps: $(TAILWIND) ### install pinned tool binaries (air, templ, migrate, tailwindcss)
+bin-deps: $(TAILWIND) $(ATLAS) ### install pinned tool binaries (air, templ, migrate, tailwindcss, atlas)
 	go install tool
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 .PHONY: bin-deps
