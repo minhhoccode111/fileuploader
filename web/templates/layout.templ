@@ -7,27 +7,40 @@ const sidebarState = "{ open: window.matchMedia('(min-width: 1024px)').matches }
 // so a visitor who lands on an admin page sees where they are.
 const adminMenuState = "{ adminOpen: window.location.pathname.startsWith('/admin') }"
 
+// Layout is the document shell of a content page. The pages carry their own
+// width: see PageColumn.
 templ Layout(title string, view View) {
-	@pageLayout(title, view, false) {
+	@pageLayout(title, view) {
 		{ children... }
 	}
 }
 
-// AdminLayout is Layout without the content-width cap, so the admin area uses
-// the whole column beside the sidebar.
+// AdminLayout is Layout with a different name: the admin pages are the pages
+// that ask for the wide column, and the width itself travels with their
+// fragments — see PageColumnWide.
 templ AdminLayout(title string, view View) {
-	@pageLayout(title, view, true) {
+	@pageLayout(title, view) {
 		{ children... }
 	}
 }
 
-// contentClass is the width treatment of the content column.
-func contentClass(wide bool) string {
-	if wide {
-		return "w-full flex-1 px-4 py-10"
-	}
+// PageColumn is the reading width a content page carries. The shell holds no
+// width of its own, because htmx swaps only the inside of <main> on
+// client-side navigation: a class left on the shell would keep belonging to
+// whatever page the visitor first loaded, and follow them onto every other
+// page.
+templ PageColumn() {
+	<div class="mx-auto w-full max-w-3xl px-4 py-10">
+		{ children... }
+	</div>
+}
 
-	return "mx-auto w-full max-w-3xl flex-1 px-4 py-10"
+// PageColumnWide is the column the admin pages run: the shell already puts
+// them beside the whole sidebar, so they take the width that is left.
+templ PageColumnWide() {
+	<div class="w-full flex-1 px-4 py-10">
+		{ children... }
+	</div>
 }
 
 // TitlePartial is the head-only update that follows a client-side
@@ -39,7 +52,7 @@ templ TitlePartial(title string) {
 	</hx-partial>
 }
 
-templ pageLayout(title string, view View, wide bool) {
+templ pageLayout(title string, view View) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -141,7 +154,9 @@ templ pageLayout(title string, view View, wide bool) {
 							<span class="text-lg font-semibold">File Uploader</span>
 						</div>
 					</header>
-					<main id="page-content" class={ contentClass(wide) }>
+					// The width belongs to the page the fragment belongs to,
+					// never to the shell — see PageColumn.
+					<main id="page-content" class="w-full flex-1">
 						{ children... }
 					</main>
 				</div>

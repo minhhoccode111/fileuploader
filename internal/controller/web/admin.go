@@ -136,6 +136,112 @@ func (c *Controller) pushUserListURL(ctx *fiber.Ctx, req request.UserListQuery) 
 	ctx.Set(_hxPushURLHeader, path)
 }
 
+// adminUsersEdit loads the edit form of one account into the drawer the row
+// click opened. The account travels by its identifier in the query string.
+func (c *Controller) adminUsersEdit(ctx *fiber.Ctx) error {
+	var req request.UserEditQuery
+
+	if err := ctx.QueryParser(&req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"That account is unknown."})
+	}
+
+	if err := c.v.Struct(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
+	}
+
+	user, err := c.u.GetUser(ctx.UserContext(), req.ID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return c.renderErrors(ctx, http.StatusNotFound, []string{"That account is not registered."})
+		}
+
+		c.l.Error(fmt.Errorf("web - adminUsersEdit - uc.GetUser: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	return c.renderPage(ctx, templates.AdminUsersEditContent(response.NewUserRowFromUser(&user)))
+}
+
+// adminUsersEditSubmit saves the account the drawer edits. The form carries
+// every editable field; an empty password keeps the one the account holds.
+// A role or a password change ends the live sessions of the account, so the
+// account lists itself under new values in the same response.
+func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
+	var req request.UserUpdate
+
+	if err := ctx.BodyParser(&req); err != nil {
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"Enter the name, the email and the role of the account."},
+		)
+	}
+
+	req.Sanitize()
+
+	if err := c.v.Struct(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
+	}
+
+	user, sessionsEnded, err := c.u.UpdateUser(
+		ctx.UserContext(),
+		req.ID,
+		req.Username,
+		req.Email,
+		entity.UserRole(req.Role),
+		req.Password,
+	)
+	if err != nil {
+		return c.userUpdateError(ctx, err)
+	}
+
+	ctx.Set(_hxTriggerHeader, _usersUpdatedEvent)
+
+	return c.renderPage(
+		ctx,
+		templates.AdminUsersEditDone(response.NewUserRowFromUser(&user), sessionsEnded),
+	)
+}
+
+// userUpdateError maps a failed account update to a status and a message the
+// admin may see. Only the entity sentinels are translated; everything else is
+// a server fault and is logged instead of leaked.
+func (c *Controller) userUpdateError(ctx *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, entity.ErrUserNotFound):
+		return c.renderErrors(ctx, http.StatusNotFound, []string{"That account is not registered."})
+
+	case errors.Is(err, entity.ErrEmailAlreadyExists):
+		return c.renderErrors(
+			ctx,
+			http.StatusConflict,
+			[]string{"That email is already registered."},
+		)
+
+	case errors.Is(err, entity.ErrUsernameAlreadyExists):
+		return c.renderErrors(ctx, http.StatusConflict, []string{"That username is already taken."})
+
+	case errors.Is(err, entity.ErrUserAlreadyExists):
+		return c.renderErrors(
+			ctx,
+			http.StatusConflict,
+			[]string{"That email or username is already taken."},
+		)
+
+	case errors.Is(err, entity.ErrInvalidRole):
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"That role is not known."})
+
+	case errors.Is(err, entity.ErrPasswordTooLong):
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Password is too long."})
+
+	default:
+		c.l.Error(fmt.Errorf("web - userUpdateError - uc.UpdateUser: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+}
+
 // roleSubmit changes the role of an account. The role travels with the
 // session, so the account is signed out everywhere: it picks the new role up
 // on its next sign-in, and nobody keeps a role that was taken away.

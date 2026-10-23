@@ -98,6 +98,41 @@ func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRo
 	return nil
 }
 
+// Update rewrites the editable fields of an account from the account the use
+// case handed in, so the caller has already resolved which parts change. A
+// name or an email another account already holds maps to the sentinel
+// uniqueViolation names, a missing account to ErrUserNotFound.
+func (r *Repo) Update(ctx context.Context, user *entity.User) error {
+	sql, args, err := r.Builder.
+		Update("users").
+		Set("username", user.Username).
+		Set("email", user.Email).
+		Set("password_hash", user.PasswordHash).
+		Set("role", user.Role).
+		Set("updated_at", user.UpdatedAt).
+		Where(sq.Eq{"id": user.ID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - Update - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return uniqueViolation(pgErr)
+		}
+
+		return fmt.Errorf("UserRepo - Update - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
+}
+
 // _userFirstPage is the page number the account list starts at.
 const _userFirstPage = 1
 
@@ -128,7 +163,7 @@ func (r *Repo) List(ctx context.Context, filter entity.UserFilter) (entity.UserL
 	offset := max((filter.Page-_userFirstPage)*filter.Limit, 0)
 
 	pageSQL, pageArgs, err := r.Builder.
-		Select("username, email, role, created_at, updated_at").
+		Select("id, username, email, role, created_at, updated_at").
 		From("users").
 		Where(where).
 		OrderBy("created_at DESC").
@@ -151,7 +186,7 @@ func (r *Repo) List(ctx context.Context, filter entity.UserFilter) (entity.UserL
 	for rows.Next() {
 		var user entity.UserListItem
 
-		err = rows.Scan(&user.Username, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		err = rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			return entity.UserList{}, fmt.Errorf("UserRepo - List - rows.Scan: %w", err)
 		}

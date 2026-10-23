@@ -28,9 +28,11 @@ func (r UserRole) IsValid() bool {
 	}
 }
 
-// UserListItem is the read model of an account in a list. It carries no
-// password hash, so the hash never leaves the database.
+// UserListItem is the read model of an account in a list. It carries the ID
+// the edit drawer opens an account by, and no password hash, so the hash never
+// leaves the database.
 type UserListItem struct {
+	ID        string
 	Username  string
 	Email     string
 	Role      UserRole

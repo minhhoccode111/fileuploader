@@ -11,38 +11,58 @@ templ AdminUsers(view View, filters response.UserFilters) {
 
 // AdminUsersContent is the fragment htmx swaps into <main> on client-side navigation.
 templ AdminUsersContent(filters response.UserFilters) {
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h2 class="text-2xl font-bold tracking-tight">Users</h2>
-			<p class="text-base-content/70">The account list arrives on its own, right after the page. Search it by name or email, narrow it by role or day, and page through what is left. The address bar keeps the filters, so a view stays bookmarkable.</p>
-			// The filters live outside the swapped list, so what the admin
-			// typed stays on the screen while the rows behind it reload. A
-			// GET request of htmx carries no form fields on its own, so the
-			// pieces that ask for rows name the form and the rows selector.
-			@AdminUsersFilters(filters)
-			<div
-				id="admin-users"
-				class="overflow-x-auto"
-				hx-get="/htmx/admin/users"
-				hx-trigger="load, usersUpdated from:body"
-				hx-include="#user-filters, #user-limit, #user-page"
-				hx-swap="innerHTML"
-			>
-				// The pending state holds the rows selector and the page
-				// window as well, so the request the load trigger sends
-				// already carries the view the address bar brought;
-				// otherwise a bookmark opened with a page size would answer
-				// with the default instead.
-				<div class="flex flex-col gap-3">
-					@AdminUsersLoading()
-					<nav class="flex items-center justify-end" aria-label="Rows per page">
-						@AdminUsersLimit(filters.Limit)
-					</nav>
-					@AdminUsersPage(filters.Page)
+	@PageColumnWide() {
+		// The drawer of the account list holds the editor of one account: the
+	// checkbox makes it pure CSS, a row click asks for the form fragment into
+	// the panel on the right, and the save swaps the panel while the list
+	// behind reloads itself.
+	<div class="drawer drawer-end">
+		<input
+			id="user-edit-drawer"
+			type="checkbox"
+			class="drawer-toggle"
+			autocomplete="off"
+		/>
+		<div class="drawer-content">
+			<section class="card bg-base-100 shadow">
+				<div class="card-body gap-4">
+					<h2 class="text-2xl font-bold tracking-tight">Users</h2>
+					<p class="text-base-content/70">The account list arrives on its own, right after the page. Search it by name or email, narrow it by role or day, and page through what is left. The address bar keeps the filters, so a view stays bookmarkable. Click a row to edit the account.</p>
+					// The filters live outside the swapped list, so what the admin
+					// typed stays on the screen while the rows behind it reload. A
+					// GET request of htmx carries no form fields on its own, so the
+					// pieces that ask for rows name the form and the rows selector.
+					@AdminUsersFilters(filters)
+					<div
+						id="admin-users"
+						class="overflow-x-auto"
+						hx-get="/htmx/admin/users"
+						hx-trigger="load, usersUpdated from:body"
+						hx-include="#user-filters, #user-limit, #user-page"
+						hx-swap="innerHTML"
+					>
+						// The pending state holds the rows selector and the page
+						// window as well, so the request the load trigger sends
+						// already carries the view the address bar brought;
+						// otherwise a bookmark opened with a page size would answer
+						// with the default instead.
+						<div class="flex flex-col gap-3">
+							@AdminUsersLoading()
+							<nav class="flex items-center justify-end" aria-label="Rows per page">
+								@AdminUsersLimit(filters.Limit)
+							</nav>
+							@AdminUsersPage(filters.Page)
+						</div>
+					</div>
 				</div>
-			</div>
+			</section>
 		</div>
-	</section>
+		<div class="drawer-side z-30">
+			<label for="user-edit-drawer" aria-label="Close the account editor" class="drawer-overlay"></label>
+			<aside id="user-edit-panel" class="bg-base-100 min-h-full w-96"></aside>
+		</div>
+	</div>
+	}
 }
 
 // AdminUsersFilters is the search bar of the account list. The Search button
@@ -133,7 +153,15 @@ templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters
 					</tr>
 				} else {
 					for _, row := range rows {
-						<tr>
+						<tr
+							class="cursor-pointer hover:bg-base-200/50"
+							aria-label={ "Edit " + row.Username }
+							hx-get="/htmx/admin/users/edit"
+							hx-vals={ templ.JSONString(map[string]string{"id": row.ID}) }
+							hx-target="#user-edit-panel"
+							hx-swap="innerHTML"
+							hx-on:htmx:after:swap="document.getElementById('user-edit-drawer').checked = true"
+						>
 							<td class="font-medium">{ row.Username }</td>
 							<td>{ row.Email }</td>
 							<td>
@@ -235,18 +263,120 @@ templ AdminSettings(view View) {
 
 // AdminSettingsContent is the fragment htmx swaps into <main> on client-side navigation.
 templ AdminSettingsContent() {
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h1 class="text-4xl font-bold tracking-tight">Hello from Admin Settings</h1>
-			<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in as an admin.</p>
+	@PageColumnWide() {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-4">
+				<h1 class="text-4xl font-bold tracking-tight">Hello from Admin Settings</h1>
+				<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in as an admin.</p>
+			</div>
+		</section>
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-4">
+				<h2 class="text-2xl font-bold tracking-tight">Settings</h2>
+				<p class="text-base-content/70 max-w-prose">The settings of the app land here. Until then, this page only says hello.</p>
+			</div>
+		</section>
+	}
+}
+
+// AdminUsersEditContent is the fragment the drawer of the account list fills
+// when a row is clicked: the form of the account that row holds.
+templ AdminUsersEditContent(row response.UserRow) {
+	@adminUsersEditForm(row, "")
+}
+
+// AdminUsersEditDone is the answer the drawer shows after an account was
+// saved: the note of the save above the form, with the values the account
+// now carries, so a second edit starts from what the server has.
+templ AdminUsersEditDone(row response.UserRow, sessionsEnded bool) {
+	if sessionsEnded {
+		@adminUsersEditForm(
+			row,
+			"The account was saved. Every live session of the account was ended, so the new role or password applies on the next sign-in.",
+		)
+	} else {
+		@adminUsersEditForm(row, "The account was saved.")
+	}
+}
+
+// adminUsersEditForm is the body of the account editor: the fields, the error
+// target the server answers with, and the actions. Validation errors come back
+// with other statuses, so the form pins its success swap to the panel and the
+// error swap to the error line, which keeps what the admin typed on the screen.
+templ adminUsersEditForm(row response.UserRow, note string) {
+	<div class="flex flex-col gap-4 p-4">
+		if note != "" {
+			<div role="alert" class="alert alert-success">
+				<svg xmlns="http://www.w3.org/2000/svg" class="size-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+				<span>{ note }</span>
+			</div>
+		}
+		<div class="flex items-center justify-between">
+			<h3 class="text-lg font-bold">Edit { row.Username }</h3>
+			<label for="user-edit-drawer" aria-label="Close the account editor" class="btn btn-circle btn-ghost btn-sm">✕</label>
 		</div>
-	</section>
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h2 class="text-2xl font-bold tracking-tight">Settings</h2>
-			<p class="text-base-content/70 max-w-prose">The settings of the app land here. Until then, this page only says hello.</p>
-		</div>
-	</section>
+		<form
+			id="user-edit-form"
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post="/htmx/admin/users/edit"
+			hx-target="#user-edit-panel"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#user-edit-error"
+			hx-status:5xx="target:#user-edit-error"
+		>
+			<input type="hidden" name="id" value={ row.ID }/>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Username</span>
+				<input
+					class="input w-full"
+					type="text"
+					name="username"
+					value={ row.Username }
+					required
+					minlength="3"
+					maxlength="255"
+					autocomplete="username"
+				/>
+			</label>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Email</span>
+				<input
+					class="input w-full"
+					type="email"
+					name="email"
+					value={ row.Email }
+					required
+					maxlength="255"
+					autocomplete="email"
+				/>
+			</label>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Role</span>
+				<select name="role" class="select w-full">
+					<option value="user" selected?={ !row.IsAdmin }>user</option>
+					<option value="admin" selected?={ row.IsAdmin }>admin</option>
+				</select>
+			</label>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">New password</span>
+				<input
+					class="input w-full"
+					type="password"
+					name="password"
+					minlength="6"
+					placeholder="Leave empty to keep the current one"
+					autocomplete="new-password"
+				/>
+				<span class="text-xs text-base-content/60">Filling it replaces the password and ends every session the account holds.</span>
+			</label>
+			<div id="user-edit-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-primary">Save</button>
+			<label for="user-edit-drawer" class="btn btn-ghost">Cancel</label>
+		</form>
+	</div>
 }
 
 // RoleUpdated reports that the role of an account was changed.

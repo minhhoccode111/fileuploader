@@ -1,13 +1,18 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+	"github.com/minhhoccode111/fileuploader/web/templates"
 )
 
 // adminApp wires the admin routes in front of the handlers under test.
@@ -94,6 +99,76 @@ func TestAdminRedirectsAnHtmxRequestInPlace(t *testing.T) {
 	if !strings.Contains(location, "#page-content") {
 		t.Errorf("HX-Location = %q, want it to swap into the page content", location)
 	}
+}
+
+// The page carries the drawer the account editor opens from, even before any
+// account reached it.
+func TestAdminUsersPageHoldsTheEditDrawer(t *testing.T) {
+	t.Parallel()
+
+	status, _, body := adminResponse(t, adminApp(), _adminUsersPath, nil)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	want := []string{
+		`id="user-edit-drawer"`,
+		`id="user-edit-panel"`,
+	}
+
+	for _, part := range want {
+		if !strings.Contains(body, part) {
+			t.Errorf("body = %q, want it to contain %q", body, part)
+		}
+	}
+}
+
+// The edit form the drawer fills carries the fields of the account and points
+// its save at the edit endpoint, its errors at the error line.
+func TestAdminUsersEditFormCarriesTheFields(t *testing.T) {
+	t.Parallel()
+
+	row := response.UserRow{ID: "550e8400-e29b-41d4-a716-446655440000", Username: "johndoe", Email: "john@example.com", IsAdmin: true}
+
+	page := renderComponent(t, templates.AdminUsersEditContent(row))
+
+	want := []string{
+		`id="user-edit-form"`,
+		`hx-post="/htmx/admin/users/edit"`,
+		`hx-status:4xx="target:#user-edit-error"`,
+		`value="550e8400-e29b-41d4-a716-446655440000"`,
+		`value="johndoe"`,
+		`value="john@example.com"`,
+		`<option value="admin" selected>admin</option>`,
+		`placeholder="Leave empty to keep the current one"`,
+	}
+
+	for _, part := range want {
+		if !strings.Contains(page, part) {
+			t.Errorf("body = %q, want it to contain %q", page, part)
+		}
+	}
+
+	saved := renderComponent(t, templates.AdminUsersEditDone(row, true))
+
+	if !strings.Contains(saved, "Every live session of the account was ended") {
+		t.Errorf("body = %q, want the note about the ended sessions", saved)
+	}
+}
+
+// renderComponent renders one component into its HTML text.
+func renderComponent(t *testing.T, component templ.Component) string {
+	t.Helper()
+
+	buf := new(bytes.Buffer)
+
+	err := component.Render(context.Background(), buf)
+	if err != nil {
+		t.Fatalf("component.Render() error = %v, want nil", err)
+	}
+
+	return buf.String()
 }
 
 func TestAdminPagesRenderTheGreeting(t *testing.T) {

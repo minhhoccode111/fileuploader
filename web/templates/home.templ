@@ -8,10 +8,12 @@ templ Home(view View) {
 
 // HomeContent is the fragment htmx swaps into <main> on client-side navigation.
 templ HomeContent() {
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h1 class="text-4xl font-bold tracking-tight">Send large files without clutter.</h1>
-			<p class="text-base-content/70 max-w-prose">Upload, share and collect files through one small service.</p>
-		</div>
-	</section>
+	@PageColumnWide() {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-4">
+				<h1 class="text-4xl font-bold tracking-tight">Send large files without clutter.</h1>
+				<p class="text-base-content/70 max-w-prose">Upload, share and collect files through one small service.</p>
+			</div>
+		</section>
+	}
 }

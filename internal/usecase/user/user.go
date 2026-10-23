@@ -195,6 +195,84 @@ func (uc *UseCase) SetRole(ctx context.Context, email string, role entity.UserRo
 	return nil
 }
 
+// UpdateUser rewrites an account: its name, its email, its role and, when the
+// caller brings one, its password. It reports whether the live sessions were
+// ended, which only happens when the role or the password changed, because
+// those are the values a session holds a snapshot of; a rename never signs
+// anybody out.
+func (uc *UseCase) UpdateUser(
+	ctx context.Context,
+	userID, username, email string,
+	role entity.UserRole,
+	password string,
+) (entity.User, bool, error) {
+	if !role.IsValid() {
+		return entity.User{}, false, entity.ErrInvalidRole
+	}
+
+	user, err := uc.repo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, false, entity.ErrUserNotFound
+		}
+
+		return entity.User{}, false, fmt.Errorf("UserUseCase - UpdateUser - uc.repo.GetByID: %w", err)
+	}
+
+	roleChanged := user.Role != role
+
+	passwordChanged := password != ""
+
+	if passwordChanged {
+		hash, hashErr := newPasswordHash(password)
+		if hashErr != nil {
+			return entity.User{}, false, hashErr
+		}
+
+		user.PasswordHash = hash
+	}
+
+	user.Username = username
+	user.Email = email
+	user.Role = role
+	user.UpdatedAt = time.Now().UTC()
+
+	err = uc.repo.Update(ctx, &user)
+	if err != nil {
+		return entity.User{}, false, fmt.Errorf("UserUseCase - UpdateUser - uc.repo.Update: %w", err)
+	}
+
+	if !passwordChanged && !roleChanged {
+		return user, false, nil
+	}
+
+	err = uc.sessions.DeleteUserSessions(ctx, user.ID)
+	if err != nil {
+		return entity.User{}, false, fmt.Errorf(
+			"UserUseCase - UpdateUser - uc.sessions.DeleteUserSessions: %w",
+			err,
+		)
+	}
+
+	return user, true, nil
+}
+
+// newPasswordHash hashes the new password an update brought in. An
+// over-limit password is a caller error, not a server fault, so it maps to
+// the sentinel instead of a wrapped error.
+func newPasswordHash(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+			return "", entity.ErrPasswordTooLong
+		}
+
+		return "", fmt.Errorf("UserUseCase - newPasswordHash - bcrypt.GenerateFromPassword: %w", err)
+	}
+
+	return string(hash), nil
+}
+
 // newSessionID returns a cryptographically random, URL-safe session identifier.
 func newSessionID() (string, error) {
 	buf := make([]byte, _sessionIDBytes)

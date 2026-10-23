@@ -40,6 +40,11 @@ const (
 
 	// _adminSettingsPath is the settings page of the admin area.
 	_adminSettingsPath = "/admin/settings"
+
+	// _adminUsersEditPath serves the edit form of one account — the fragment
+	// the drawer of the account list fills when a row is clicked — and takes
+	// the form data the drawer submits.
+	_adminUsersEditPath = "/htmx/admin/users/edit"
 )
 
 // renderErrors renders the error fragment htmx swaps into a form's error target.

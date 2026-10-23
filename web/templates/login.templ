@@ -8,7 +8,8 @@ templ Login(view View) {
 
 // LoginContent is the fragment htmx swaps into <main>.
 templ LoginContent() {
-	<section class="card bg-base-100 mx-auto w-full max-w-md shadow">
+	@PageColumn() {
+		<section class="card bg-base-100 mx-auto w-full max-w-md shadow">
 		<div class="card-body">
 			<h1 class="text-3xl font-bold tracking-tight">Welcome back</h1>
 			<p class="text-base-content/70">Sign in with your email and password.</p>
@@ -44,4 +45,5 @@ templ LoginContent() {
 			</p>
 		</div>
 	</section>
+	}
 }

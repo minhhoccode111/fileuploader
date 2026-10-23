@@ -22,6 +22,7 @@ type fakeUserRepo struct {
 	items   []entity.UserListItem
 	role    entity.UserRole
 	roleSet bool
+	updated *entity.User
 	err     error
 }
 
@@ -56,6 +57,16 @@ func (f *fakeUserRepo) UpdateRole(_ context.Context, _ string, role entity.UserR
 
 	f.role = role
 	f.roleSet = true
+
+	return nil
+}
+
+func (f *fakeUserRepo) Update(_ context.Context, user *entity.User) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.updated = user
 
 	return nil
 }
@@ -277,5 +288,193 @@ func TestSetRoleReportsAnUnknownAccount(t *testing.T) {
 
 	if len(sessions.ended) != 0 {
 		t.Errorf("ended sessions = %v, want none", sessions.ended)
+	}
+}
+
+// UpdateUser saves the fields it was given, and hashing the password only
+// happens when the caller brought a new one.
+func TestUpdateUserSavesTheFields(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Username:     "john",
+		Email:        "john@example.com",
+		PasswordHash: string(hash),
+		Role:         entity.UserRoleUser,
+	}}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+
+	user, sessionsEnded, err := uc.UpdateUser(
+		context.Background(), "1", "johndoe", "doe@example.com", entity.UserRoleUser, "",
+	)
+	if err != nil {
+		t.Fatalf("UpdateUser() error = %v, want nil", err)
+	}
+
+	if repo.updated == nil {
+		t.Fatal("UpdateUser() did not store the account")
+	}
+
+	if repo.updated.Username != "johndoe" || repo.updated.Email != "doe@example.com" {
+		t.Errorf("updated account = %s <%s>, want johndoe <doe@example.com>", repo.updated.Username, repo.updated.Email)
+	}
+
+	if sessionsEnded {
+		t.Error("UpdateUser() ended the sessions of a rename")
+	}
+
+	if len(sessions.ended) != 0 {
+		t.Errorf("ended sessions = %v, want none", sessions.ended)
+	}
+
+	if user.Role != entity.UserRoleUser {
+		t.Errorf("updated role = %q, want %q", user.Role, entity.UserRoleUser)
+	}
+}
+
+// A role or a password change has to end the live sessions: the session holds
+// a snapshot of the role and the credentials behind it, so both go stale on
+// such a change. A rename changes nothing the session holds.
+func TestUpdateUserEndsTheSessionsOnARoleOrAPasswordChange(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	cases := []struct {
+		name string
+		role entity.UserRole
+		pass string
+	}{
+		{name: "a role change", role: entity.UserRoleAdmin, pass: ""},
+		{name: "a password change", role: entity.UserRoleUser, pass: "newpass1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleUser, PasswordHash: string(hash)}}
+			sessions := &fakeSessionRepo{}
+			uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+
+			_, sessionsEnded, err := uc.UpdateUser(
+				context.Background(), "1", "john", "john@example.com", tc.role, tc.pass,
+			)
+			if err != nil {
+				t.Fatalf("UpdateUser() error = %v, want nil", err)
+			}
+
+			if !sessionsEnded {
+				t.Error("UpdateUser() kept the sessions of a role or a password change")
+			}
+
+			if len(sessions.ended) != 1 || sessions.ended[0] != "1" {
+				t.Errorf("ended sessions = %v, want the sessions of user %q", sessions.ended, "1")
+			}
+		})
+	}
+}
+
+func TestUpdateUserRejectsAnUnknownRoleOrAccount(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		repo   fakeUserRepo
+		role   entity.UserRole
+		errors error
+	}{
+		{
+			name:   "an unknown role",
+			repo:   fakeUserRepo{},
+			role:   entity.UserRole("root"),
+			errors: entity.ErrInvalidRole,
+		},
+		{
+			name:   "an unknown account",
+			repo:   fakeUserRepo{err: entity.ErrUserNotFound},
+			role:   entity.UserRoleUser,
+			errors: entity.ErrUserNotFound,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sessions := &fakeSessionRepo{}
+			uc := New(&tc.repo, sessions, &fakeUnitOfWork{}, time.Hour)
+
+			user, sessionsEnded, err := uc.UpdateUser(
+				context.Background(), "1", "john", "john@example.com", tc.role, "",
+			)
+			if !errors.Is(err, tc.errors) {
+				t.Fatalf("UpdateUser() error = %v, want %v", err, tc.errors)
+			}
+
+			if user != (entity.User{}) {
+				t.Errorf("UpdateUser() user = %+v, want the empty user", user)
+			}
+
+			if sessionsEnded {
+				t.Error("UpdateUser() ended the sessions of a failed update")
+			}
+
+			if len(sessions.ended) != 0 {
+				t.Errorf("ended sessions = %v, want none", sessions.ended)
+			}
+		})
+	}
+}
+
+func TestUpdateUserKeepsThePasswordWhenNoneCameIn(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		PasswordHash: string(hash),
+		Role:         entity.UserRoleUser,
+	}}
+	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, _, err = uc.UpdateUser(context.Background(), "1", "john", "john@example.com", entity.UserRoleUser, "")
+	if err != nil {
+		t.Fatalf("UpdateUser() error = %v, want nil", err)
+	}
+
+	if repo.updated.PasswordHash != string(hash) {
+		t.Errorf("updated password hash = %q, want it unchanged", repo.updated.PasswordHash)
+	}
+}
+
+func TestUpdateUserReplacesThePassword(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: "old", Role: entity.UserRoleUser}}
+	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, _, err := uc.UpdateUser(context.Background(), "1", "john", "john@example.com", entity.UserRoleUser, "newpass1")
+	if err != nil {
+		t.Fatalf("UpdateUser() error = %v, want nil", err)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(repo.updated.PasswordHash), []byte("newpass1"))
+	if err != nil {
+		t.Errorf("bcrypt.CompareHashAndPassword() error = %v, want nil", err)
 	}
 }

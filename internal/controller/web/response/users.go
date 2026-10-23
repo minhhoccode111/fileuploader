@@ -14,6 +14,7 @@ const _userPagerFirstPage = 1
 // UserRow is one account in the admin user table. It is a presentation type: the
 // admin flag and the joined date are already what the template prints.
 type UserRow struct {
+	ID       string
 	Username string
 	Email    string
 	IsAdmin  bool
@@ -35,11 +36,25 @@ type UserPager struct {
 // NewUserRow maps the read model to the row the account table renders.
 func NewUserRow(item *entity.UserListItem) UserRow {
 	return UserRow{
+		ID:       item.ID,
 		Username: item.Username,
 		Email:    item.Email,
 		IsAdmin:  item.Role == entity.UserRoleAdmin,
 		Joined:   item.CreatedAt.Format(_joinedLayout),
 		Updated:  item.UpdatedAt.Format(_joinedLayout),
+	}
+}
+
+// NewUserRowFromUser maps the account behind an edit or an update to the row
+// shape the account table and the editor drawer render.
+func NewUserRowFromUser(user *entity.User) UserRow {
+	return UserRow{
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		IsAdmin:  user.Role == entity.UserRoleAdmin,
+		Joined:   user.CreatedAt.Format(_joinedLayout),
+		Updated:  user.UpdatedAt.Format(_joinedLayout),
 	}
 }
 

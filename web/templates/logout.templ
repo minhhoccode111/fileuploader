@@ -9,9 +9,10 @@ templ Logout(view View) {
 // LogoutContent is the confirmation screen shown before the session is ended.
 // Nothing happens until the user confirms.
 templ LogoutContent() {
-	<section class="card bg-base-100 shadow">
-		<div class="card-body gap-4">
-			<h1 class="text-3xl font-bold tracking-tight">Log out?</h1>
+	@PageColumn() {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-4">
+				<h1 class="text-3xl font-bold tracking-tight">Log out?</h1>
 			<p class="text-base-content/70">You will need to sign in again to upload files.</p>
 			<div class="flex flex-wrap gap-2">
 				<button
@@ -32,4 +33,5 @@ templ LogoutContent() {
 			</div>
 		</div>
 	</section>
+	}
 }

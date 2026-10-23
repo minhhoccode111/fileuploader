@@ -64,5 +64,8 @@ func NewRouter(
 	app.Post("/htmx/logout", c.logoutSubmit)
 	app.Post("/htmx/admin/role", middleware.RequireAdmin(u), c.roleSubmit)
 
+	app.Get(_adminUsersEditPath, middleware.RequireAdmin(u), c.adminUsersEdit)
+	app.Post(_adminUsersEditPath, middleware.RequireAdmin(u), c.adminUsersEditSubmit)
+
 	app.Get(_adminUsersTablePath, middleware.RequireAdmin(u), c.adminUsersTable)
 }
