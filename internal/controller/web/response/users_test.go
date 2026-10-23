@@ -37,12 +37,66 @@ func TestNewUserRow(t *testing.T) {
 				t.Errorf("IsAdmin = %v, want %v", row.IsAdmin, tc.want)
 			}
 
-			if row.Joined != "2026-10-20" {
-				t.Errorf("Joined = %q, want %q", row.Joined, "2026-10-20")
+			if row.Joined != "2026-10-20 23:52" {
+				t.Errorf("Joined = %q, want %q", row.Joined, "2026-10-20 23:52")
 			}
 
-			if row.Updated != "2026-10-21" {
-				t.Errorf("Updated = %q, want %q", row.Updated, "2026-10-21")
+			if row.Updated != "2026-10-21 23:52" {
+				t.Errorf("Updated = %q, want %q", row.Updated, "2026-10-21 23:52")
+			}
+		})
+	}
+}
+
+func TestNewUserPager(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		list   entity.UserList
+		filter entity.UserFilter
+		want   UserPager
+	}{
+		{
+			name:   "an empty list",
+			list:   entity.UserList{},
+			filter: entity.UserFilter{Limit: 10, Page: 1},
+			want:   UserPager{Page: 1, Pages: 1},
+		},
+		{
+			name:   "a partial last page",
+			list:   entity.UserList{Total: 12},
+			filter: entity.UserFilter{Limit: 10, Page: 2},
+			want:   UserPager{Page: 2, Pages: 2, Total: 12, Prev: 1},
+		},
+		{
+			name:   "a middle page",
+			list:   entity.UserList{Total: 30},
+			filter: entity.UserFilter{Limit: 10, Page: 2},
+			want:   UserPager{Page: 2, Pages: 3, Total: 30, Prev: 1, Next: 3},
+		},
+		{
+			name:   "a page that fell off the end of the list",
+			list:   entity.UserList{Total: 5},
+			filter: entity.UserFilter{Limit: 10, Page: 4},
+			want:   UserPager{Page: 1, Pages: 1, Total: 5},
+		},
+		{
+			name:   "a page number below the first",
+			list:   entity.UserList{Total: 5},
+			filter: entity.UserFilter{Limit: 10, Page: 0},
+			want:   UserPager{Page: 1, Pages: 1, Total: 5},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			pager := NewUserPager(tc.list, tc.filter)
+
+			if pager != tc.want {
+				t.Errorf("pager = %+v, want %+v", pager, tc.want)
 			}
 		})
 	}

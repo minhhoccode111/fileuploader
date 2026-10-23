@@ -30,6 +30,15 @@ func contentClass(wide bool) string {
 	return "mx-auto w-full max-w-3xl flex-1 px-4 py-10"
 }
 
+// TitlePartial is the head-only update that follows a client-side
+// navigation: the document title follows the page htmx just swapped into
+// the content, because the swap itself never reaches the head.
+templ TitlePartial(title string) {
+	<hx-partial hx-target="title" hx-swap="outerHTML">
+		<title>{ title } · File Uploader</title>
+	</hx-partial>
+}
+
 templ pageLayout(title string, view View, wide bool) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -254,16 +263,20 @@ templ sidebarNav(view View, oob bool) {
 						</svg>
 					</button>
 					// The admin area is a namespace: the section opens to the
-					// pages under it. The list hides with the drawer, where only
-					// the icons fit. The row grows from nothing to the height of
-					// its content, so the section opens the way the drawer does.
+					// pages under it, collapsed drawer included, where only
+					// the icons fit. The row grows from nothing to the height
+					// of its content, so the section opens the way the drawer
+					// does. The collapsed drawer has one column for every
+					// icon, so it also cancels the indent daisyUI gives every
+					// nested menu list.
 					<ul
-						class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 is-drawer-close:hidden"
+						class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 is-drawer-close:ms-0 is-drawer-close:ps-0"
 						:class="adminOpen ? 'grid-rows-[1fr]' : ''"
 					>
 						<li class="min-h-0 flex-nowrap gap-1 overflow-hidden">
 							<a
-								class="shrink-0"
+								class="shrink-0 is-drawer-close:tooltip is-drawer-close:tooltip-right"
+								data-tip="Users"
 								href="/admin/users"
 								hx-get="/admin/users"
 								hx-target="#page-content"
@@ -279,7 +292,8 @@ templ sidebarNav(view View, oob bool) {
 								<span class="is-drawer-close:hidden">Users</span>
 							</a>
 							<a
-								class="shrink-0"
+								class="shrink-0 is-drawer-close:tooltip is-drawer-close:tooltip-right"
+								data-tip="Settings"
 								href="/admin/settings"
 								hx-get="/admin/settings"
 								hx-target="#page-content"

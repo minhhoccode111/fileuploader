@@ -34,6 +34,7 @@ func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
 		ctx,
 		templates.Login(templates.View{}),
 		templ.Join(templates.LoginContent(), templates.SidebarNavUpdate(templates.View{})),
+		templates.LoginTitle,
 	)
 }
 

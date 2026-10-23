@@ -151,11 +151,15 @@ func (uc *UseCase) GetUser(ctx context.Context, userID string) (entity.User, err
 	return user, nil
 }
 
-// ListUsers returns every account as the read model a list renders.
-func (uc *UseCase) ListUsers(ctx context.Context) ([]entity.UserListItem, error) {
-	users, err := uc.repo.List(ctx)
+// ListUsers returns one page of accounts as the read model a list renders,
+// plus how many accounts match the filter in total. The filter is clamped to
+// the bounds the list serves before it reaches the repository.
+func (uc *UseCase) ListUsers(ctx context.Context, filter entity.UserFilter) (entity.UserList, error) {
+	filter.Sanitize()
+
+	users, err := uc.repo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("UserUseCase - ListUsers - uc.repo.List: %w", err)
+		return entity.UserList{}, fmt.Errorf("UserUseCase - ListUsers - uc.repo.List: %w", err)
 	}
 
 	return users, nil

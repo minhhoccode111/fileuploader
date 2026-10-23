@@ -63,25 +63,27 @@ func (c *Controller) renderPage(ctx *fiber.Ctx, component templ.Component) error
 	return ctx.Send(buf.Bytes())
 }
 
-// render returns the fragment for an htmx partial swap, the full page otherwise.
-func (c *Controller) render(ctx *fiber.Ctx, full, fragment templ.Component) error {
+// render returns the fragment for an htmx partial swap, the full page
+// otherwise. A partial also carries a head-only update, so the document
+// title follows the page the swap put on the screen.
+func (c *Controller) render(ctx *fiber.Ctx, full, fragment templ.Component, title string) error {
 	if ctx.Get(_hxRequestTypeHeader) == _hxRequestPartial {
-		return c.renderPage(ctx, fragment)
+		return c.renderPage(ctx, templ.Join(fragment, templates.TitlePartial(title)))
 	}
 
 	return c.renderPage(ctx, full)
 }
 
 func (c *Controller) home(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Home(c.view(ctx)), templates.HomeContent())
+	return c.render(ctx, templates.Home(c.view(ctx)), templates.HomeContent(), templates.HomeTitle)
 }
 
 func (c *Controller) login(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Login(c.view(ctx)), templates.LoginContent())
+	return c.render(ctx, templates.Login(c.view(ctx)), templates.LoginContent(), templates.LoginTitle)
 }
 
 func (c *Controller) register(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Register(c.view(ctx)), templates.RegisterContent())
+	return c.render(ctx, templates.Register(c.view(ctx)), templates.RegisterContent(), templates.RegisterTitle)
 }
 
 // admin sends the visitor to the landing page of the admin area. The area is a
@@ -92,33 +94,37 @@ func (c *Controller) admin(ctx *fiber.Ctx) error {
 }
 
 // adminUsers renders the user management page. The guard has already checked
-// the role, so the handler only renders.
+// the role, so the handler only renders, and the address bar re-feeds the
+// filter inputs it carries, which is how a bookmarked view comes back the
+// way it was left. The validation runs when the table asks for its rows.
 func (c *Controller) adminUsers(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.AdminUsers(c.view(ctx)), templates.AdminUsersContent())
+	filters := userFilters(decodeUserListQuery(ctx))
+
+	return c.render(ctx, templates.AdminUsers(c.view(ctx), filters), templates.AdminUsersContent(filters), templates.AdminUsersTitle)
 }
 
 // adminSettings renders the settings page. The guard has already checked the
 // role, so the handler only renders.
 func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent())
+	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent(), templates.AdminSettingsTitle)
 }
 
 // share renders a placeholder page for the Share section. It is auth-only, so
 // the guard has already resolved a user before it runs.
 func (c *Controller) share(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Share(c.view(ctx)), templates.ShareContent())
+	return c.render(ctx, templates.Share(c.view(ctx)), templates.ShareContent(), templates.ShareTitle)
 }
 
 // public renders a placeholder page for the Public section. It is auth-only,
 // so the guard has already resolved a user before it runs.
 func (c *Controller) public(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Public(c.view(ctx)), templates.PublicContent())
+	return c.render(ctx, templates.Public(c.view(ctx)), templates.PublicContent(), templates.PublicTitle)
 }
 
 // logout renders the confirmation screen. It is a GET because it changes nothing:
 // the session is ended only by the POST to /htmx/logout that the screen triggers.
 func (c *Controller) logout(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Logout(c.view(ctx)), templates.LogoutContent())
+	return c.render(ctx, templates.Logout(c.view(ctx)), templates.LogoutContent(), templates.LogoutTitle)
 }
 
 // view builds the per-request state the templates need. The auth guard parks

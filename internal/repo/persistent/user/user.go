@@ -98,43 +98,114 @@ func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRo
 	return nil
 }
 
-// List returns every account, newest first, as the read model a list renders.
-// The password hash is not selected, so it never leaves the database.
-func (r *Repo) List(ctx context.Context) ([]entity.UserListItem, error) {
-	sql, args, err := r.Builder.
-		Select("username, email, role, created_at, updated_at").
+// _userFirstPage is the page number the account list starts at.
+const _userFirstPage = 1
+
+// List returns one page of accounts, newest first, as the read model a list
+// renders, plus how many accounts match the filter in total. The password
+// hash is not selected, so it never leaves the database.
+func (r *Repo) List(ctx context.Context, filter entity.UserFilter) (entity.UserList, error) {
+	where := listWhere(filter)
+
+	countSQL, countArgs, err := r.Builder.
+		Select("count(*)").
 		From("users").
-		OrderBy("created_at DESC").
+		Where(where).
 		ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("UserRepo - List - r.Builder: %w", err)
+		return entity.UserList{}, fmt.Errorf("UserRepo - List - r.Builder: %w", err)
 	}
 
-	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
+	var total int
+
+	err = r.Querier(ctx).QueryRow(ctx, countSQL, countArgs...).Scan(&total)
 	if err != nil {
-		return nil, fmt.Errorf("UserRepo - List - r.Querier(ctx).Query: %w", err)
+		return entity.UserList{}, fmt.Errorf("UserRepo - List - r.Querier(ctx).QueryRow: %w", err)
+	}
+
+	limit := max(filter.Limit, 0)
+
+	offset := max((filter.Page-_userFirstPage)*filter.Limit, 0)
+
+	pageSQL, pageArgs, err := r.Builder.
+		Select("username, email, role, created_at, updated_at").
+		From("users").
+		Where(where).
+		OrderBy("created_at DESC").
+		Limit(uint64(limit)).
+		Offset(uint64(offset)).
+		ToSql()
+	if err != nil {
+		return entity.UserList{}, fmt.Errorf("UserRepo - List - r.Builder: %w", err)
+	}
+
+	rows, err := r.Querier(ctx).Query(ctx, pageSQL, pageArgs...)
+	if err != nil {
+		return entity.UserList{}, fmt.Errorf("UserRepo - List - r.Querier(ctx).Query: %w", err)
 	}
 
 	defer rows.Close()
 
-	var users []entity.UserListItem
+	users := make([]entity.UserListItem, 0, filter.Limit)
 
 	for rows.Next() {
 		var user entity.UserListItem
 
 		err = rows.Scan(&user.Username, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("UserRepo - List - rows.Scan: %w", err)
+			return entity.UserList{}, fmt.Errorf("UserRepo - List - rows.Scan: %w", err)
 		}
 
 		users = append(users, user)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("UserRepo - List - rows.Err: %w", err)
+		return entity.UserList{}, fmt.Errorf("UserRepo - List - rows.Err: %w", err)
 	}
 
-	return users, nil
+	return entity.UserList{Items: users, Total: total}, nil
+}
+
+// listWhere builds the conditions the account list filters by: the query
+// matches the username or the email, the role matches exactly, and the day
+// matches the creation or the last update. It returns nil when the filter is
+// empty, so an unfiltered query stays without a WHERE clause.
+func listWhere(filter entity.UserFilter) sq.Sqlizer {
+	conds := []sq.Sqlizer{}
+
+	if filter.Query != "" {
+		pattern := "%" + escapeLike(filter.Query) + "%"
+
+		conds = append(conds, sq.Or{
+			sq.Expr("username ILIKE ? ESCAPE '\\'", pattern),
+			sq.Expr("email ILIKE ? ESCAPE '\\'", pattern),
+		})
+	}
+
+	if filter.Role != "" {
+		conds = append(conds, sq.Eq{"role": filter.Role})
+	}
+
+	if filter.On != nil {
+		conds = append(conds, sq.Or{
+			sq.Expr("created_at::date = ?::date", *filter.On),
+			sq.Expr("updated_at::date = ?::date", *filter.On),
+		})
+	}
+
+	if len(conds) == 0 {
+		return nil
+	}
+
+	return sq.And(conds)
+}
+
+// escapeLike neutralizes the LIKE wildcards in what the admin typed, so a
+// search for "100%" matches that literal text instead of everything.
+func escapeLike(query string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+	return replacer.Replace(query)
 }
 
 func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, error) {

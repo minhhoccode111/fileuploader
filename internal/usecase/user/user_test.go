@@ -13,10 +13,13 @@ import (
 // errStoreFailed is the failure the fake repository reports.
 var errStoreFailed = errors.New("store failed")
 
-// fakeUserRepo records what it was asked to store.
+// fakeUserRepo records what it was asked to store and the filter it was
+// asked to list with.
 type fakeUserRepo struct {
 	stored  *entity.User
+	listed  entity.UserFilter
 	user    entity.User
+	items   []entity.UserListItem
 	role    entity.UserRole
 	roleSet bool
 	err     error
@@ -40,8 +43,10 @@ func (f *fakeUserRepo) GetByEmail(_ context.Context, _ string) (entity.User, err
 	return f.user, f.err
 }
 
-func (f *fakeUserRepo) List(_ context.Context) ([]entity.UserListItem, error) {
-	return nil, f.err
+func (f *fakeUserRepo) List(_ context.Context, filter entity.UserFilter) (entity.UserList, error) {
+	f.listed = filter
+
+	return entity.UserList{Items: f.items, Total: len(f.items)}, f.err
 }
 
 func (f *fakeUserRepo) UpdateRole(_ context.Context, _ string, role entity.UserRole) error {
@@ -101,6 +106,39 @@ func (f *fakeUnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) er
 	f.committed = true
 
 	return nil
+}
+
+func TestListUsersClampsTheFilterBeforeItLists(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, err := uc.ListUsers(context.Background(), entity.UserFilter{
+		Query: "  john  ",
+		Role:  entity.UserRole("root"),
+		Limit: 3,
+		Page:  0,
+	})
+	if err != nil {
+		t.Fatalf("ListUsers() error = %v, want nil", err)
+	}
+
+	if repo.listed.Query != "john" {
+		t.Errorf("listed query = %q, want %q", repo.listed.Query, "john")
+	}
+
+	if repo.listed.Role != "" {
+		t.Errorf("listed role = %q, want it empty", repo.listed.Role)
+	}
+
+	if repo.listed.Limit != 10 {
+		t.Errorf("listed limit = %d, want %d", repo.listed.Limit, 10)
+	}
+
+	if repo.listed.Page != 1 {
+		t.Errorf("listed page = %d, want %d", repo.listed.Page, 1)
+	}
 }
 
 func TestRegisterStoresTheUserInsideTheUnitOfWork(t *testing.T) {

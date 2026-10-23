@@ -3,32 +3,82 @@ package templates
 import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 
 // AdminUsers is the user management page of the admin area.
-templ AdminUsers(view View) {
-	@AdminLayout("Admin · Users", view) {
-		@AdminUsersContent()
+templ AdminUsers(view View, filters response.UserFilters) {
+	@AdminLayout(AdminUsersTitle, view) {
+		@AdminUsersContent(filters)
 	}
 }
 
 // AdminUsersContent is the fragment htmx swaps into <main> on client-side navigation.
-templ AdminUsersContent() {
+templ AdminUsersContent(filters response.UserFilters) {
 	<section class="card bg-base-100 shadow">
 		<div class="card-body gap-4">
 			<h2 class="text-2xl font-bold tracking-tight">Users</h2>
-			<p class="text-base-content/70 max-w-prose">The account list arrives on its own, right after the page.</p>
-			// The rows are fetched by htmx once the page is on the screen, so
-			// the page itself never waits for the query. The same element
-			// reloads the rows when a role changes.
+			<p class="text-base-content/70">The account list arrives on its own, right after the page. Search it by name or email, narrow it by role or day, and page through what is left. The address bar keeps the filters, so a view stays bookmarkable.</p>
+			// The filters live outside the swapped list, so what the admin
+			// typed stays on the screen while the rows behind it reload. A
+			// GET request of htmx carries no form fields on its own, so the
+			// pieces that ask for rows name the form and the rows selector.
+			@AdminUsersFilters(filters)
 			<div
 				id="admin-users"
 				class="overflow-x-auto"
 				hx-get="/htmx/admin/users"
 				hx-trigger="load, usersUpdated from:body"
+				hx-include="#user-filters, #user-limit, #user-page"
 				hx-swap="innerHTML"
 			>
-				@AdminUsersLoading()
+				// The pending state holds the rows selector and the page
+				// window as well, so the request the load trigger sends
+				// already carries the view the address bar brought;
+				// otherwise a bookmark opened with a page size would answer
+				// with the default instead.
+				<div class="flex flex-col gap-3">
+					@AdminUsersLoading()
+					<nav class="flex items-center justify-end" aria-label="Rows per page">
+						@AdminUsersLimit(filters.Limit)
+					</nav>
+					@AdminUsersPage(filters.Page)
+				</div>
 			</div>
 		</div>
 	</section>
+}
+
+// AdminUsersFilters is the search bar of the account list. The Search button
+// and the Enter key re-fetch the rows, and the Clear button — on the screen
+// only while a filter narrows the list — empties every field and re-fetches.
+// The rows-per-page control lives with the pager under the table.
+templ AdminUsersFilters(filters response.UserFilters) {
+	<form
+		id="user-filters"
+		class="flex flex-wrap items-center gap-2"
+		hx-get="/htmx/admin/users"
+		hx-trigger="submit, reset delay:10ms"
+		hx-include="#user-limit"
+		hx-target="#admin-users"
+		hx-swap="innerHTML"
+	>
+		<label class="input input-sm items-center gap-2 grow max-w-64">
+			<span class="label">Search</span>
+			<input type="search" name="q" placeholder="Username or email" value={ filters.Query } autocomplete="off"/>
+		</label>
+		<select name="role" class="select select-sm" aria-label="Role">
+			<option value="all" selected?={ filters.Role != "user" && filters.Role != "admin" }>All roles</option>
+			<option value="user" selected?={ filters.Role == "user" }>user</option>
+			<option value="admin" selected?={ filters.Role == "admin" }>admin</option>
+		</select>
+		<input type="date" name="date" class="input input-sm" value={ filters.Date } aria-label="Created or updated on"/>
+		@AdminUsersClear(!filters.Active)
+		<button type="submit" class="btn btn-sm btn-primary">Search</button>
+	</form>
+}
+
+// AdminUsersClear is the Clear button of the search bar. It is hidden while
+// nothing narrows the list, and the table response turns it on and off in
+// place, so the form it resets never moves.
+templ AdminUsersClear(hidden bool) {
+	<button type="reset" class="btn btn-ghost btn-sm" id="user-clear" hidden?={ hidden }>Clear</button>
 }
 
 // AdminUsersLoading is what the account table shows while the rows are on their
@@ -41,48 +91,144 @@ templ AdminUsersLoading() {
 	</div>
 }
 
-// AdminUsersTable is the table of accounts. The admin page asks for it with
-// htmx once the page is on the screen.
-templ AdminUsersTable(rows []response.UserRow) {
-	<table class="table table-zebra w-full">
-		<thead>
-			<tr>
-				<th>Username</th>
-				<th>Email</th>
-				<th>Role</th>
-				<th>Joined</th>
-				<th>Updated</th>
-			</tr>
-		</thead>
-		<tbody>
-			if len(rows) == 0 {
+// AdminUsersFragment is the answer to an account-table request: the table
+// with its pager, plus the in-place update that turns the Clear button on
+// and off after the filters changed.
+templ AdminUsersFragment(rows []response.UserRow, pager response.UserPager, filters response.UserFilters) {
+	@AdminUsersTable(rows, pager, filters)
+	if filters.Active {
+		<hx-partial hx-target="#user-clear" hx-swap="outerHTML">
+			@AdminUsersClear(false)
+		</hx-partial>
+	} else {
+		<hx-partial hx-target="#user-clear" hx-swap="outerHTML">
+			@AdminUsersClear(true)
+		</hx-partial>
+	}
+}
+
+// AdminUsersTable is the table of accounts plus its pager. The admin page
+// asks for it with htmx once the page is on the screen, and the filters and
+// the pager re-ask for it on every change.
+templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters response.UserFilters) {
+	<div class="flex flex-col gap-3">
+		<table class="table table-zebra w-full">
+			<thead>
 				<tr>
-					<td class="text-base-content/70" colspan="5">No accounts yet.</td>
+					<th>Username</th>
+					<th>Email</th>
+					<th>Role</th>
+					<th>Joined</th>
+					<th>Updated</th>
 				</tr>
-			} else {
-				for _, row := range rows {
+			</thead>
+			<tbody>
+				if len(rows) == 0 {
 					<tr>
-						<td class="font-medium">{ row.Username }</td>
-						<td>{ row.Email }</td>
-						<td>
-							if row.IsAdmin {
-								<span class="badge badge-primary">admin</span>
-							} else {
-								<span class="badge badge-neutral">user</span>
-							}
-						</td>
-						<td>{ row.Joined }</td>
-						<td>{ row.Updated }</td>
+						if filters.Active {
+							<td class="text-base-content/70" colspan="5">No account matches the filters.</td>
+						} else {
+							<td class="text-base-content/70" colspan="5">No accounts yet.</td>
+						}
 					</tr>
+				} else {
+					for _, row := range rows {
+						<tr>
+							<td class="font-medium">{ row.Username }</td>
+							<td>{ row.Email }</td>
+							<td>
+								if row.IsAdmin {
+									<span class="badge badge-primary">admin</span>
+								} else {
+									<span class="badge badge-neutral">user</span>
+								}
+							</td>
+							<td>{ row.Joined }</td>
+							<td>{ row.Updated }</td>
+						</tr>
+					}
 				}
-			}
-		</tbody>
-	</table>
+			</tbody>
+		</table>
+		@AdminUsersPage(pager.Page)
+		@AdminUsersPager(pager, filters.Limit)
+	</div>
+}
+
+// AdminUsersLimit is the rows-per-page selector. It asks for the rows on its
+// own change, and it renders twice: with the pager on the screen and in the
+// pending place the page shows first, because the request the load trigger
+// sends has no pager yet to carry the limit with.
+templ AdminUsersLimit(limit string) {
+	<label class="flex items-center gap-1 text-sm">
+		<span>Rows</span>
+		<select
+			id="user-limit"
+			name="limit"
+			class="select select-sm"
+			aria-label="Rows per page"
+			hx-get="/htmx/admin/users"
+			hx-trigger="change"
+			hx-include="#user-filters"
+			hx-target="#admin-users"
+			hx-swap="innerHTML"
+		>
+			<option value="5" selected?={ limit == "5" }>5</option>
+			<option value="10" selected?={ limit == "10" }>10</option>
+			<option value="20" selected?={ limit == "20" }>20</option>
+			<option value="50" selected?={ limit == "50" }>50</option>
+		</select>
+	</label>
+}
+
+// AdminUsersPage is the hidden page window of the list. It travels with the
+// list, so the load trigger re-asks for the window a bookmark carries and a
+// response always pins it to the window just served; the controls that
+// narrow the list leave it out, which is how a new filter starts over at
+// the first page.
+templ AdminUsersPage(page int) {
+	<input type="hidden" id="user-page" name="page" value={ page }/>
+}
+
+// AdminUsersPager is the window bar under the account table: the number of
+// accounts the filters matched, the rows-per-page selector, which asks for
+// the rows on its own change, and the pager, which walks one page at a time
+// while carrying the filters with it.
+templ AdminUsersPager(pager response.UserPager, limit string) {
+	<nav class="flex flex-wrap items-center justify-between gap-2" aria-label="Account pages">
+		<span class="text-sm text-base-content/70">{ pager.Total } accounts</span>
+		<div class="flex items-center justify-end gap-2">
+			@AdminUsersLimit(limit)
+			<div class="join">
+				<button
+					type="button"
+					class="join-item btn btn-sm active:translate-none!"
+					disabled?={ pager.Prev == 0 }
+					hx-get="/htmx/admin/users"
+					hx-include="#user-filters, #user-limit"
+					hx-vals={ templ.JSONString(map[string]int{"page": pager.Prev}) }
+					hx-target="#admin-users"
+					hx-swap="innerHTML"
+				>«</button>
+				<span class="join-item btn btn-sm btn-ghost pointer-events-none">Page { pager.Page } of { pager.Pages }</span>
+				<button
+					type="button"
+					class="join-item btn btn-sm active:translate-none!"
+					disabled?={ pager.Next == 0 }
+					hx-get="/htmx/admin/users"
+					hx-include="#user-filters, #user-limit"
+					hx-vals={ templ.JSONString(map[string]int{"page": pager.Next}) }
+					hx-target="#admin-users"
+					hx-swap="innerHTML"
+				>»</button>
+			</div>
+		</div>
+	</nav>
 }
 
 // AdminSettings is the settings page of the admin area.
 templ AdminSettings(view View) {
-	@AdminLayout("Admin · Settings", view) {
+	@AdminLayout(AdminSettingsTitle, view) {
 		@AdminSettingsContent()
 	}
 }

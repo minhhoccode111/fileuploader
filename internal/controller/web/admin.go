@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
@@ -18,25 +21,119 @@ import (
 const (
 	_hxTriggerHeader   = "HX-Trigger"
 	_usersUpdatedEvent = "usersUpdated"
+
+	// _hxPushURLHeader tells htmx to push the named path into the browser
+	// history, which is how the filters of the account list reach the
+	// address bar, so a view stays bookmarkable.
+	_hxPushURLHeader = "HX-Push-Url"
+
+	// _hxCurrentURLHeader is the location the browser sat on when the
+	// request left, which tells the handler whether a push would only add
+	// a history entry of the path that is already on the screen.
+	_hxCurrentURLHeader = "HX-Current-URL"
 )
 
 // adminUsersTable renders the account table htmx swaps into the list on the
 // page. It is a request of its own, so the page itself never waits for the
-// query.
+// query, and the query string decides which accounts and which window of the
+// list come back. Every success also pushes the page path of the filters
+// into the address bar, so the view can be bookmarked.
 func (c *Controller) adminUsersTable(ctx *fiber.Ctx) error {
-	list, err := c.u.ListUsers(ctx.UserContext())
+	req, messages := parseUserListQuery(ctx, c.v)
+	if messages != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, messages)
+	}
+
+	filter := req.Filter()
+
+	list, err := c.u.ListUsers(ctx.UserContext(), filter)
 	if err != nil {
 		c.l.Error(fmt.Errorf("web - adminUsersTable - uc.ListUsers: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	rows := make([]response.UserRow, 0, len(list))
-	for i := range list {
-		rows = append(rows, response.NewUserRow(&list[i]))
+	rows := make([]response.UserRow, 0, len(list.Items))
+	for i := range list.Items {
+		rows = append(rows, response.NewUserRow(&list.Items[i]))
 	}
 
-	return c.renderPage(ctx, templates.AdminUsersTable(rows))
+	c.pushUserListURL(ctx, req)
+
+	return c.renderPage(
+		ctx,
+		templates.AdminUsersFragment(rows, response.NewUserPager(list, filter), userFilters(req)),
+	)
+}
+
+// parseUserListQuery decodes and validates the query string of the account
+// table. A malformed filter is a caller error, not a server fault, so it
+// comes back as the messages the error fragment prints.
+func parseUserListQuery(
+	ctx *fiber.Ctx,
+	v *validator.Validate,
+) (req request.UserListQuery, messages []string) {
+	if err := ctx.QueryParser(&req); err != nil {
+		return req, []string{"The filters of the list are malformed. Reset them and try again."}
+	}
+
+	req.Sanitize()
+
+	if err := v.Struct(req); err != nil {
+		return req, validatorx.ExtractErrors(err)
+	}
+
+	return req, nil
+}
+
+// decodeUserListQuery decodes and normalizes the query string of the account
+// list without validating it. The page restores its filter inputs from it,
+// so a bookmarked view comes back as it was left; the validation is the
+// table request's job.
+func decodeUserListQuery(ctx *fiber.Ctx) request.UserListQuery {
+	var req request.UserListQuery
+
+	if err := ctx.QueryParser(&req); err != nil {
+		return req
+	}
+
+	req.Sanitize()
+
+	return req
+}
+
+// userFilters maps the decoded query to the state the search bar and the
+// pager render.
+func userFilters(req request.UserListQuery) response.UserFilters {
+	return response.UserFilters{
+		Query:  req.Query,
+		Role:   req.Role,
+		Date:   req.Date,
+		Limit:  strconv.Itoa(req.PageSize()),
+		Page:   req.Page,
+		Active: req.HasFilters(),
+	}
+}
+
+// pushUserListURL points the address bar at the page path that holds the
+// current filters, so the visitor can bookmark the view and come back to it.
+// A browser that already sits on that path — after a load, a reload or a
+// push of its own — gets nothing, which keeps the history free of entries
+// that would only repeat the present one.
+func (c *Controller) pushUserListURL(ctx *fiber.Ctx, req request.UserListQuery) {
+	values := req.BookmarkQuery()
+
+	path := _adminUsersPath
+	if len(values) > 0 {
+		path += "?" + values.Encode()
+	}
+
+	current, err := url.Parse(ctx.Get(_hxCurrentURLHeader))
+	if err == nil && current.Path == _adminUsersPath && current.Query().Encode() == values.Encode() {
+		return
+	}
+
+	ctx.Set(_hxPushURLHeader, path)
 }
 
 // roleSubmit changes the role of an account. The role travels with the
@@ -78,7 +175,11 @@ func (c *Controller) roleError(ctx *fiber.Ctx, err error) error {
 		return c.renderErrors(ctx, http.StatusNotFound, []string{"That email is not registered."})
 
 	case errors.Is(err, entity.ErrInvalidRole):
-		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"That role is not known."})
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"That role is not known."},
+		)
 
 	default:
 		c.l.Error(fmt.Errorf("web - roleSubmit - uc.SetRole: %w", err))
