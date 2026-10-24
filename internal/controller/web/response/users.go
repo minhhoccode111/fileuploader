@@ -1,6 +1,8 @@
 package response
 
 import (
+	"net/url"
+
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
@@ -10,6 +12,9 @@ const _joinedLayout = "2006-01-02 15:04"
 
 // _userPagerFirstPage is the page number the account list starts at.
 const _userPagerFirstPage = 1
+
+// _userFiltersAllRoles is the role dropdown entry that keeps every role.
+const _userFiltersAllRoles = "all"
 
 // UserRow is one account in the admin user table. It is a presentation type: the
 // admin flag and the joined date are already what the template prints.
@@ -31,6 +36,35 @@ type UserPager struct {
 	Total int
 	Prev  int
 	Next  int
+}
+
+// UserSort is one clickable column title of the account table: the column it
+// orders by, the direction its click asks for, the address the click leads to,
+// and whether the table is already ordered by it.
+type UserSort struct {
+	Field         string
+	NextDirection string
+	Query         string
+	Active        bool
+	Ascending     bool
+}
+
+// Values is what the click sends besides the filters the form already holds.
+func (s UserSort) Values() map[string]string {
+	return map[string]string{"sort": s.Field, "dir": s.NextDirection}
+}
+
+// AriaSort is the state the table header announces to a screen reader.
+func (s UserSort) AriaSort() string {
+	if !s.Active {
+		return "none"
+	}
+
+	if s.Ascending {
+		return "ascending"
+	}
+
+	return "descending"
 }
 
 // NewUserRow maps the read model to the row the account table renders.
@@ -62,7 +96,7 @@ func NewUserRowFromUser(user *entity.User) UserRow {
 // pager the account table renders. A filter is expected to be clamped, and a
 // page that fell off the end of the list, because a filter shrank it under
 // the visitor, is pulled back to the last page there is.
-func NewUserPager(list entity.UserList, filter entity.UserFilter) UserPager {
+func NewUserPager(list entity.UserList, filter *entity.UserFilter) UserPager {
 	pages := list.Total / filter.Limit
 	if list.Total%filter.Limit != 0 {
 		pages++
@@ -95,7 +129,53 @@ type UserFilters struct {
 	Query  string
 	Role   string
 	Date   string
+	Sort   string
+	Dir    string
 	Limit  string
 	Page   int
 	Active bool
+}
+
+// SortColumn is the state of one column title. A click on the column the table
+// is ordered by turns the order around; a click on another column starts it
+// ascending. The address the click falls back to holds the filters the table
+// holds and the order the click asks for, so the view can be bookmarked even
+// without htmx.
+func (f *UserFilters) SortColumn(field string) UserSort {
+	next := string(entity.UserSortAscending)
+
+	if f.Sort == field {
+		if f.Dir == string(entity.UserSortAscending) {
+			next = string(entity.UserSortDescending)
+		}
+	}
+
+	values := url.Values{}
+
+	if f.Query != "" {
+		values.Set("q", f.Query)
+	}
+
+	if f.Role != "" && f.Role != _userFiltersAllRoles {
+		values.Set("role", f.Role)
+	}
+
+	if f.Date != "" {
+		values.Set("date", f.Date)
+	}
+
+	if f.Limit != "" {
+		values.Set("limit", f.Limit)
+	}
+
+	values.Set("sort", field)
+	values.Set("dir", next)
+
+	return UserSort{
+		Field:         field,
+		NextDirection: next,
+		Query:         values.Encode(),
+		Active:        f.Sort == field,
+		Ascending:     f.Dir == string(entity.UserSortAscending),
+	}
 }

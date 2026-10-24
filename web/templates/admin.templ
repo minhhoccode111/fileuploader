@@ -13,55 +13,56 @@ templ AdminUsers(view View, filters response.UserFilters) {
 templ AdminUsersContent(filters response.UserFilters) {
 	@PageColumnWide() {
 		// The drawer of the account list holds the editor of one account: the
-	// checkbox makes it pure CSS, a row click asks for the form fragment into
-	// the panel on the right, and the save swaps the panel while the list
-	// behind reloads itself.
-	<div class="drawer drawer-end">
-		<input
-			id="user-edit-drawer"
-			type="checkbox"
-			class="drawer-toggle"
-			autocomplete="off"
-		/>
-		<div class="drawer-content">
-			<section class="card bg-base-100 shadow">
-				<div class="card-body gap-4">
-					<h2 class="text-2xl font-bold tracking-tight">Users</h2>
-					<p class="text-base-content/70">The account list arrives on its own, right after the page. Search it by name or email, narrow it by role or day, and page through what is left. The address bar keeps the filters, so a view stays bookmarkable. Click a row to edit the account.</p>
-					// The filters live outside the swapped list, so what the admin
-					// typed stays on the screen while the rows behind it reload. A
-					// GET request of htmx carries no form fields on its own, so the
-					// pieces that ask for rows name the form and the rows selector.
-					@AdminUsersFilters(filters)
-					<div
-						id="admin-users"
-						class="overflow-x-auto"
-						hx-get="/htmx/admin/users"
-						hx-trigger="load, usersUpdated from:body"
-						hx-include="#user-filters, #user-limit, #user-page"
-						hx-swap="innerHTML"
-					>
-						// The pending state holds the rows selector and the page
-						// window as well, so the request the load trigger sends
-						// already carries the view the address bar brought;
-						// otherwise a bookmark opened with a page size would answer
-						// with the default instead.
-						<div class="flex flex-col gap-3">
-							@AdminUsersLoading()
-							<nav class="flex items-center justify-end" aria-label="Rows per page">
-								@AdminUsersLimit(filters.Limit)
-							</nav>
-							@AdminUsersPage(filters.Page)
+		// checkbox makes it pure CSS, a row click asks for the form fragment into
+		// the panel on the right, and the save swaps the panel while the list
+		// behind reloads itself.
+		<div class="drawer drawer-end">
+			<input
+				id="user-edit-drawer"
+				type="checkbox"
+				class="drawer-toggle"
+				autocomplete="off"
+			/>
+			<div class="drawer-content">
+				<section class="card bg-base-100 shadow">
+					<div class="card-body gap-4">
+						<h2 class="text-2xl font-bold tracking-tight">Users</h2>
+						<p class="text-base-content/70">The account list arrives on its own, right after the page. Search it by name or email, narrow it by role or day, sort it by any column, and page through what is left. The address bar keeps the filters and the order, so a view stays bookmarkable. Click a row to edit the account.</p>
+						// The filters live outside the swapped list, so what the admin
+						// typed stays on the screen while the rows behind it reload. A
+						// GET request of htmx carries no form fields on its own, so the
+						// pieces that ask for rows name the form and the rows selector.
+						@AdminUsersFilters(filters)
+						<div
+							id="admin-users"
+							class="overflow-x-auto"
+							hx-get="/htmx/admin/users"
+							hx-trigger="load, usersUpdated from:body"
+							hx-include="#user-filters, #user-limit, #user-page, #user-sort, #user-dir"
+							hx-swap="innerHTML"
+						>
+							// The pending state holds the rows selector, the page
+							// window and the order as well, so the request the load
+							// trigger sends already carries the view the address bar
+							// brought; otherwise a bookmark opened with a page size or
+							// a column order would answer with the default instead.
+							<div class="flex flex-col gap-3">
+								@AdminUsersLoading()
+								@AdminUsersSortState(filters)
+								<nav class="flex items-center justify-end" aria-label="Rows per page">
+									@AdminUsersLimit(filters.Limit)
+								</nav>
+								@AdminUsersPage(filters.Page)
+							</div>
 						</div>
 					</div>
-				</div>
-			</section>
+				</section>
+			</div>
+			<div class="drawer-side z-30">
+				<label for="user-edit-drawer" aria-label="Close the account editor" class="drawer-overlay"></label>
+				<aside id="user-edit-panel" class="bg-base-100 min-h-full w-96"></aside>
+			</div>
 		</div>
-		<div class="drawer-side z-30">
-			<label for="user-edit-drawer" aria-label="Close the account editor" class="drawer-overlay"></label>
-			<aside id="user-edit-panel" class="bg-base-100 min-h-full w-96"></aside>
-		</div>
-	</div>
 	}
 }
 
@@ -75,7 +76,7 @@ templ AdminUsersFilters(filters response.UserFilters) {
 		class="flex flex-wrap items-center gap-2"
 		hx-get="/htmx/admin/users"
 		hx-trigger="submit, reset delay:10ms"
-		hx-include="#user-limit"
+		hx-include="#user-limit, #user-sort, #user-dir"
 		hx-target="#admin-users"
 		hx-swap="innerHTML"
 	>
@@ -99,6 +100,45 @@ templ AdminUsersFilters(filters response.UserFilters) {
 // place, so the form it resets never moves.
 templ AdminUsersClear(hidden bool) {
 	<button type="reset" class="btn btn-ghost btn-sm" id="user-clear" hidden?={ hidden }>Clear</button>
+}
+
+// AdminUsersSortState is the order of the table, carried as hidden fields so
+// the requests that reload the rows keep the column the visitor chose. It
+// travels with the list, so it is replaced by every response.
+templ AdminUsersSortState(filters response.UserFilters) {
+	<input type="hidden" id="user-sort" name="sort" value={ filters.Sort }/>
+	<input type="hidden" id="user-dir" name="dir" value={ filters.Dir }/>
+}
+
+// AdminUsersSortHeader is one clickable column title. A click asks for the
+// rows ordered by this column, in the direction the server picked: the other
+// direction when the table is already ordered by it, ascending otherwise. The
+// href carries the same view, so the column also works without htmx and the
+// state stays bookmarkable.
+templ AdminUsersSortHeader(filters response.UserFilters, field, label string) {
+	{{ sort := filters.SortColumn(field) }}
+	<th aria-sort={ sort.AriaSort() }>
+		<a
+			class="link link-hover inline-flex items-center gap-1"
+			href={ templ.URL("/admin/users?" + sort.Query) }
+			hx-get="/htmx/admin/users"
+			hx-vals={ templ.JSONString(sort.Values()) }
+			hx-include="#user-filters, #user-limit"
+			hx-target="#admin-users"
+			hx-swap="innerHTML"
+		>
+			{ label }
+			if sort.Active {
+				if sort.Ascending {
+					<span aria-hidden="true">▲</span>
+				} else {
+					<span aria-hidden="true">▼</span>
+				}
+			} else {
+				<span class="opacity-40" aria-hidden="true">↕</span>
+			}
+		</a>
+	</th>
 }
 
 // AdminUsersLoading is what the account table shows while the rows are on their
@@ -132,14 +172,26 @@ templ AdminUsersFragment(rows []response.UserRow, pager response.UserPager, filt
 // the pager re-ask for it on every change.
 templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters response.UserFilters) {
 	<div class="flex flex-col gap-3">
-		<table class="table table-zebra w-full">
+		@AdminUsersSortState(filters)
+		// The fixed layout keeps every column at the same share of the table
+		// whatever the rows hold. A long name or email is cut with an ellipsis
+		// and its full value moves to the tooltip, so a new page never widens a
+		// column, wraps a row or moves the layout under the visitor.
+		<table class="table table-zebra table-fixed w-full min-w-[56rem]">
+			<colgroup>
+				<col class="w-[22%]"/>
+				<col class="w-[30%]"/>
+				<col class="w-[12%]"/>
+				<col class="w-[18%]"/>
+				<col class="w-[18%]"/>
+			</colgroup>
 			<thead>
 				<tr>
-					<th>Username</th>
-					<th>Email</th>
-					<th>Role</th>
-					<th>Joined</th>
-					<th>Updated</th>
+					@AdminUsersSortHeader(filters, "username", "Username")
+					@AdminUsersSortHeader(filters, "email", "Email")
+					@AdminUsersSortHeader(filters, "role", "Role")
+					@AdminUsersSortHeader(filters, "created_at", "Joined")
+					@AdminUsersSortHeader(filters, "updated_at", "Updated")
 				</tr>
 			</thead>
 			<tbody>
@@ -162,17 +214,21 @@ templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters
 							hx-swap="innerHTML"
 							hx-on:htmx:after:swap="document.getElementById('user-edit-drawer').checked = true"
 						>
-							<td class="font-medium">{ row.Username }</td>
-							<td>{ row.Email }</td>
+							<td class="font-medium">
+								<span class="block truncate" title={ row.Username }>{ row.Username }</span>
+							</td>
 							<td>
+								<span class="block truncate" title={ row.Email }>{ row.Email }</span>
+							</td>
+							<td class="whitespace-nowrap">
 								if row.IsAdmin {
 									<span class="badge badge-primary">admin</span>
 								} else {
 									<span class="badge badge-neutral">user</span>
 								}
 							</td>
-							<td>{ row.Joined }</td>
-							<td>{ row.Updated }</td>
+							<td class="whitespace-nowrap">{ row.Joined }</td>
+							<td class="whitespace-nowrap">{ row.Updated }</td>
 						</tr>
 					}
 				}
@@ -197,7 +253,7 @@ templ AdminUsersLimit(limit string) {
 			aria-label="Rows per page"
 			hx-get="/htmx/admin/users"
 			hx-trigger="change"
-			hx-include="#user-filters"
+			hx-include="#user-filters, #user-sort, #user-dir"
 			hx-target="#admin-users"
 			hx-swap="innerHTML"
 		>
@@ -233,7 +289,7 @@ templ AdminUsersPager(pager response.UserPager, limit string) {
 					class="join-item btn btn-sm active:translate-none!"
 					disabled?={ pager.Prev == 0 }
 					hx-get="/htmx/admin/users"
-					hx-include="#user-filters, #user-limit"
+					hx-include="#user-filters, #user-limit, #user-sort, #user-dir"
 					hx-vals={ templ.JSONString(map[string]int{"page": pager.Prev}) }
 					hx-target="#admin-users"
 					hx-swap="innerHTML"
@@ -244,7 +300,7 @@ templ AdminUsersPager(pager response.UserPager, limit string) {
 					class="join-item btn btn-sm active:translate-none!"
 					disabled?={ pager.Next == 0 }
 					hx-get="/htmx/admin/users"
-					hx-include="#user-filters, #user-limit"
+					hx-include="#user-filters, #user-limit, #user-sort, #user-dir"
 					hx-vals={ templ.JSONString(map[string]int{"page": pager.Next}) }
 					hx-target="#admin-users"
 					hx-swap="innerHTML"

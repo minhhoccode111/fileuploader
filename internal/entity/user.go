@@ -28,6 +28,54 @@ func (r UserRole) IsValid() bool {
 	}
 }
 
+// UserSortField names a column the account list can be ordered by. The set is
+// closed: every field maps to a column of the users table, so a hand-written
+// query never reaches the SQL.
+type UserSortField string
+
+const (
+	// UserSortUsername orders the list by the username.
+	UserSortUsername UserSortField = "username"
+	// UserSortEmail orders the list by the email.
+	UserSortEmail UserSortField = "email"
+	// UserSortRole orders the list by the role.
+	UserSortRole UserSortField = "role"
+	// UserSortCreatedAt orders the list by the day the account was created.
+	UserSortCreatedAt UserSortField = "created_at"
+	// UserSortUpdatedAt orders the list by the day the account last changed.
+	UserSortUpdatedAt UserSortField = "updated_at"
+)
+
+// IsValid reports whether the column is one the list can be ordered by.
+func (f UserSortField) IsValid() bool {
+	switch f {
+	case UserSortUsername, UserSortEmail, UserSortRole, UserSortCreatedAt, UserSortUpdatedAt:
+		return true
+	default:
+		return false
+	}
+}
+
+// UserSortDirection is one of the two orders a column can take.
+type UserSortDirection string
+
+const (
+	// UserSortAscending orders the smallest value first.
+	UserSortAscending UserSortDirection = "asc"
+	// UserSortDescending orders the largest value first.
+	UserSortDescending UserSortDirection = "desc"
+)
+
+// IsValid reports whether the direction is one the list can be ordered by.
+func (d UserSortDirection) IsValid() bool {
+	switch d {
+	case UserSortAscending, UserSortDescending:
+		return true
+	default:
+		return false
+	}
+}
+
 // UserListItem is the read model of an account in a list. It carries the ID
 // the edit drawer opens an account by, and no password hash, so the hash never
 // leaves the database.
@@ -54,11 +102,13 @@ const (
 // role and a nil day mean "any", and Sanitize clamps the rest before the
 // filter reaches a repository.
 type UserFilter struct {
-	Query string     // matches the username or the email
-	Role  UserRole   // empty means every role
-	On    *time.Time // the day an account was created or last updated on
-	Limit int        // rows on one page
-	Page  int        // the page number, starting at 1
+	Query string            // matches the username or the email
+	Role  UserRole          // empty means every role
+	On    *time.Time        // the day an account was created or last updated on
+	Sort  UserSortField     // the column the list is ordered by
+	Dir   UserSortDirection // the direction of the order
+	Limit int               // rows on one page
+	Page  int               // the page number, starting at 1
 }
 
 // UserList is one page of the account list plus the number of accounts that
@@ -80,6 +130,14 @@ func (f *UserFilter) Sanitize() {
 
 	if f.On != nil && f.On.IsZero() {
 		f.On = nil
+	}
+
+	if !f.Sort.IsValid() {
+		f.Sort = UserSortCreatedAt
+	}
+
+	if !f.Dir.IsValid() {
+		f.Dir = UserSortDescending
 	}
 
 	if f.Limit < _minUsersPageSize || f.Limit > _maxUsersPageSize {

@@ -112,7 +112,10 @@ area. Every redirect goes through `middleware.Redirect`, which answers an htmx r
 The account list on `/admin/users` loads itself: the page renders a skeleton, then htmx asks
 `/htmx/admin/users` for the rows and swaps them in. The same element reloads the rows when a role
 changes, because the role form answers with `HX-Trigger: usersUpdated`. The list is a read model
-(`entity.UserListItem`), so the password hash never leaves the database.
+(`entity.UserListItem`), so the password hash never leaves the database. Every column title sorts
+the list; the order rides in the URL as `sort` and `dir`, so a view stays bookmarkable. The first
+click on an inactive column sorts it ascending, and a click on the active column turns the order
+around.
 
 `make dev` runs air (rebuilds Go and templ on save) together with the Tailwind watcher. It needs
 Postgres up first: `make compose-up`. air only watches `.go` and `.templ`; CSS changes are handled

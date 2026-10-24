@@ -2,6 +2,7 @@
 package user
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func TestListWhereBuildsAllConditions(t *testing.T) {
 
 	day := time.Date(2026, time.October, 19, 0, 0, 0, 0, time.UTC)
 
-	where := listWhere(entity.UserFilter{
+	where := listWhere(&entity.UserFilter{
 		Query: "100%_x",
 		Role:  entity.UserRoleAdmin,
 		On:    &day,
@@ -55,7 +56,45 @@ func TestListWhereBuildsAllConditions(t *testing.T) {
 func TestListWhereIsNilWithoutConditions(t *testing.T) {
 	t.Parallel()
 
-	if where := listWhere(entity.UserFilter{}); where != nil {
+	if where := listWhere(&entity.UserFilter{}); where != nil {
 		t.Errorf("listWhere() = %v, want nil", where)
+	}
+}
+
+// The order the list asks for is one the domain knows, and the identifier
+// breaks a tie, so a page never repeats or skips a row between two requests.
+func TestListOrder(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		filter entity.UserFilter
+		want   string
+	}{
+		{
+			name:   "the default order puts the newest account first",
+			filter: entity.UserFilter{},
+			want:   "created_at DESC, id ASC",
+		},
+		{
+			name:   "a column and a direction",
+			filter: entity.UserFilter{Sort: entity.UserSortUsername, Dir: entity.UserSortAscending},
+			want:   "username ASC, id ASC",
+		},
+		{
+			name:   "another column descending",
+			filter: entity.UserFilter{Sort: entity.UserSortRole, Dir: entity.UserSortDescending},
+			want:   "role DESC, id ASC",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := strings.Join(listOrder(&tc.filter), ", "); got != tc.want {
+				t.Errorf("listOrder() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

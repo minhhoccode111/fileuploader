@@ -44,8 +44,8 @@ func (f *fakeUserRepo) GetByEmail(_ context.Context, _ string) (entity.User, err
 	return f.user, f.err
 }
 
-func (f *fakeUserRepo) List(_ context.Context, filter entity.UserFilter) (entity.UserList, error) {
-	f.listed = filter
+func (f *fakeUserRepo) List(_ context.Context, filter *entity.UserFilter) (entity.UserList, error) {
+	f.listed = *filter
 
 	return entity.UserList{Items: f.items, Total: len(f.items)}, f.err
 }
@@ -125,7 +125,7 @@ func TestListUsersClampsTheFilterBeforeItLists(t *testing.T) {
 	repo := &fakeUserRepo{}
 	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
 
-	_, err := uc.ListUsers(context.Background(), entity.UserFilter{
+	_, err := uc.ListUsers(context.Background(), &entity.UserFilter{
 		Query: "  john  ",
 		Role:  entity.UserRole("root"),
 		Limit: 3,

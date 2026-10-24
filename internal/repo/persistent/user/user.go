@@ -136,10 +136,10 @@ func (r *Repo) Update(ctx context.Context, user *entity.User) error {
 // _userFirstPage is the page number the account list starts at.
 const _userFirstPage = 1
 
-// List returns one page of accounts, newest first, as the read model a list
-// renders, plus how many accounts match the filter in total. The password
-// hash is not selected, so it never leaves the database.
-func (r *Repo) List(ctx context.Context, filter entity.UserFilter) (entity.UserList, error) {
+// List returns one page of accounts in the order the filter asks for, as the
+// read model a list renders, plus how many accounts match the filter in total.
+// The password hash is not selected, so it never leaves the database.
+func (r *Repo) List(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error) {
 	where := listWhere(filter)
 
 	countSQL, countArgs, err := r.Builder.
@@ -166,7 +166,7 @@ func (r *Repo) List(ctx context.Context, filter entity.UserFilter) (entity.UserL
 		Select("id, username, email, role, created_at, updated_at").
 		From("users").
 		Where(where).
-		OrderBy("created_at DESC").
+		OrderBy(listOrder(filter)...).
 		Limit(uint64(limit)).
 		Offset(uint64(offset)).
 		ToSql()
@@ -201,11 +201,47 @@ func (r *Repo) List(ctx context.Context, filter entity.UserFilter) (entity.UserL
 	return entity.UserList{Items: users, Total: total}, nil
 }
 
+// listOrder maps the order of the filter to the columns of the list. The
+// domain has already kept the filter to the columns it knows, so the values
+// are column names and never text from the caller. The identifier breaks a
+// tie, so a page never repeats or skips a row between two requests.
+func listOrder(filter *entity.UserFilter) []string {
+	var column string
+
+	switch filter.Sort {
+	case entity.UserSortUsername:
+		column = "username"
+	case entity.UserSortEmail:
+		column = "email"
+	case entity.UserSortRole:
+		column = "role"
+	case entity.UserSortCreatedAt:
+		column = "created_at"
+	case entity.UserSortUpdatedAt:
+		column = "updated_at"
+	default:
+		column = "created_at"
+	}
+
+	var direction string
+
+	switch filter.Dir {
+	case entity.UserSortAscending:
+		direction = "ASC"
+	case entity.UserSortDescending:
+		direction = "DESC"
+	default:
+		direction = "DESC"
+	}
+
+	return []string{column + " " + direction, "id ASC"}
+}
+
 // listWhere builds the conditions the account list filters by: the query
 // matches the username or the email, the role matches exactly, and the day
 // matches the creation or the last update. It returns nil when the filter is
 // empty, so an unfiltered query stays without a WHERE clause.
-func listWhere(filter entity.UserFilter) sq.Sqlizer {
+func listWhere(filter *entity.UserFilter) sq.Sqlizer {
 	conds := []sq.Sqlizer{}
 
 	if filter.Query != "" {

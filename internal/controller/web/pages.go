@@ -103,7 +103,8 @@ func (c *Controller) admin(ctx *fiber.Ctx) error {
 // filter inputs it carries, which is how a bookmarked view comes back the
 // way it was left. The validation runs when the table asks for its rows.
 func (c *Controller) adminUsers(ctx *fiber.Ctx) error {
-	filters := userFilters(decodeUserListQuery(ctx))
+	req := decodeUserListQuery(ctx)
+	filters := userFilters(&req)
 
 	return c.render(ctx, templates.AdminUsers(c.view(ctx), filters), templates.AdminUsersContent(filters), templates.AdminUsersTitle)
 }

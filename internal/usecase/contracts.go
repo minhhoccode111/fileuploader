@@ -15,7 +15,7 @@ type (
 		Authenticate(ctx context.Context, sessionID string) (entity.Session, error)
 		Logout(ctx context.Context, sessionID string) error
 		GetUser(ctx context.Context, userID string) (entity.User, error)
-		ListUsers(ctx context.Context, filter entity.UserFilter) (entity.UserList, error)
+		ListUsers(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error)
 		SetRole(ctx context.Context, email string, role entity.UserRole) error
 		UpdateUser(
 			ctx context.Context,

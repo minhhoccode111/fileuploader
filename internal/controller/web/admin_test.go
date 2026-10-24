@@ -11,6 +11,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/web/templates"
 )
@@ -154,6 +155,136 @@ func TestAdminUsersEditFormCarriesTheFields(t *testing.T) {
 
 	if !strings.Contains(saved, "Every live session of the account was ended") {
 		t.Errorf("body = %q, want the note about the ended sessions", saved)
+	}
+}
+
+// A column title links to the table ordered by that column, and the next
+// click on the column the table is ordered by turns the order around. The
+// link keeps the filters, so the view stays bookmarkable.
+func TestAdminUsersSortHeader(t *testing.T) {
+	t.Parallel()
+
+	filters := response.UserFilters{
+		Query: "john",
+		Role:  "admin",
+		Limit: "10",
+		Sort:  "username",
+		Dir:   "asc",
+	}
+
+	active := renderComponent(t, templates.AdminUsersSortHeader(filters, "username", "Username"))
+
+	want := []string{
+		`aria-sort="ascending"`,
+		`href="/admin/users?`,
+		`sort=username`,
+		`dir=desc`,
+		`q=john`,
+		`role=admin`,
+		`hx-get="/htmx/admin/users"`,
+		`hx-include="#user-filters, #user-limit"`,
+		`hx-target="#admin-users"`,
+		`>Username`,
+	}
+
+	for _, part := range want {
+		if !strings.Contains(active, part) {
+			t.Errorf("header = %q, want it to contain %q", active, part)
+		}
+	}
+
+	other := renderComponent(t, templates.AdminUsersSortHeader(filters, "email", "Email"))
+
+	if !strings.Contains(other, `aria-sort="none"`) {
+		t.Errorf("header = %q, want an unsorted column", other)
+	}
+
+	if !strings.Contains(other, "sort=email") || !strings.Contains(other, "dir=asc") {
+		t.Errorf("header = %q, want the first click to sort the column ascending", other)
+	}
+}
+
+// The columns keep their share of the table however long a name or an email
+// is. A long value is cut with an ellipsis instead of widening its column or
+// wrapping onto a second line, so a new page never moves the layout.
+func TestAdminUsersTableKeepsTheColumnsFixed(t *testing.T) {
+	t.Parallel()
+
+	rows := []response.UserRow{{
+		ID:       "1",
+		Username: "a-very-long-username-that-would-widen-the-column",
+		Email:    "a-very-long-email-address-that-would-widen-the-column@example.com",
+		Joined:   "2026-10-24 16:32",
+		Updated:  "2026-10-24 16:32",
+	}}
+
+	page := renderComponent(t, templates.AdminUsersTable(rows, response.UserPager{Page: 1, Pages: 1}, response.UserFilters{Limit: "10"}))
+
+	want := []string{
+		"table-fixed",
+		"min-w-[56rem]",
+		"<colgroup>",
+		`w-[22%]`,
+		`w-[30%]`,
+		`w-[12%]`,
+		`w-[18%]`,
+		"truncate",
+		`title="a-very-long-username-that-would-widen-the-column"`,
+		`title="a-very-long-email-address-that-would-widen-the-column@example.com"`,
+	}
+
+	for _, part := range want {
+		if !strings.Contains(page, part) {
+			t.Errorf("table = %q, want it to contain %q", page, part)
+		}
+	}
+}
+
+// The table carries the order it was rendered with, so the next request the
+// list makes on its own keeps the column the visitor chose.
+func TestAdminUsersTableCarriesTheSort(t *testing.T) {
+	t.Parallel()
+
+	filters := response.UserFilters{Sort: "email", Dir: "desc", Limit: "10", Page: 1}
+
+	page := renderComponent(t, templates.AdminUsersTable(nil, response.UserPager{Page: 1, Pages: 1}, filters))
+
+	want := []string{
+		`id="user-sort"`,
+		`name="sort" value="email"`,
+		`id="user-dir"`,
+		`name="dir" value="desc"`,
+		`sort=username`,
+		`sort=email`,
+		`sort=role`,
+		`sort=created_at`,
+		`sort=updated_at`,
+	}
+
+	for _, part := range want {
+		if !strings.Contains(page, part) {
+			t.Errorf("table = %q, want it to contain %q", page, part)
+		}
+	}
+}
+
+// The table state carries the order the address bar brought, so a bookmark
+// comes back with the column and the direction it was left with.
+func TestUserFiltersCarryTheSort(t *testing.T) {
+	t.Parallel()
+
+	req := request.UserListQuery{Sort: "username", Dir: "asc"}
+	filters := userFilters(&req)
+
+	if filters.Sort != "username" || filters.Dir != "asc" {
+		t.Errorf("sort = %q %q, want %q %q", filters.Sort, filters.Dir, "username", "asc")
+	}
+
+	empty := request.UserListQuery{}
+	fallback := userFilters(&empty)
+
+	if fallback.Sort != "created_at" || fallback.Dir != "desc" {
+		t.Errorf("sort = %q %q, want the default order", fallback.Sort, fallback.Dir)
 	}
 }
 

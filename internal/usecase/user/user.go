@@ -154,7 +154,7 @@ func (uc *UseCase) GetUser(ctx context.Context, userID string) (entity.User, err
 // ListUsers returns one page of accounts as the read model a list renders,
 // plus how many accounts match the filter in total. The filter is clamped to
 // the bounds the list serves before it reaches the repository.
-func (uc *UseCase) ListUsers(ctx context.Context, filter entity.UserFilter) (entity.UserList, error) {
+func (uc *UseCase) ListUsers(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error) {
 	filter.Sanitize()
 
 	users, err := uc.repo.List(ctx, filter)

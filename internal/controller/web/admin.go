@@ -46,7 +46,7 @@ func (c *Controller) adminUsersTable(ctx *fiber.Ctx) error {
 
 	filter := req.Filter()
 
-	list, err := c.u.ListUsers(ctx.UserContext(), filter)
+	list, err := c.u.ListUsers(ctx.UserContext(), &filter)
 	if err != nil {
 		c.l.Error(fmt.Errorf("web - adminUsersTable - uc.ListUsers: %w", err))
 
@@ -58,11 +58,11 @@ func (c *Controller) adminUsersTable(ctx *fiber.Ctx) error {
 		rows = append(rows, response.NewUserRow(&list.Items[i]))
 	}
 
-	c.pushUserListURL(ctx, req)
+	c.pushUserListURL(ctx, &req)
 
 	return c.renderPage(
 		ctx,
-		templates.AdminUsersFragment(rows, response.NewUserPager(list, filter), userFilters(req)),
+		templates.AdminUsersFragment(rows, response.NewUserPager(list, &filter), userFilters(&req)),
 	)
 }
 
@@ -104,11 +104,13 @@ func decodeUserListQuery(ctx *fiber.Ctx) request.UserListQuery {
 
 // userFilters maps the decoded query to the state the search bar and the
 // pager render.
-func userFilters(req request.UserListQuery) response.UserFilters {
+func userFilters(req *request.UserListQuery) response.UserFilters {
 	return response.UserFilters{
 		Query:  req.Query,
 		Role:   req.Role,
 		Date:   req.Date,
+		Sort:   string(req.SortField()),
+		Dir:    string(req.SortDirection()),
 		Limit:  strconv.Itoa(req.PageSize()),
 		Page:   req.Page,
 		Active: req.HasFilters(),
@@ -120,7 +122,7 @@ func userFilters(req request.UserListQuery) response.UserFilters {
 // A browser that already sits on that path — after a load, a reload or a
 // push of its own — gets nothing, which keeps the history free of entries
 // that would only repeat the present one.
-func (c *Controller) pushUserListURL(ctx *fiber.Ctx, req request.UserListQuery) {
+func (c *Controller) pushUserListURL(ctx *fiber.Ctx, req *request.UserListQuery) {
 	values := req.BookmarkQuery()
 
 	path := _adminUsersPath
