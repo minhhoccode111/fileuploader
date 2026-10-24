@@ -41,14 +41,14 @@ func (c *Controller) registerSubmit(ctx *fiber.Ctx) error {
 		return c.registerError(ctx, err)
 	}
 
-	token, user, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
+	token, _, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
 	if err != nil {
 		c.l.Error(fmt.Errorf("web - registerSubmit - uc.Login: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	return c.renderAuthenticated(ctx, token, &user)
+	return c.renderAuthenticated(ctx, token)
 }
 
 // registerError maps a registration failure to a status and a message the caller

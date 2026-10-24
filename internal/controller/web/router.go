@@ -13,25 +13,31 @@ import (
 
 // Controller renders HTML pages and handles page form submissions.
 type Controller struct {
-	u   usecase.User
-	l   logger.Interface
-	v   *validator.Validate
-	cfg *config.Config
+	u       usecase.User
+	folders usecase.Folder
+	files   usecase.File
+	l       logger.Interface
+	v       *validator.Validate
+	cfg     *config.Config
 }
 
 // NewRouter registers the transport middleware, static assets and HTML/page routes.
 func NewRouter(
 	app *fiber.App,
 	u usecase.User,
+	folders usecase.Folder,
+	files usecase.File,
 	l logger.Interface,
 	v *validator.Validate,
 	cfg *config.Config,
 ) {
 	c := &Controller{
-		u:   u,
-		l:   l,
-		v:   v,
-		cfg: cfg,
+		u:       u,
+		folders: folders,
+		files:   files,
+		l:       l,
+		v:       v,
+		cfg:     cfg,
 	}
 
 	// Options
@@ -49,6 +55,7 @@ func NewRouter(
 
 	// Pages
 	app.Get("/", middleware.RequireAuth(u), c.home)
+	app.Get("/folders/:folder", middleware.RequireAuth(u), c.folderPage)
 	app.Get("/share", middleware.RequireAuth(u), c.share)
 	app.Get("/public", middleware.RequireAuth(u), c.public)
 	app.Get("/admin", middleware.RequireAdmin(u), c.admin)
@@ -63,6 +70,19 @@ func NewRouter(
 	app.Post("/htmx/register", c.registerSubmit)
 	app.Post("/htmx/logout", c.logoutSubmit)
 	app.Post("/htmx/admin/role", middleware.RequireAdmin(u), c.roleSubmit)
+
+	// Drive
+	app.Get(_newFolderPath, middleware.RequireAuth(u), c.folderNew)
+	app.Post(_folderCreatePath, middleware.RequireAuth(u), c.folderCreate)
+	app.Get(_folderCreatePath+"/:folder/edit", middleware.RequireAuth(u), c.folderEdit)
+	app.Post(_folderCreatePath+"/:folder/rename", middleware.RequireAuth(u), c.folderRename)
+	app.Post(_folderCreatePath+"/:folder/delete", middleware.RequireAuth(u), c.folderDelete)
+	app.Get(_newFilePath, middleware.RequireAuth(u), c.fileNew)
+	app.Post(_fileUploadPath, middleware.RequireAuth(u), c.fileUploadSubmit)
+	app.Get(_filePath+":file", middleware.RequireAuth(u), c.fileDrawer)
+	app.Post(_filePath+":file/rename", middleware.RequireAuth(u), c.fileRename)
+	app.Post(_filePath+":file/delete", middleware.RequireAuth(u), c.fileDelete)
+	app.Get(_downloadPath+":file/download", middleware.RequireAuth(u), c.fileDownload)
 
 	app.Get(_adminUsersEditPath, middleware.RequireAdmin(u), c.adminUsersEdit)
 	app.Post(_adminUsersEditPath, middleware.RequireAdmin(u), c.adminUsersEditSubmit)

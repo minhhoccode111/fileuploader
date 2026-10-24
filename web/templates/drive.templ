@@ -1,0 +1,432 @@
+package templates
+
+import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+
+// filePickerState backs the upload drawer: choosing a file fills the name
+// field with the file name and shows the size and the extension before the
+// form is submitted.
+const filePickerState = `{
+	name: '',
+	size: '',
+	extension: '',
+	pick(event) {
+		const file = event.target.files[0];
+		if (!file) {
+			return;
+		}
+		this.name = file.name;
+		this.size = file.size + ' bytes';
+		this.extension = file.name.includes('.') ? file.name.split('.').pop() : 'none';
+	}
+}`
+
+// Drive is the home page of a signed-in account: the contents of the root
+// folder, or of the folder the address bar names.
+templ Drive(view View, title string, page response.Drive) {
+	@Layout(title, view) {
+		@DriveContent(page)
+	}
+}
+
+// DriveContent is the fragment htmx swaps into <main> on client-side
+// navigation between folders. The drawer is part of the page, so every action
+// opens in the same panel on the right.
+templ DriveContent(page response.Drive) {
+	@PageColumnWide() {
+		<div class="drawer drawer-end">
+			<input
+				id="entry-drawer"
+				type="checkbox"
+				class="drawer-toggle"
+				autocomplete="off"
+			/>
+			<div class="drawer-content flex flex-col gap-4">
+				<section class="card bg-base-100 shadow">
+					<div class="card-body gap-4">
+						@DriveToolbar(page)
+						<div id="drive-entries" class="overflow-x-auto">
+							@DriveEntries(page)
+						</div>
+					</div>
+				</section>
+			</div>
+			<div class="drawer-side z-30">
+				<label for="entry-drawer" aria-label="Close the panel" class="drawer-overlay"></label>
+				<aside id="entry-panel" class="bg-base-100 min-h-full w-96"></aside>
+			</div>
+		</div>
+	}
+}
+
+// DriveToolbar is the path above the listing together with the actions of the
+// folder. The path owns the free width and scrolls on its own; the actions keep
+// their size, so a deep path never moves them.
+templ DriveToolbar(page response.Drive) {
+	<div class="flex w-full flex-nowrap items-center gap-3">
+		<nav
+			aria-label="Breadcrumb"
+			class="breadcrumbs min-w-0 flex-1 overflow-x-auto text-sm"
+		>
+			<ul>
+				for _, crumb := range page.Breadcrumb {
+					<li>
+						if crumb.Current {
+							<span aria-current="page">{ crumb.Name }</span>
+						} else {
+							<a
+								href={ templ.URL(crumb.Href) }
+								hx-get={ crumb.Href }
+								hx-target="#page-content"
+								hx-swap="innerHTML"
+								hx-push-url="true"
+							>{ crumb.Name }</a>
+						}
+					</li>
+				}
+			</ul>
+		</nav>
+		<div class="ml-auto flex shrink-0 items-center gap-2">
+			<button
+				type="button"
+				class="btn btn-sm whitespace-nowrap"
+				hx-get={ "/htmx/folders/new?folder=" + page.FolderID }
+				hx-target="#entry-panel"
+				hx-swap="innerHTML"
+				hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+					<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
+					<path d="M12 11v6"></path>
+					<path d="M9 14h6"></path>
+				</svg>
+				New folder
+			</button>
+			<button
+				type="button"
+				class="btn btn-sm btn-primary whitespace-nowrap"
+				hx-get={ "/htmx/files/new?folder=" + page.FolderID }
+				hx-target="#entry-panel"
+				hx-swap="innerHTML"
+				hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+			>
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+					<path d="M12 15V3"></path>
+					<path d="m7 8 5-5 5 5"></path>
+					<path d="M5 21h14"></path>
+				</svg>
+				Upload file
+			</button>
+		</div>
+	</div>
+}
+
+// DriveEntries is the table of the folder, and the target every action
+// refreshes. Folders come before files, both ordered by name.
+templ DriveEntries(page response.Drive) {
+	if len(page.Folders) == 0 && len(page.Files) == 0 {
+		<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
+			<p class="text-base-content/70 text-sm">This folder is empty.</p>
+		</div>
+	} else {
+		<table class="table table-zebra table-fixed w-full">
+			<thead>
+				<tr>
+					<th>Name</th>
+					<th class="w-32">Size</th>
+					<th class="w-40">Modified</th>
+					<th class="w-12 pe-0"><span class="sr-only">Actions</span></th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, folder := range page.Folders {
+					<tr
+						class="cursor-pointer hover:bg-base-200/50"
+						aria-label={ "Open folder " + folder.Name }
+						hx-get={ folder.Href }
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+					>
+						<td class="font-medium">
+							<span class="flex items-center gap-2">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-warning">
+									<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
+								</svg>
+								<span
+									class="block min-w-0 flex-1 truncate"
+									data-full-name={ folder.Name }
+									title={ folder.Name }
+								>{ folder.Name }</span>
+							</span>
+						</td>
+						<td class="whitespace-nowrap">{ folder.Items }</td>
+						<td class="whitespace-nowrap">{ folder.Updated }</td>
+						<td class="pe-0 text-right">
+							<button
+								type="button"
+								class="btn btn-square btn-ghost btn-sm"
+								aria-label={ "Actions for folder " + folder.Name }
+								@click.stop
+								hx-get={ "/htmx/folders/" + folder.ID + "/edit" }
+								hx-target="#entry-panel"
+								hx-swap="innerHTML"
+								hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+									<circle cx="12" cy="5" r="1.7"></circle>
+									<circle cx="12" cy="12" r="1.7"></circle>
+									<circle cx="12" cy="19" r="1.7"></circle>
+								</svg>
+							</button>
+						</td>
+					</tr>
+				}
+				for _, file := range page.Files {
+					<tr
+						class="cursor-pointer hover:bg-base-200/50"
+						aria-label={ "Open " + file.Name }
+						hx-get={ "/htmx/files/" + file.ID }
+						hx-target="#entry-panel"
+						hx-swap="innerHTML"
+						hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+					>
+						<td class="font-medium">
+							<span class="flex items-center gap-2">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
+									<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+									<path d="M14 2v6h6"></path>
+								</svg>
+								<span
+									class="block min-w-0 flex-1 truncate"
+									data-full-name={ file.Name }
+									title={ file.Name }
+								>{ file.Name }</span>
+							</span>
+						</td>
+						<td class="whitespace-nowrap">{ file.Size }</td>
+						<td class="whitespace-nowrap">{ file.Updated }</td>
+						<td class="pe-0 text-right">
+							<button
+								type="button"
+								class="btn btn-square btn-ghost btn-sm"
+								aria-label={ "Actions for " + file.Name }
+								@click.stop
+								hx-get={ "/htmx/files/" + file.ID }
+								hx-target="#entry-panel"
+								hx-swap="innerHTML"
+								hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+									<circle cx="12" cy="5" r="1.7"></circle>
+									<circle cx="12" cy="12" r="1.7"></circle>
+									<circle cx="12" cy="19" r="1.7"></circle>
+								</svg>
+							</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+// FolderCreateContent is the drawer form that creates one folder inside the
+// folder on the screen.
+templ FolderCreateContent(folderID string) {
+	<div class="flex flex-col gap-4 p-4">
+		<div class="flex items-center justify-between">
+			<h3 class="text-lg font-bold">New folder</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		<form
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post="/htmx/folders"
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#folder-error"
+			hx-status:5xx="target:#folder-error"
+		>
+			<input type="hidden" name="folder" value={ folderID }/>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Name</span>
+				<input
+					class="input w-full"
+					type="text"
+					name="name"
+					required
+					maxlength="255"
+					autofocus
+					autocomplete="off"
+				/>
+			</label>
+			<div id="folder-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-primary">Create folder</button>
+			<label for="entry-drawer" class="btn btn-ghost">Cancel</label>
+		</form>
+	</div>
+}
+
+// FolderEditContent is the drawer one folder opens from the actions button:
+// the rename form and the delete action. A successful rename answers with an
+// htmx location back to the parent, so the row comes back with the new name.
+templ FolderEditContent(folderID, name string) {
+	<div class="flex flex-col gap-4 p-4">
+		<div class="flex items-start justify-between gap-2">
+			<h3 class="text-lg font-bold break-all">{ name }</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		<form
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post={ "/htmx/folders/" + folderID + "/rename" }
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#folder-edit-error"
+			hx-status:5xx="target:#folder-edit-error"
+		>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Name</span>
+				<input
+					class="input w-full"
+					type="text"
+					name="name"
+					value={ name }
+					required
+					maxlength="255"
+					autofocus
+					autocomplete="off"
+				/>
+			</label>
+			<div id="folder-edit-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-primary">Save name</button>
+		</form>
+		<form
+			hx-post={ "/htmx/folders/" + folderID + "/delete" }
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-confirm="Delete this folder and everything in it?"
+			hx-status:4xx="target:#folder-edit-error"
+			hx-status:5xx="target:#folder-edit-error"
+		>
+			<button type="submit" class="btn btn-sm btn-error btn-outline">Delete folder</button>
+		</form>
+	</div>
+}
+
+// FileUploadContent is the drawer form that stores one file. Choosing the file
+// fills the name field with its name and shows the size and the extension, so
+// the visitor sees what is about to be sent before submitting.
+templ FileUploadContent(folderID string) {
+	<div class="flex flex-col gap-4 p-4" x-data={ filePickerState }>
+		<div class="flex items-center justify-between">
+			<h3 class="text-lg font-bold">Upload file</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		<form
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post="/htmx/files"
+			hx-encoding="multipart/form-data"
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#upload-error"
+			hx-status:5xx="target:#upload-error"
+		>
+			<input type="hidden" name="folder" value={ folderID }/>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">File</span>
+				<input
+					class="file-input w-full"
+					type="file"
+					name="file"
+					required
+					@change="pick($event)"
+				/>
+			</label>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Name</span>
+				<input
+					class="input w-full"
+					type="text"
+					name="name"
+					x-model="name"
+					required
+					maxlength="255"
+					autocomplete="off"
+				/>
+			</label>
+			<p class="text-xs text-base-content/60">
+				Size: <span x-text="size || '—'"></span>
+				· Extension: <span x-text="extension || '—'"></span>
+			</p>
+			<div id="upload-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-primary">Upload file</button>
+			<label for="entry-drawer" class="btn btn-ghost">Cancel</label>
+		</form>
+	</div>
+}
+
+// FileDrawerContent is the drawer one file opens: what the file is, the
+// download link, the rename form and the delete form.
+templ FileDrawerContent(file response.FileInfo) {
+	<div class="flex flex-col gap-4 p-4">
+		<div class="flex items-start justify-between gap-2">
+			<h3 class="text-lg font-bold break-all">{ file.Name }</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+			<dt class="text-base-content/60">Size</dt>
+			<dd>{ file.Size }</dd>
+			<dt class="text-base-content/60">Type</dt>
+			<dd class="break-all">{ file.Type }</dd>
+			<dt class="text-base-content/60">Modified</dt>
+			<dd>{ file.Updated }</dd>
+		</dl>
+		<a
+			class="btn btn-primary"
+			href={ templ.URL("/files/" + file.ID + "/download") }
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+				<path d="M12 3v12"></path>
+				<path d="m7 10 5 5 5-5"></path>
+				<path d="M5 21h14"></path>
+			</svg>
+			Download
+		</a>
+		<form
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post={ "/htmx/files/" + file.ID + "/rename" }
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#entry-error"
+			hx-status:5xx="target:#entry-error"
+		>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Name</span>
+				<input
+					class="input w-full"
+					type="text"
+					name="name"
+					value={ file.Name }
+					required
+					maxlength="255"
+					autocomplete="off"
+				/>
+			</label>
+			<div id="entry-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-sm">Save name</button>
+		</form>
+		<form
+			hx-post={ "/htmx/files/" + file.ID + "/delete" }
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-confirm="Delete this file?"
+			hx-status:4xx="target:#entry-error"
+			hx-status:5xx="target:#entry-error"
+		>
+			<button type="submit" class="btn btn-sm btn-error btn-outline">Delete file</button>
+		</form>
+	</div>
+}

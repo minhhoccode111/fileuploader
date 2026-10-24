@@ -25,9 +25,16 @@ type MinIO struct {
 	region       string
 	secure       bool
 
+	publicEndpoint string
+
 	transport *http.Transport
 
 	Client *miniogo.Client
+
+	// presignClient builds the download links, and it points at the endpoint
+	// the browser can reach. Inside a container the API endpoint and the link
+	// host are not always the same, so the two clients are kept apart.
+	presignClient *miniogo.Client
 
 	buckets bucketClient
 }
@@ -35,10 +42,11 @@ type MinIO struct {
 // New -.
 func New(endpoint, accessKey, secretKey string, opts ...Option) (*MinIO, error) {
 	m := &MinIO{
-		connAttempts: _defaultConnAttempts,
-		connTimeout:  _defaultConnTimeout,
-		region:       _defaultRegion,
-		transport:    defaultTransport(),
+		connAttempts:   _defaultConnAttempts,
+		connTimeout:    _defaultConnTimeout,
+		region:         _defaultRegion,
+		transport:      defaultTransport(),
+		publicEndpoint: endpoint,
 	}
 
 	// Custom options
@@ -46,17 +54,18 @@ func New(endpoint, accessKey, secretKey string, opts ...Option) (*MinIO, error) 
 		opt(m)
 	}
 
-	client, err := miniogo.New(endpoint, &miniogo.Options{
-		Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure:    m.secure,
-		Region:    m.region,
-		Transport: m.transport,
-	})
+	client, err := newClient(endpoint, accessKey, secretKey, m)
 	if err != nil {
-		return nil, fmt.Errorf("minio - New - miniogo.New: %w", err)
+		return nil, err
+	}
+
+	presignClient, err := newClient(m.publicEndpoint, accessKey, secretKey, m)
+	if err != nil {
+		return nil, err
 	}
 
 	m.Client = client
+	m.presignClient = presignClient
 	m.buckets = client
 
 	err = m.check(context.Background())
@@ -65,6 +74,21 @@ func New(endpoint, accessKey, secretKey string, opts ...Option) (*MinIO, error) 
 	}
 
 	return m, nil
+}
+
+// newClient builds one SDK client pointed at an endpoint.
+func newClient(endpoint, accessKey, secretKey string, m *MinIO) (*miniogo.Client, error) {
+	client, err := miniogo.New(endpoint, &miniogo.Options{
+		Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure:    m.secure,
+		Region:    m.region,
+		Transport: m.transport,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("minio - newClient - miniogo.New: %w", err)
+	}
+
+	return client, nil
 }
 
 // check lists the buckets, retrying until the attempts run out. The SDK has no

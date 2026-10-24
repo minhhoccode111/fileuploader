@@ -25,3 +25,15 @@ func UseSSL(secure bool) Option {
 		m.secure = secure
 	}
 }
+
+// PublicEndpoint sets the host the browser reaches the bucket at. The default
+// is the endpoint the app writes to, which is right when both run on the same
+// host. A deployment where the app talks to a container name passes the host
+// the visitor can resolve instead.
+func PublicEndpoint(endpoint string) Option {
+	return func(m *MinIO) {
+		if endpoint != "" {
+			m.publicEndpoint = endpoint
+		}
+	}
+}

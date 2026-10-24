@@ -30,6 +30,11 @@ x-backend-app-environment: &x-backend-app-environment
   MINIO_SECRET_KEY: "P@55w0rd"
   MINIO_USE_SSL: "false"
   MINIO_BUCKET: "files"
+  # The browser runs on the host, where the container name does not resolve.
+  MINIO_PUBLIC_ENDPOINT: "localhost:9000"
+  # Uploads
+  UPLOAD_MAX_BYTES: "104857600"
+  UPLOAD_TIMEOUT: "5m"
   # Session
   SESSION_TTL: "24h"
 

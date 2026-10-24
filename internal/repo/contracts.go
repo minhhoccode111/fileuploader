@@ -3,6 +3,7 @@ package repo
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
@@ -34,5 +35,51 @@ type (
 		Get(ctx context.Context, id string) (entity.Session, error)
 		Delete(ctx context.Context, id string) error
 		DeleteUserSessions(ctx context.Context, userID string) error
+	}
+
+	// FolderRepo -.
+	FolderRepo interface {
+		Store(ctx context.Context, folder *entity.Folder) error
+		Get(ctx context.Context, userID, folderID string) (entity.Folder, error)
+		LockUser(ctx context.Context, userID string) error
+		Lock(ctx context.Context, userID, folderID string) (entity.Folder, error)
+		LockSubtree(ctx context.Context, userID, folderID string) error
+		GetRoot(ctx context.Context, userID string) (entity.Folder, error)
+		List(ctx context.Context, userID, folderID string) ([]entity.FolderItem, error)
+		Breadcrumb(ctx context.Context, userID, folderID string) ([]entity.FolderRef, error)
+		NameTaken(ctx context.Context, userID, parentID, name string) (bool, error)
+		Rename(ctx context.Context, folder *entity.Folder) error
+		Delete(ctx context.Context, userID, folderID string) error
+	}
+
+	// FileRepo -.
+	FileRepo interface {
+		Store(ctx context.Context, file *entity.File) error
+		Get(ctx context.Context, userID, fileID string) (entity.File, error)
+		List(ctx context.Context, userID, folderID string) ([]entity.FileItem, error)
+		Rename(ctx context.Context, file *entity.File) error
+		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
+		NameTaken(ctx context.Context, userID, folderID, name string) (bool, error)
+		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]string, error)
+	}
+
+	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the
+	// only thing the repository layer knows about it, so the storage can be
+	// swapped without touching the domain.
+	ObjectStorage interface {
+		PutObject(
+			ctx context.Context,
+			bucket, key string,
+			reader io.Reader,
+			size int64,
+			contentType string,
+		) error
+		PresignedGetObject(
+			ctx context.Context,
+			bucket, key string,
+			expiry time.Duration,
+			downloadName string,
+		) (string, error)
+		RemoveObject(ctx context.Context, bucket, key string) error
 	}
 )

@@ -17,6 +17,7 @@ type (
 		Redis   redis
 		MinIO   minio
 		Session session
+		Upload  upload
 	}
 
 	// App -.
@@ -58,11 +59,25 @@ type (
 		SecretKey string `env:"MINIO_SECRET_KEY,required"`
 		UseSSL    bool   `env:"MINIO_USE_SSL" envDefault:"false"`
 		Bucket    string `env:"MINIO_BUCKET" envDefault:"files"`
+		// PublicEndpoint is the host the browser reaches the bucket at. It
+		// defaults to Endpoint, which is right when both run on one host.
+		PublicEndpoint string `env:"MINIO_PUBLIC_ENDPOINT"`
 	}
 
 	// Session -.
 	session struct {
 		TTL time.Duration `env:"SESSION_TTL" envDefault:"24h"`
+	}
+
+	// Upload -.
+	upload struct {
+		// MaxBytes is the largest body the server accepts. It bounds one
+		// multipart upload, so a single request cannot exceed the configured
+		// size.
+		MaxBytes int64 `env:"UPLOAD_MAX_BYTES" envDefault:"104857600"`
+		// Timeout is how long the server waits for a request body, raised from
+		// the default so a large upload over a slow line can finish.
+		Timeout time.Duration `env:"UPLOAD_TIMEOUT" envDefault:"5m"`
 	}
 )
 

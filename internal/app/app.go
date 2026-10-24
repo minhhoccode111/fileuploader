@@ -7,13 +7,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web"
-	"github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
+	"github.com/minhhoccode111/fileuploader/internal/repo"
+	fileRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/file"
+	folderRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/folder"
+	userRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
 	"github.com/minhhoccode111/fileuploader/internal/repo/session"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	usecaseFile "github.com/minhhoccode111/fileuploader/internal/usecase/file"
+	usecaseFolder "github.com/minhhoccode111/fileuploader/internal/usecase/folder"
 	usecaseUser "github.com/minhhoccode111/fileuploader/internal/usecase/user"
 	"github.com/minhhoccode111/fileuploader/pkg/httpserver"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
@@ -23,20 +27,35 @@ import (
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 )
 
+// _multipartOverhead is the room the multipart envelope, its headers and the
+// name field need on top of the bytes of the file itself.
+const _multipartOverhead = 1 << 20
+
 type useCases struct {
-	user usecase.User
+	user   usecase.User
+	folder usecase.Folder
+	file   usecase.File
 }
 
 type servers struct {
 	http *httpserver.Server
 }
 
-func initUseCases(pg *postgres.Postgres, rdb *redis.Redis, sessionTTL time.Duration) useCases {
-	userRepo := user.New(pg)
+func initUseCases(
+	pg *postgres.Postgres,
+	rdb *redis.Redis,
+	storage repo.ObjectStorage,
+	cfg *config.Config,
+) useCases {
+	users := userRepo.New(pg)
 	sessionRepo := session.New(rdb)
+	folders := folderRepo.New(pg)
+	files := fileRepo.New(pg)
 
 	return useCases{
-		user: usecaseUser.New(userRepo, sessionRepo, pg, sessionTTL),
+		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
+		folder: usecaseFolder.New(folders, files, storage, pg, cfg.MinIO.Bucket),
+		file:   usecaseFile.New(files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes),
 	}
 }
 
@@ -50,11 +69,13 @@ func initServers(
 		l,
 		httpserver.Port(cfg.HTTP.Port),
 		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
+		httpserver.BodyLimit(int(cfg.Upload.MaxBytes)+_multipartOverhead),
+		httpserver.ReadTimeout(cfg.Upload.Timeout),
 	)
 	// Validator
 	v := validatorx.New()
 
-	web.NewRouter(httpServer.App, uc.user, l, v, cfg)
+	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, l, v, cfg)
 
 	return servers{
 		http: httpServer,
@@ -109,6 +130,7 @@ func Run(cfg *config.Config) {
 		cfg.MinIO.AccessKey,
 		cfg.MinIO.SecretKey,
 		minio.UseSSL(cfg.MinIO.UseSSL),
+		minio.PublicEndpoint(cfg.MinIO.PublicEndpoint),
 	)
 	if err != nil {
 		l.Fatal(fmt.Errorf("app - Run - minio.New: %w", err))
@@ -121,7 +143,7 @@ func Run(cfg *config.Config) {
 		l.Fatal(fmt.Errorf("app - Run - minioClient.EnsureBucket: %w", err))
 	}
 
-	uc := initUseCases(pg, redisConn, cfg.Session.TTL)
+	uc := initUseCases(pg, redisConn, minioClient, cfg)
 	s := initServers(cfg, uc, l)
 	s.startServers()
 	s.waitForShutdown(l)

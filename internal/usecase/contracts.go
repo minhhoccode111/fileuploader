@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"io"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
@@ -23,5 +24,31 @@ type (
 			role entity.UserRole,
 			password string,
 		) (entity.User, bool, error)
+	}
+
+	// Folder is the drive's folder logic: listing one folder with its path,
+	// creating a folder inside it, renaming it, and deleting a folder with
+	// everything it holds.
+	Folder interface {
+		Get(ctx context.Context, userID, folderID string) (entity.Folder, error)
+		List(ctx context.Context, userID, folderID string) (entity.FolderView, error)
+		Create(ctx context.Context, userID, parentID, name string) (entity.Folder, error)
+		Rename(ctx context.Context, userID, folderID, name string) (entity.Folder, error)
+		Delete(ctx context.Context, userID, folderID string) (entity.Folder, error)
+	}
+
+	// File is the drive's file logic: one upload at a time, a rename, a
+	// delete, and the link a browser downloads through.
+	File interface {
+		Get(ctx context.Context, userID, fileID string) (entity.File, error)
+		Upload(
+			ctx context.Context,
+			userID, folderID, name, contentType string,
+			size int64,
+			body io.Reader,
+		) (entity.File, error)
+		Rename(ctx context.Context, userID, fileID, name string) (entity.File, error)
+		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
+		Download(ctx context.Context, userID, fileID string) (string, error)
 	}
 )

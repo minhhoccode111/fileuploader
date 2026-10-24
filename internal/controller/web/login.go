@@ -5,23 +5,24 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
-	"github.com/minhhoccode111/fileuploader/web/templates"
 )
 
 const (
 	_authCookieName = "access_token"
-	_hxRetarget     = "HX-Retarget"
-	_hxReswap       = "HX-Reswap"
-	_hxPushURL      = "HX-Push-Url"
-	_pageContent    = "#page-content"
-	_swapInnerHTML  = "innerHTML"
 	_homePath       = "/"
-	_loginPath      = "/login"
+
+	// _hxRequestHeader is set by htmx on every request it makes, and
+	// _hxRequestTrue is the value the header carries.
+	_hxRequestHeader = "HX-Request"
+	_hxRequestTrue   = "true"
+
+	// _hxRedirectHeader tells htmx to navigate the whole browser to a path,
+	// unlike HX-Location, which swaps a fragment into the current page.
+	_hxRedirectHeader = "HX-Redirect"
 )
 
 // loginSubmit authenticates the user. On failure it returns an error fragment
@@ -39,7 +40,7 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
 	}
 
-	token, user, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
+	token, _, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, entity.ErrInvalidCredentials) {
 			return c.renderErrors(ctx, http.StatusUnauthorized, []string{"Invalid email or password."})
@@ -50,26 +51,23 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	return c.renderAuthenticated(ctx, token, &user)
+	return c.renderAuthenticated(ctx, token)
 }
 
-// renderAuthenticated stores the token in an HTTP-only cookie and swaps the home
-// fragment into <main>, pushing "/" so the address bar follows the new page. It
-// also updates the sidebar out of band, since the nav changed with the auth state.
-func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string, user *entity.User) error {
+// renderAuthenticated stores the token in an HTTP-only cookie and sends the
+// browser to the home page with a full navigation. The page is built with the
+// fresh session, so the sidebar shows the links of a signed-in account; htmx
+// receives HX-Redirect, a plain form post a 302.
+func (c *Controller) renderAuthenticated(ctx *fiber.Ctx, token string) error {
 	c.setAuthCookie(ctx, token)
 
-	ctx.Set(_hxRetarget, _pageContent)
-	ctx.Set(_hxReswap, _swapInnerHTML)
-	ctx.Set(_hxPushURL, _homePath)
+	if ctx.Get(_hxRequestHeader) == _hxRequestTrue {
+		ctx.Set(_hxRedirectHeader, _homePath)
 
-	return c.renderPage(ctx, templ.Join(
-		templates.HomeContent(),
-		templates.SidebarNavUpdate(templates.View{
-			Authenticated: true,
-			Admin:         user.Role == entity.UserRoleAdmin,
-		}),
-	))
+		return nil
+	}
+
+	return ctx.Redirect(_homePath, fiber.StatusFound)
 }
 
 func (c *Controller) setAuthCookie(ctx *fiber.Ctx, token string) {

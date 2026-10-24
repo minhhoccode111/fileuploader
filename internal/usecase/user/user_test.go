@@ -97,6 +97,62 @@ func (f *fakeSessionRepo) DeleteUserSessions(_ context.Context, userID string) e
 	return nil
 }
 
+// fakeFolderRepo records the root folder Register was asked to create.
+type fakeFolderRepo struct {
+	stored *entity.Folder
+	err    error
+}
+
+func (f *fakeFolderRepo) Store(_ context.Context, folder *entity.Folder) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.stored = folder
+
+	return nil
+}
+
+func (f *fakeFolderRepo) Get(_ context.Context, _, _ string) (entity.Folder, error) {
+	return entity.Folder{}, f.err
+}
+
+func (f *fakeFolderRepo) Lock(_ context.Context, _, _ string) (entity.Folder, error) {
+	return entity.Folder{}, f.err
+}
+
+func (f *fakeFolderRepo) LockUser(_ context.Context, _ string) error {
+	return f.err
+}
+
+func (f *fakeFolderRepo) LockSubtree(_ context.Context, _, _ string) error {
+	return f.err
+}
+
+func (f *fakeFolderRepo) GetRoot(_ context.Context, _ string) (entity.Folder, error) {
+	return entity.Folder{}, f.err
+}
+
+func (f *fakeFolderRepo) List(_ context.Context, _, _ string) ([]entity.FolderItem, error) {
+	return nil, f.err
+}
+
+func (f *fakeFolderRepo) Breadcrumb(_ context.Context, _, _ string) ([]entity.FolderRef, error) {
+	return nil, f.err
+}
+
+func (f *fakeFolderRepo) NameTaken(_ context.Context, _, _, _ string) (bool, error) {
+	return false, f.err
+}
+
+func (f *fakeFolderRepo) Rename(_ context.Context, _ *entity.Folder) error {
+	return f.err
+}
+
+func (f *fakeFolderRepo) Delete(_ context.Context, _, _ string) error {
+	return f.err
+}
+
 // fakeUnitOfWork records how the unit of work ended.
 type fakeUnitOfWork struct {
 	called     bool
@@ -123,7 +179,7 @@ func TestListUsersClampsTheFilterBeforeItLists(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{}
-	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	_, err := uc.ListUsers(context.Background(), &entity.UserFilter{
 		Query: "  john  ",
@@ -156,8 +212,9 @@ func TestRegisterStoresTheUserInsideTheUnitOfWork(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{}
+	folders := &fakeFolderRepo{}
 	uow := &fakeUnitOfWork{}
-	uc := New(repo, &fakeSessionRepo{}, uow, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, folders, uow, time.Hour)
 
 	user, err := uc.Register(context.Background(), "john", "john@example.com", "password")
 	if err != nil {
@@ -179,6 +236,18 @@ func TestRegisterStoresTheUserInsideTheUnitOfWork(t *testing.T) {
 	if repo.stored.ID != user.ID {
 		t.Errorf("stored user ID = %q, want %q", repo.stored.ID, user.ID)
 	}
+
+	if folders.stored == nil {
+		t.Fatal("Register() did not create the root folder")
+	}
+
+	if folders.stored.Name != entity.RootFolderName {
+		t.Errorf("root folder name = %q, want %q", folders.stored.Name, entity.RootFolderName)
+	}
+
+	if folders.stored.UserID != user.ID {
+		t.Errorf("root folder user ID = %q, want %q", folders.stored.UserID, user.ID)
+	}
 }
 
 func TestRegisterRollsBackWhenTheRepositoryFails(t *testing.T) {
@@ -186,7 +255,7 @@ func TestRegisterRollsBackWhenTheRepositoryFails(t *testing.T) {
 
 	repo := &fakeUserRepo{err: errStoreFailed}
 	uow := &fakeUnitOfWork{}
-	uc := New(repo, &fakeSessionRepo{}, uow, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, uow, time.Hour)
 
 	_, err := uc.Register(context.Background(), "john", "john@example.com", "password")
 	if !errors.Is(err, errStoreFailed) {
@@ -212,7 +281,7 @@ func TestLoginStoresTheRoleInTheSession(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleAdmin, PasswordHash: string(hash)}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	_, _, err = uc.Login(context.Background(), "john@example.com", "password")
 	if err != nil {
@@ -237,7 +306,7 @@ func TestSetRoleUpdatesTheRoleAndEndsTheSessions(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", Email: "john@example.com"}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	err := uc.SetRole(context.Background(), "john@example.com", entity.UserRoleAdmin)
 	if err != nil {
@@ -262,7 +331,7 @@ func TestSetRoleRejectsAnUnknownRole(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1"}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	err := uc.SetRole(context.Background(), "john@example.com", entity.UserRole("root"))
 	if !errors.Is(err, entity.ErrInvalidRole) {
@@ -279,7 +348,7 @@ func TestSetRoleReportsAnUnknownAccount(t *testing.T) {
 
 	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	err := uc.SetRole(context.Background(), "nobody@example.com", entity.UserRoleAdmin)
 	if !errors.Is(err, entity.ErrUserNotFound) {
@@ -309,7 +378,7 @@ func TestUpdateUserSavesTheFields(t *testing.T) {
 		Role:         entity.UserRoleUser,
 	}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	user, sessionsEnded, err := uc.UpdateUser(
 		context.Background(), "1", "johndoe", "doe@example.com", entity.UserRoleUser, "",
@@ -365,7 +434,7 @@ func TestUpdateUserEndsTheSessionsOnARoleOrAPasswordChange(t *testing.T) {
 
 			repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleUser, PasswordHash: string(hash)}}
 			sessions := &fakeSessionRepo{}
-			uc := New(repo, sessions, &fakeUnitOfWork{}, time.Hour)
+			uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 			_, sessionsEnded, err := uc.UpdateUser(
 				context.Background(), "1", "john", "john@example.com", tc.role, tc.pass,
@@ -413,7 +482,7 @@ func TestUpdateUserRejectsAnUnknownRoleOrAccount(t *testing.T) {
 			t.Parallel()
 
 			sessions := &fakeSessionRepo{}
-			uc := New(&tc.repo, sessions, &fakeUnitOfWork{}, time.Hour)
+			uc := New(&tc.repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 			user, sessionsEnded, err := uc.UpdateUser(
 				context.Background(), "1", "john", "john@example.com", tc.role, "",
@@ -450,7 +519,7 @@ func TestUpdateUserKeepsThePasswordWhenNoneCameIn(t *testing.T) {
 		PasswordHash: string(hash),
 		Role:         entity.UserRoleUser,
 	}}
-	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	_, _, err = uc.UpdateUser(context.Background(), "1", "john", "john@example.com", entity.UserRoleUser, "")
 	if err != nil {
@@ -466,7 +535,7 @@ func TestUpdateUserReplacesThePassword(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: "old", Role: entity.UserRoleUser}}
-	uc := New(repo, &fakeSessionRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 
 	_, _, err := uc.UpdateUser(context.Background(), "1", "john", "john@example.com", entity.UserRoleUser, "newpass1")
 	if err != nil {

@@ -79,10 +79,6 @@ func (c *Controller) render(ctx *fiber.Ctx, full, fragment templ.Component, titl
 	return c.renderPage(ctx, full)
 }
 
-func (c *Controller) home(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Home(c.view(ctx)), templates.HomeContent(), templates.HomeTitle)
-}
-
 func (c *Controller) login(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.Login(c.view(ctx)), templates.LoginContent(), templates.LoginTitle)
 }

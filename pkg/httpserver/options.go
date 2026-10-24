@@ -22,6 +22,13 @@ func Prefork(prefork bool) Option {
 	}
 }
 
+// BodyLimit sets the largest request body the server accepts.
+func BodyLimit(limit int) Option {
+	return func(s *Server) {
+		s.bodyLimit = limit
+	}
+}
+
 // ReadTimeout -.
 func ReadTimeout(timeout time.Duration) Option {
 	return func(s *Server) {

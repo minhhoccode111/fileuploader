@@ -10,9 +10,13 @@ import (
 	"github.com/minhhoccode111/fileuploader/web/templates"
 )
 
-// _cookieDeleteMaxAge is a negative Max-Age, which tells the browser to drop the
-// cookie immediately.
-const _cookieDeleteMaxAge = -1
+const (
+	// _cookieDeleteMaxAge is a negative Max-Age, which tells the browser to drop
+	// the cookie immediately.
+	_cookieDeleteMaxAge = -1
+
+	_loginPath = "/login"
+)
 
 // logoutSubmit ends the session and sends the user to the login screen, the only
 // page an anonymous visitor may reach. It only runs when the user confirms on the
@@ -26,7 +30,7 @@ func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
 	c.clearAuthCookie(ctx)
 
 	// The POST URL is not a page, so tell htmx which URL the browser should show.
-	ctx.Set(_hxPushURL, _loginPath)
+	ctx.Set(_hxPushURLHeader, _loginPath)
 
 	// The session is gone, so the sidebar must drop the logout item and show the
 	// guest links again: swap it out of band alongside the login fragment.

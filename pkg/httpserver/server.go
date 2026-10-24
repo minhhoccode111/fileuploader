@@ -30,6 +30,7 @@ type Server struct {
 
 	address         string
 	prefork         bool
+	bodyLimit       int
 	readTimeout     time.Duration
 	writeTimeout    time.Duration
 	shutdownTimeout time.Duration
@@ -61,6 +62,7 @@ func New(l logger.Interface, opts ...Option) *Server {
 
 	app := fiber.New(fiber.Config{
 		Prefork:      s.prefork,
+		BodyLimit:    s.bodyLimit,
 		ReadTimeout:  s.readTimeout,
 		WriteTimeout: s.writeTimeout,
 		JSONDecoder:  json.Unmarshal,
