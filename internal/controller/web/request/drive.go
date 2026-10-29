@@ -59,3 +59,14 @@ type FileMove struct {
 func (r *FileMove) Sanitize() {
 	r.FolderID = strings.TrimSpace(r.FolderID)
 }
+
+// FileDuplicate is the form that copies one file to another folder. The
+// destination travels as a form field.
+type FileDuplicate struct {
+	FolderID string `form:"folder" validate:"required,uuid4"`
+}
+
+// Sanitize trims the folder id before validation runs.
+func (r *FileDuplicate) Sanitize() {
+	r.FolderID = strings.TrimSpace(r.FolderID)
+}

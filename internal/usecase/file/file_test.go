@@ -149,6 +149,9 @@ type fakeStorage struct {
 	putSize    int64
 	putType    string
 	putErr     error
+	copyKey    string
+	copySrcKey string
+	copyErr    error
 	removeKey  string
 	removeErr  error
 	presign    string
@@ -182,6 +185,13 @@ func (f *fakeStorage) RemoveObject(_ context.Context, _, key string) error {
 	f.removeKey = key
 
 	return f.removeErr
+}
+
+func (f *fakeStorage) CopyObject(_ context.Context, _, dstKey, srcKey string) error {
+	f.copyKey = dstKey
+	f.copySrcKey = srcKey
+
+	return f.copyErr
 }
 
 func TestUploadStoresTheBytesAndTheRow(t *testing.T) {

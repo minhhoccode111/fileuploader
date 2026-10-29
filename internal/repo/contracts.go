@@ -83,5 +83,6 @@ type (
 			downloadName string,
 		) (string, error)
 		RemoveObject(ctx context.Context, bucket, key string) error
+		CopyObject(ctx context.Context, bucket, dstKey, srcKey string) error
 	}
 )

@@ -52,5 +52,6 @@ type (
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		Download(ctx context.Context, userID, fileID string) (string, error)
 		Move(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
+		Duplicate(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
 	}
 )

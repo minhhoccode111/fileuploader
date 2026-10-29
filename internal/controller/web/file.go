@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
@@ -185,18 +186,24 @@ func (c *Controller) fileRename(ctx *fiber.Ctx) error {
 	)
 }
 
-// fileMove moves one file to another folder and refreshes the table of the
-// folder the file came from, so the visitor stays on the page they were on.
-func (c *Controller) fileMove(ctx *fiber.Ctx) error {
+// fileActionWithGet runs the shared boilerplate of file actions that take a
+// body, read the source file first (to know which folder table to refresh
+// after the action), then run the action. The action closure captures the
+// concrete request type so it can read its fields.
+func (c *Controller) fileActionWithGet(
+	ctx *fiber.Ctx,
+	req _fileActionReq,
+	badRequest string,
+	run func(context.Context, string, string) error,
+	action string,
+) error {
 	fileID := ctx.Params("file")
 	if !c.validID(fileID) {
 		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
 	}
 
-	var req request.FileMove
-
-	if err := ctx.BodyParser(&req); err != nil {
-		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Choose a folder."})
+	if err := ctx.BodyParser(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{badRequest})
 	}
 
 	req.Sanitize()
@@ -212,14 +219,13 @@ func (c *Controller) fileMove(ctx *fiber.Ctx) error {
 
 	file, err := c.files.Get(ctx.UserContext(), userID, fileID)
 	if err != nil {
-		return c.driveError(ctx, err, "fileMove - uc.files.Get")
+		return c.driveError(ctx, err, "fileActionWithGet - uc.files.Get")
 	}
 
 	currentFolderID := file.FolderID
 
-	file, err = c.files.Move(ctx.UserContext(), userID, fileID, req.FolderID)
-	if err != nil {
-		return c.driveError(ctx, err, "fileMove - uc.files.Move")
+	if err := run(ctx.UserContext(), userID, fileID); err != nil {
+		return c.driveError(ctx, err, action)
 	}
 
 	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
@@ -227,10 +233,49 @@ func (c *Controller) fileMove(ctx *fiber.Ctx) error {
 	return c.renderEntries(ctx, userID, currentFolderID)
 }
 
-// fileMoveForm fills the drawer with the form that moves one file to another
-// folder. The destination folder is picked from a select of the account's
-// folders, with the file's current folder pre-selected.
-func (c *Controller) fileMoveForm(ctx *fiber.Ctx) error {
+// fileMove moves one file to another folder and refreshes the table of the
+// folder the file came from, so the visitor stays on the page they were on.
+func (c *Controller) fileMove(ctx *fiber.Ctx) error {
+	var req request.FileMove
+
+	return c.fileActionWithGet(
+		ctx,
+		&req,
+		"Choose a folder.",
+		func(ctx context.Context, userID, fileID string) error {
+			_, err := c.files.Move(ctx, userID, fileID, req.FolderID)
+
+			return err
+		},
+		"fileMove - uc.files.Move",
+	)
+}
+
+// fileDuplicate copies one file to another folder and refreshes the table of
+// the folder the file came from, so the visitor stays on the page they were on.
+func (c *Controller) fileDuplicate(ctx *fiber.Ctx) error {
+	var req request.FileDuplicate
+
+	return c.fileActionWithGet(
+		ctx,
+		&req,
+		"Choose a destination folder.",
+		func(ctx context.Context, userID, fileID string) error {
+			_, err := c.files.Duplicate(ctx, userID, fileID, req.FolderID)
+
+			return err
+		},
+		"fileDuplicate - uc.files.Duplicate",
+	)
+}
+
+// fileDestinationForm runs the shared boilerplate of file destination forms:
+// resolve the user, read the source file, list all folders, then render the
+// template with the file's current folder pre-selected.
+func (c *Controller) fileDestinationForm(
+	ctx *fiber.Ctx,
+	render func(fileID, currentFolderID string, folders []response.FolderOption) templ.Component,
+) error {
 	fileID := ctx.Params("file")
 	if !c.validID(fileID) {
 		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
@@ -243,15 +288,29 @@ func (c *Controller) fileMoveForm(ctx *fiber.Ctx) error {
 
 	file, err := c.files.Get(ctx.UserContext(), userID, fileID)
 	if err != nil {
-		return c.driveError(ctx, err, "fileMoveForm - uc.files.Get")
+		return c.driveError(ctx, err, "fileDestinationForm - uc.files.Get")
 	}
 
 	folders, err := c.folders.ListAll(ctx.UserContext(), userID)
 	if err != nil {
-		return c.driveError(ctx, err, "fileMoveForm - uc.folders.ListAll")
+		return c.driveError(ctx, err, "fileDestinationForm - uc.folders.ListAll")
 	}
 
-	return c.renderPage(ctx, templates.FileMoveContent(fileID, file.FolderID, response.FolderOptions(folders)))
+	return c.renderPage(ctx, render(fileID, file.FolderID, response.FolderOptions(folders)))
+}
+
+// fileMoveForm fills the drawer with the form that moves one file to another
+// folder. The destination folder is picked from a select of the account's
+// folders, with the file's current folder pre-selected.
+func (c *Controller) fileMoveForm(ctx *fiber.Ctx) error {
+	return c.fileDestinationForm(ctx, templates.FileMoveContent)
+}
+
+// fileDuplicateForm fills the drawer with the form that copies one file to
+// another folder. The destination folder is picked from a select of the
+// account's folders, with the file's current folder pre-selected.
+func (c *Controller) fileDuplicateForm(ctx *fiber.Ctx) error {
+	return c.fileDestinationForm(ctx, templates.FileDuplicateContent)
 }
 
 // fileDelete removes one file and the object behind it, then refreshes the

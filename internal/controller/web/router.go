@@ -84,6 +84,8 @@ func NewRouter(
 	app.Post("/htmx/files/:file/rename", middleware.RequireAuth(u), c.fileRename)
 	app.Post("/htmx/files/:file/delete", middleware.RequireAuth(u), c.fileDelete)
 	app.Post("/htmx/files/:file/move", middleware.RequireAuth(u), c.fileMove)
+	app.Get("/htmx/files/:file/duplicate", middleware.RequireAuth(u), c.fileDuplicateForm)
+	app.Post("/htmx/files/:file/duplicate", middleware.RequireAuth(u), c.fileDuplicate)
 	app.Get("/files/:file/download", middleware.RequireAuth(u), c.fileDownload)
 
 	app.Get("/htmx/admin/users/edit", middleware.RequireAdmin(u), c.adminUsersEdit)

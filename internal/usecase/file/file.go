@@ -26,6 +26,10 @@ const (
 	// _presignTTL is how long a download link stays valid. It is long enough
 	// for a slow start and short enough that a leaked link expires.
 	_presignTTL = 15 * time.Minute
+
+	// _maxDuplicateAttempts is how many numbered names a duplicate tries
+	// before falling back to a timestamp.
+	_maxDuplicateAttempts = 99
 )
 
 // UseCase -.
@@ -266,6 +270,136 @@ func (uc *UseCase) Move(
 	}
 
 	return file, nil
+}
+
+// Duplicate copies one file into another folder, or into its own folder with
+// ` (1)` appended to the name when a clash would occur. The bytes are
+// server-side copied to a new object key, so both files exist independently.
+// The destination folder is locked while the name is checked and the row is
+// stored, so a duplicate and an upload cannot both claim one name.
+func (uc *UseCase) Duplicate(
+	ctx context.Context,
+	userID, fileID, folderID string,
+) (entity.File, error) {
+	source, err := uc.files.Get(ctx, userID, fileID)
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - Duplicate - uc.files.Get: %w", err)
+	}
+
+	_, err = uc.folders.Get(ctx, userID, folderID)
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - Duplicate - uc.folders.Get: %w", err)
+	}
+
+	return uc.duplicateInTransaction(ctx, userID, folderID, &source, time.Now().UTC())
+}
+
+func (uc *UseCase) duplicateInTransaction(
+	ctx context.Context,
+	userID, folderID string,
+	source *entity.File,
+	now time.Time,
+) (entity.File, error) {
+	var dup entity.File
+
+	err := uc.uow.Do(ctx, func(ctx context.Context) error {
+		userLockErr := uc.folders.LockUser(ctx, userID)
+		if userLockErr != nil {
+			return fmt.Errorf("uc.folders.LockUser: %w", userLockErr)
+		}
+
+		_, lockErr := uc.folders.Lock(ctx, userID, folderID)
+		if lockErr != nil {
+			return fmt.Errorf("uc.folders.Lock: %w", lockErr)
+		}
+
+		name := uc.duplicateName(ctx, userID, folderID, source.Name)
+
+		newID := uuid.New().String()
+		newKey := storageKey(userID, newID)
+
+		copyErr := uc.storage.CopyObject(ctx, uc.bucket, newKey, source.StorageKey)
+		if copyErr != nil {
+			return fmt.Errorf("uc.storage.CopyObject: %w", copyErr)
+		}
+
+		dup = entity.File{
+			ID:          newID,
+			UserID:      userID,
+			FolderID:    folderID,
+			Name:        name,
+			ContentType: source.ContentType,
+			StorageKey:  newKey,
+			Size:        source.Size,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+
+		storeErr := uc.files.Store(ctx, &dup)
+		if storeErr != nil {
+			removeErr := uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, newKey)
+			if removeErr != nil {
+				return fmt.Errorf("uc.files.Store: %w; cleanup: %w", storeErr, removeErr)
+			}
+
+			return fmt.Errorf("uc.files.Store: %w", storeErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - Duplicate - uc.uow.Do: %w", err)
+	}
+
+	return dup, nil
+}
+
+// duplicateName returns a name that is free in the destination folder. The
+// original name is tried first; when it is taken, ` (1)`, ` (2)` and so on are
+// appended before the extension until a free name is found.
+func (uc *UseCase) duplicateName(ctx context.Context, userID, folderID, name string) string {
+	taken, err := uc.nameTakenInFolder(ctx, userID, folderID, name)
+	if err != nil || !taken {
+		return name
+	}
+
+	base, ext := splitName(name)
+
+	for i := 1; i <= _maxDuplicateAttempts; i++ {
+		candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
+
+		taken, err := uc.nameTakenInFolder(ctx, userID, folderID, candidate)
+		if err != nil {
+			continue
+		}
+
+		if !taken {
+			return candidate
+		}
+	}
+
+	return fmt.Sprintf("%s (%d)%s", base, time.Now().Unix(), ext)
+}
+
+// nameTakenInFolder reports whether a folder or a file of the account already
+// carries the name in the same parent.
+func (uc *UseCase) nameTakenInFolder(ctx context.Context, userID, folderID, name string) (bool, error) {
+	taken, err := uc.folders.NameTaken(ctx, userID, folderID, name)
+	if err != nil || taken {
+		return taken, err
+	}
+
+	return uc.files.NameTaken(ctx, userID, folderID, name)
+}
+
+// splitName splits a file name into the base and the extension including the
+// dot. A name without an extension gets an empty extension.
+func splitName(name string) (base, ext string) {
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return name[:i], name[i:]
+	}
+
+	return name, ""
 }
 
 // Delete removes the row and then the object. The row goes first: a file that

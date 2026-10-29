@@ -188,6 +188,10 @@ func (f *fakeStorage) RemoveObject(_ context.Context, _, key string) error {
 	return f.err
 }
 
+func (f *fakeStorage) CopyObject(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
 func TestCreateStoresTheFolder(t *testing.T) {
 	t.Parallel()
 

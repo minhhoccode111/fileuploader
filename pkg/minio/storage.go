@@ -66,3 +66,20 @@ func (m *MinIO) RemoveObject(ctx context.Context, bucket, key string) error {
 
 	return nil
 }
+
+// CopyObject duplicates one object into another key in the same bucket. It is
+// a server-side copy, so the bytes never leave the bucket.
+func (m *MinIO) CopyObject(ctx context.Context, bucket, dstKey, srcKey string) error {
+	_, err := m.Client.CopyObject(ctx, miniogo.CopyDestOptions{
+		Bucket: bucket,
+		Object: dstKey,
+	}, miniogo.CopySrcOptions{
+		Bucket: bucket,
+		Object: srcKey,
+	})
+	if err != nil {
+		return fmt.Errorf("minio - CopyObject - m.Client.CopyObject: %w", err)
+	}
+
+	return nil
+}
