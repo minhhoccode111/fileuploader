@@ -9,6 +9,7 @@ import (
 	"mime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
@@ -17,6 +18,10 @@ import (
 )
 
 const (
+	// _maxNameLength mirrors the width of the name columns of the folders and
+	// files tables, so a generated name is rejected before it reaches them.
+	_maxNameLength = 255
+
 	// _defaultContentType is stored when the browser brings no usable type.
 	_defaultContentType = "application/octet-stream"
 
@@ -300,28 +305,34 @@ func (uc *UseCase) duplicateInTransaction(
 	source *entity.File,
 	now time.Time,
 ) (entity.File, error) {
-	var dup entity.File
+	var (
+		dup    entity.File
+		newKey string
+		copied bool
+	)
 
 	err := uc.uow.Do(ctx, func(ctx context.Context) error {
-		userLockErr := uc.folders.LockUser(ctx, userID)
-		if userLockErr != nil {
-			return fmt.Errorf("uc.folders.LockUser: %w", userLockErr)
+		if err := uc.folders.LockUser(ctx, userID); err != nil {
+			return fmt.Errorf("uc.folders.LockUser: %w", err)
 		}
 
-		_, lockErr := uc.folders.Lock(ctx, userID, folderID)
-		if lockErr != nil {
-			return fmt.Errorf("uc.folders.Lock: %w", lockErr)
+		if _, err := uc.folders.Lock(ctx, userID, folderID); err != nil {
+			return fmt.Errorf("uc.folders.Lock: %w", err)
 		}
 
-		name := uc.duplicateName(ctx, userID, folderID, source.Name)
+		name, nameErr := uc.duplicateName(ctx, userID, folderID, source.Name, now)
+		if nameErr != nil {
+			return nameErr
+		}
 
 		newID := uuid.New().String()
-		newKey := storageKey(userID, newID)
+		newKey = storageKey(userID, newID)
 
-		copyErr := uc.storage.CopyObject(ctx, uc.bucket, newKey, source.StorageKey)
-		if copyErr != nil {
-			return fmt.Errorf("uc.storage.CopyObject: %w", copyErr)
+		if err := uc.storage.CopyObject(ctx, uc.bucket, newKey, source.StorageKey); err != nil {
+			return fmt.Errorf("uc.storage.CopyObject: %w", err)
 		}
+
+		copied = true
 
 		dup = entity.File{
 			ID:          newID,
@@ -335,50 +346,86 @@ func (uc *UseCase) duplicateInTransaction(
 			UpdatedAt:   now,
 		}
 
-		storeErr := uc.files.Store(ctx, &dup)
-		if storeErr != nil {
-			removeErr := uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, newKey)
-			if removeErr != nil {
-				return fmt.Errorf("uc.files.Store: %w; cleanup: %w", storeErr, removeErr)
+		if err := uc.files.Store(ctx, &dup); err != nil {
+			if removeErr := uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, newKey); removeErr != nil {
+				return fmt.Errorf("uc.files.Store: %w; cleanup: %w", err, removeErr)
 			}
 
-			return fmt.Errorf("uc.files.Store: %w", storeErr)
+			copied = false
+
+			return fmt.Errorf("uc.files.Store: %w", err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return entity.File{}, fmt.Errorf("FileUseCase - Duplicate - uc.uow.Do: %w", err)
+		return entity.File{}, uc.finalizeDuplicateError(ctx, err, newKey, copied)
 	}
 
 	return dup, nil
 }
 
+// finalizeDuplicateError removes the object a duplicate wrote when the transaction
+// that should have recorded it fails. A cleanup failure is joined into the
+// error, so the caller still sees the failure that mattered.
+func (uc *UseCase) finalizeDuplicateError(ctx context.Context, err error, key string, copied bool) error {
+	if !copied || key == "" {
+		return fmt.Errorf("FileUseCase - Duplicate - uc.uow.Do: %w", err)
+	}
+
+	removeErr := uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, key)
+	if removeErr != nil {
+		return fmt.Errorf(
+			"FileUseCase - Duplicate - uc.uow.Do: %w; cleanup: %w",
+			err,
+			removeErr,
+		)
+	}
+
+	return fmt.Errorf("FileUseCase - Duplicate - uc.uow.Do: %w", err)
+}
+
 // duplicateName returns a name that is free in the destination folder. The
 // original name is tried first; when it is taken, ` (1)`, ` (2)` and so on are
 // appended before the extension until a free name is found.
-func (uc *UseCase) duplicateName(ctx context.Context, userID, folderID, name string) string {
+func (uc *UseCase) duplicateName(
+	ctx context.Context,
+	userID, folderID, name string,
+	now time.Time,
+) (string, error) {
 	taken, err := uc.nameTakenInFolder(ctx, userID, folderID, name)
-	if err != nil || !taken {
-		return name
+	if err != nil {
+		return "", fmt.Errorf("FileUseCase - duplicateName - uc.nameTakenInFolder: %w", err)
+	}
+
+	if !taken {
+		return name, nil
 	}
 
 	base, ext := splitName(name)
 
 	for i := 1; i <= _maxDuplicateAttempts; i++ {
 		candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
-
-		taken, err := uc.nameTakenInFolder(ctx, userID, folderID, candidate)
-		if err != nil {
+		if utf8.RuneCountInString(candidate) > _maxNameLength {
 			continue
 		}
 
+		taken, err := uc.nameTakenInFolder(ctx, userID, folderID, candidate)
+		if err != nil {
+			return "", fmt.Errorf("FileUseCase - duplicateName - uc.nameTakenInFolder: %w", err)
+		}
+
 		if !taken {
-			return candidate
+			return candidate, nil
 		}
 	}
 
-	return fmt.Sprintf("%s (%d)%s", base, time.Now().Unix(), ext)
+	candidate := fmt.Sprintf("%s (%d)%s", base, now.Unix(), ext)
+	if utf8.RuneCountInString(candidate) > _maxNameLength {
+		return "", entity.ErrInvalidName
+	}
+
+	return candidate, nil
 }
 
 // nameTakenInFolder reports whether a folder or a file of the account already

@@ -177,6 +177,11 @@ func (r *Repo) Move(ctx context.Context, userID, fileID, folderID string) error 
 
 	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return entity.ErrEntryAlreadyExists
+		}
+
 		return fmt.Errorf("FileRepo - Move - r.Querier(ctx).Exec: %w", err)
 	}
 
