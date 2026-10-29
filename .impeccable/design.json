@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T00:00:00Z",
+  "title": "Design System: File Uploader",
+  "extensions": {
+    "colorMeta": {
+      "base-100": { "role": "neutral", "displayName": "Pure White", "canonical": "oklch(100% 0 0)", "tonalRamp": ["oklch(20% 0 0)", "oklch(35% 0 0)", "oklch(50% 0 0)", "oklch(65% 0 0)", "oklch(80% 0 0)", "oklch(90% 0 0)", "oklch(95% 0 0)", "oklch(100% 0 0)"] },
+      "base-200": { "role": "neutral", "displayName": "Off White", "canonical": "oklch(98% 0 0)", "tonalRamp": ["oklch(18% 0 0)", "oklch(33% 0 0)", "oklch(48% 0 0)", "oklch(63% 0 0)", "oklch(78% 0 0)", "oklch(88% 0 0)", "oklch(93% 0 0)", "oklch(98% 0 0)"] },
+      "base-300": { "role": "neutral", "displayName": "Light Gray", "canonical": "oklch(95% 0 0)", "tonalRamp": ["oklch(15% 0 0)", "oklch(30% 0 0)", "oklch(45% 0 0)", "oklch(60% 0 0)", "oklch(75% 0 0)", "oklch(85% 0 0)", "oklch(90% 0 0)", "oklch(95% 0 0)"] },
+      "base-content": { "role": "neutral", "displayName": "Near Black", "canonical": "oklch(21% .006 285.885)", "tonalRamp": ["oklch(21% .006 285.885)", "oklch(36% .006 285.885)", "oklch(51% .006 285.885)", "oklch(66% .006 285.885)", "oklch(81% .006 285.885)", "oklch(90% .004 285.885)", "oklch(95% .003 285.885)", "oklch(98% .002 285.885)"] },
+      "primary": { "role": "primary", "displayName": "Deep Indigo", "canonical": "oklch(45% .24 277.023)", "tonalRamp": ["oklch(15% .08 277.023)", "oklch(25% .14 277.023)", "oklch(35% .20 277.023)", "oklch(45% .24 277.023)", "oklch(58% .233 277.117)", "oklch(72% .18 277.023)", "oklch(86% .10 277.023)", "oklch(95% .04 277.023)"] },
+      "primary-content": { "role": "primary", "displayName": "Primary Content", "canonical": "oklch(93% .034 272.788)", "tonalRamp": ["oklch(20% .03 272.788)", "oklch(35% .03 272.788)", "oklch(50% .03 272.788)", "oklch(65% .03 272.788)", "oklch(80% .03 272.788)", "oklch(88% .03 272.788)", "oklch(92% .03 272.788)", "oklch(93% .034 272.788)"] },
+      "secondary": { "role": "secondary", "displayName": "Vivid Pink", "canonical": "oklch(65% .241 354.308)", "tonalRamp": ["oklch(20% .08 354.308)", "oklch(30% .14 354.308)", "oklch(40% .20 354.308)", "oklch(50% .24 354.308)", "oklch(65% .241 354.308)", "oklch(78% .18 354.308)", "oklch(88% .10 354.308)", "oklch(95% .04 354.308)"] },
+      "accent": { "role": "accent", "displayName": "Bright Teal", "canonical": "oklch(77% .152 181.912)", "tonalRamp": ["oklch(20% .05 181.912)", "oklch(30% .08 181.912)", "oklch(40% .11 181.912)", "oklch(50% .14 181.912)", "oklch(60% .15 181.912)", "oklch(70% .15 181.912)", "oklch(77% .152 181.912)", "oklch(90% .06 181.912)"] },
+      "neutral": { "role": "neutral", "displayName": "Charcoal", "canonical": "oklch(14% .005 285.823)", "tonalRamp": ["oklch(14% .005 285.823)", "oklch(28% .005 285.823)", "oklch(42% .005 285.823)", "oklch(56% .005 285.823)", "oklch(70% .004 285.823)", "oklch(82% .004 285.823)", "oklch(90% .003 285.823)", "oklch(96% .002 285.823)"] },
+      "error": { "role": "error", "displayName": "Coral Red", "canonical": "oklch(71% .194 13.428)", "tonalRamp": ["oklch(20% .08 13.428)", "oklch(30% .13 13.428)", "oklch(40% .17 13.428)", "oklch(50% .19 13.428)", "oklch(60% .19 13.428)", "oklch(71% .194 13.428)", "oklch(82% .12 13.428)", "oklch(92% .05 13.428)"] },
+      "success": { "role": "success", "displayName": "Mint Green", "canonical": "oklch(76% .177 163.223)", "tonalRamp": ["oklch(20% .06 163.223)", "oklch(30% .10 163.223)", "oklch(40% .14 163.223)", "oklch(50% .17 163.223)", "oklch(60% .17 163.223)", "oklch(70% .17 163.223)", "oklch(76% .177 163.223)", "oklch(90% .06 163.223)"] },
+      "warning": { "role": "warning", "displayName": "Amber", "canonical": "oklch(82% .189 84.429)", "tonalRamp": ["oklch(25% .08 84.429)", "oklch(35% .12 84.429)", "oklch(45% .16 84.429)", "oklch(55% .18 84.429)", "oklch(65% .18 84.429)", "oklch(75% .18 84.429)", "oklch(82% .189 84.429)", "oklch(92% .08 84.429)"] },
+      "info": { "role": "info", "displayName": "Sky Blue", "canonical": "oklch(74% .16 232.661)", "tonalRamp": ["oklch(20% .06 232.661)", "oklch(30% .10 232.661)", "oklch(40% .14 232.661)", "oklch(50% .16 232.661)", "oklch(60% .16 232.661)", "oklch(70% .16 232.661)", "oklch(74% .16 232.661)", "oklch(90% .06 232.661)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero and page titles on marketing-style screens." },
+      "headline": { "displayName": "Headline", "purpose": "Section titles and page h1/h2." },
+      "title": { "displayName": "Title", "purpose": "Drawer headings and card titles." },
+      "body": { "displayName": "Body", "purpose": "Paragraphs and table cells; max 65ch." },
+      "label": { "displayName": "Label", "purpose": "Form labels, metadata, captions." },
+      "mono": { "displayName": "Mono", "purpose": "Code and technical values." }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1)", "purpose": "Resting elevation of cards and modals." },
+      { "name": "navbar", "value": "0 1px 2px 0 rgba(0,0,0,0.05)", "purpose": "Sticky top bar only." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0, 0, 0.2, 1)", "purpose": "Default easing for state transitions." },
+      { "name": "duration-300", "value": "300ms", "purpose": "Standard transition duration." },
+      { "name": "nav-progress", "value": "4s cubic-bezier(0.15, 0.85, 0.25, 1)", "purpose": "Top progress bar while htmx request in flight." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Single primary action per form.",
+      "html": "<button class=\"ds-btn-primary\" type=\"submit\">Save changes</button>",
+      "css": ".ds-btn-primary { background: var(--color-primary); color: var(--color-primary-content); border: 1px solid var(--color-primary); border-radius: var(--radius-field, 0.25rem); padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.2s ease-out; } .ds-btn-primary:hover { background: color-mix(in oklab, var(--color-primary), #000 7%); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-base-content); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Cancel and secondary actions.",
+      "html": "<button class=\"ds-btn-ghost\" type=\"button\">Cancel</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: var(--color-base-content); border: 1px solid transparent; border-radius: var(--radius-field, 0.25rem); padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.2s ease-out; } .ds-btn-ghost:hover { background: color-mix(in oklab, var(--color-base-200), transparent 50%); }"
+    },
+    {
+      "name": "Error Outline Button",
+      "kind": "button",
+      "refersTo": "button-error-outline",
+      "description": "Destructive delete actions.",
+      "html": "<button class=\"ds-btn-error-outline\" type=\"button\">Delete file</button>",
+      "css": ".ds-btn-error-outline { background: transparent; color: var(--color-error); border: 1px solid var(--color-error); border-radius: var(--radius-field, 0.25rem); padding: 0.25rem 0.75rem; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: background 0.2s ease-out; } .ds-btn-error-outline:hover { background: color-mix(in oklab, var(--color-error), transparent 90%); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Surface container on base-200 page.",
+      "html": "<section class=\"ds-card\"><div class=\"ds-card-body\"><h2 class=\"ds-card-title\">Title</h2><p class=\"ds-card-text\">Body text.</p></div></section>",
+      "css": ".ds-card { background: var(--color-base-100); color: var(--color-base-content); border-radius: var(--radius-box, 0.5rem); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); } .ds-card-body { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; } .ds-card-title { font-size: 1.25rem; font-weight: 600; line-height: 1.35; } .ds-card-text { font-size: 1rem; line-height: 1.5; color: color-mix(in oklab, var(--color-base-content), transparent 30%); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Bordered text field.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Email</span><input class=\"ds-input\" type=\"email\" placeholder=\"you@example.com\"/></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.25rem; } .ds-field-label { font-size: 0.875rem; font-weight: 500; } .ds-input { background: var(--color-base-100); color: var(--color-base-content); border: 1px solid var(--color-base-300); border-radius: var(--radius-field, 0.25rem); padding: 0.5rem 0.75rem; font-size: 1rem; width: 100%; } .ds-input:focus { border-color: var(--color-base-content); outline: none; }"
+    },
+    {
+      "name": "Select",
+      "kind": "input",
+      "refersTo": "select",
+      "description": "Bordered select field.",
+      "html": "<select class=\"ds-select\"><option>Option</option></select>",
+      "css": ".ds-select { background: var(--color-base-100); color: var(--color-base-content); border: 1px solid var(--color-base-300); border-radius: var(--radius-field, 0.25rem); padding: 0.5rem 0.75rem; font-size: 1rem; width: 100%; } .ds-select:focus { border-color: var(--color-base-content); outline: none; }"
+    },
+    {
+      "name": "Badge Primary",
+      "kind": "chip",
+      "refersTo": "badge-primary",
+      "description": "Role badge for admin.",
+      "html": "<span class=\"ds-badge-primary\">admin</span>",
+      "css": ".ds-badge-primary { background: var(--color-primary); color: var(--color-primary-content); border-radius: var(--radius-selector, 0.5rem); padding: 0.25rem 0.5rem; font-size: 0.75rem; font-weight: 500; display: inline-block; }"
+    },
+    {
+      "name": "Badge Neutral",
+      "kind": "chip",
+      "refersTo": "badge-neutral",
+      "description": "Role badge for user.",
+      "html": "<span class=\"ds-badge-neutral\">user</span>",
+      "css": ".ds-badge-neutral { background: var(--color-neutral); color: var(--color-neutral-content); border-radius: var(--radius-selector, 0.5rem); padding: 0.25rem 0.5rem; font-size: 0.75rem; font-weight: 500; display: inline-block; }"
+    },
+    {
+      "name": "Alert Success",
+      "kind": "custom",
+      "refersTo": "alert-success",
+      "description": "Save confirmation banner.",
+      "html": "<div role=\"alert\" class=\"ds-alert-success\"><svg class=\"ds-alert-icon\" fill=\"none\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z\"/></svg><span>Saved.</span></div>",
+      "css": ".ds-alert-success { display: flex; align-items: center; gap: 0.5rem; background: color-mix(in oklab, var(--color-success), transparent 92%); color: var(--color-success); border: 1px solid var(--color-success); border-radius: var(--radius-box, 0.5rem); padding: 0.75rem 1rem; font-size: 0.875rem; } .ds-alert-icon { width: 1.25rem; height: 1.25rem; flex-shrink: 0; stroke: currentColor; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Stock Workbench",
+    "overview": "This system is deliberately unbranded: it ships daisyUI's default light and dark themes with no custom palette, no custom font, and no bespoke component styling. The visual identity is the framework's defaults, because the project is a learning codebase and clarity of structure matters more than a distinctive look. Density is moderate and utilitarian: cards on a base-200 page background, 0.5rem box radius, 0.25rem field radius, and Tailwind's default 0.25rem spacing unit. Dark mode follows prefers-color-scheme and swaps the base surfaces to deep slate while keeping the same accent hues. The only custom CSS is the sidebar drawer animation and the top navigation progress bar.",
+    "keyCharacteristics": [
+      "daisyUI default light theme on white surfaces; dark theme on deep slate surfaces.",
+      "Single system-font stack; no web font is loaded.",
+      "Flat by default: elevation appears only on cards and the sticky navbar.",
+      "Accent (primary indigo) used sparingly on primary actions and active states.",
+      "0.5rem box radius / 0.25rem field radius; 0.5rem selector radius."
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Primary indigo is reserved for the single primary action per surface; supporting actions use ghost or outline variants. Its rarity is the point.", "section": "colors" },
+      { "name": "The Native Face Rule", "body": "No custom web font is loaded; hierarchy is carried by size and weight alone, so the UI matches the visitor's OS.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest; a shadow appears only on cards and the sticky navbar. Hover and focus change color, never elevation.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use daisyUI semantic classes (btn, card, input, badge) rather than hand-rolled components.",
+      "Do keep one primary button per form; use ghost/outline for the rest.",
+      "Do use base-200/50 for hover backgrounds.",
+      "Do keep the sidebar collapsed-state tooltips (data-tip) in sync with icons.",
+      "Do support both light and dark via prefers-color-scheme."
+    ],
+    "donts": [
+      "Don't introduce a custom color outside the daisyUI theme without updating this file.",
+      "Don't load a web font; the system stack is the design.",
+      "Don't add shadows to hover or focus states.",
+      "Don't widen table columns with content; use fixed layout with truncation and tooltips.",
+      "Don't remove the fake-latency behavior in production without checking the loading states."
+    ]
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 	"github.com/minhhoccode111/fileuploader/web/templates"
@@ -60,7 +61,7 @@ func (c *Controller) folderCreate(ctx *fiber.Ctx) error {
 func (c *Controller) folderEdit(ctx *fiber.Ctx) error {
 	folderID := ctx.Params("folder")
 	if !c.validID(folderID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That folder is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
 	}
 
 	userID, ok := c.userID(ctx)
@@ -86,7 +87,7 @@ func (c *Controller) folderEdit(ctx *fiber.Ctx) error {
 func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 	folderID := ctx.Params("folder")
 	if !c.validID(folderID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That folder is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
 	}
 
 	var req request.FolderRename
@@ -128,13 +129,98 @@ func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 	return middleware.Redirect(ctx, path)
 }
 
+// folderMoveForm fills the drawer with the form that moves one folder to
+// another. The destination folder is picked from a select of the account's
+// folders, indented by depth so the tree shape shows. The folder's current
+// parent is pre-selected. The folder and its subtree are left out of the
+// list, because moving into them would close a cycle.
+func (c *Controller) folderMoveForm(ctx *fiber.Ctx) error {
+	folderID := ctx.Params("folder")
+	if !c.validID(folderID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	folder, err := c.folders.Get(ctx.UserContext(), userID, folderID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderMoveForm - uc.folders.Get")
+	}
+
+	if folder.IsRoot() {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"The root folder cannot be moved."})
+	}
+
+	all, err := c.folders.ListAll(ctx.UserContext(), userID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderMoveForm - uc.folders.ListAll")
+	}
+
+	valid := movableFolders(all, folderID)
+
+	currentFolderID := ""
+	if folder.ParentID != nil {
+		currentFolderID = *folder.ParentID
+	}
+
+	return c.renderPage(ctx, templates.FolderMoveContent(folderID, currentFolderID, response.FolderOptions(valid)))
+}
+
+// folderMove moves one folder to another and refreshes the table of the
+// folder it used to sit in, so the visitor stays on the page they were on.
+func (c *Controller) folderMove(ctx *fiber.Ctx) error {
+	folderID := ctx.Params("folder")
+	if !c.validID(folderID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
+	}
+
+	var req request.FolderMove
+
+	if err := ctx.BodyParser(&req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Choose a folder."})
+	}
+
+	req.Sanitize()
+
+	if err := c.v.Struct(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	folder, err := c.folders.Get(ctx.UserContext(), userID, folderID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderMove - uc.folders.Get")
+	}
+
+	currentFolderID := ""
+	if folder.ParentID != nil {
+		currentFolderID = *folder.ParentID
+	}
+
+	_, err = c.folders.Move(ctx.UserContext(), userID, folderID, req.FolderID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderMove - uc.folders.Move")
+	}
+
+	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
+
+	return c.renderEntries(ctx, userID, currentFolderID)
+}
+
 // folderDelete removes a folder with everything inside it and sends the
 // visitor to the folder that held it. The root folder is refused by the use
 // case, so a hand-made request cannot wipe the drive.
 func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 	folderID := ctx.Params("folder")
 	if !c.validID(folderID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That folder is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
 	}
 
 	userID, ok := c.userID(ctx)
@@ -157,4 +243,37 @@ func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 	}
 
 	return middleware.Redirect(ctx, path)
+}
+
+// movableFolders drops the folder being moved and everything under it from the
+// list of possible destinations, so a move cannot close a cycle in the tree.
+func movableFolders(folders []entity.Folder, rootID string) []entity.Folder {
+	excluded := map[string]bool{rootID: true}
+
+	changed := true
+	for changed {
+		changed = false
+
+		for i := range folders {
+			f := folders[i]
+			if excluded[f.ID] {
+				continue
+			}
+
+			if f.ParentID != nil && excluded[*f.ParentID] {
+				excluded[f.ID] = true
+				changed = true
+			}
+		}
+	}
+
+	out := make([]entity.Folder, 0, len(folders))
+	for i := range folders {
+		f := folders[i]
+		if !excluded[f.ID] {
+			out = append(out, f)
+		}
+	}
+
+	return out
 }

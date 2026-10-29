@@ -26,6 +26,10 @@ const (
 	// exist or belongs to another account.
 	_fileNotFoundMessage = "That file is not here any more."
 
+	// _folderNotFoundMessage is shown when a folder the request names does not
+	// exist or belongs to another account.
+	_folderNotFoundMessage = "That folder is not here any more."
+
 	// _sessionLocal is where the auth guard parks the session it resolved, which
 	// is how a handler learns who the visitor is and what role they hold.
 	_sessionLocal = "session"
@@ -106,8 +110,8 @@ func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent(), templates.AdminSettingsTitle)
 }
 
-// share renders a placeholder page for the Share section. It is auth-only, so
-// the guard has already resolved a user before it runs.
+// share renders a placeholder page for the Share section. It is public, so the
+// visitor may be anonymous; c.view reports whether they are signed in.
 func (c *Controller) share(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.Share(c.view(ctx)), templates.ShareContent(), templates.ShareTitle)
 }

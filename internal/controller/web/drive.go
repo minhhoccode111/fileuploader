@@ -107,7 +107,7 @@ func (c *Controller) renderEntries(
 func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error {
 	switch {
 	case errors.Is(err, entity.ErrFolderNotFound):
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That folder is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
 
 	case errors.Is(err, entity.ErrFileNotFound):
 		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
@@ -138,6 +138,13 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 			ctx,
 			http.StatusUnprocessableEntity,
 			[]string{"The root folder cannot be changed."},
+		)
+
+	case errors.Is(err, entity.ErrFolderCycle):
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"That folder cannot be moved there."},
 		)
 
 	default:

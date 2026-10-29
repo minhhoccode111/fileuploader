@@ -207,6 +207,127 @@ func (uc *UseCase) Rename(
 	return folder, nil
 }
 
+// Move changes the parent of a folder. The root folder cannot move, a folder
+// cannot move into itself or into one of its descendants, and the name has to
+// be free in the destination for a folder and for a file alike. Only the row of
+// the moved folder changes; everything under it stays attached. The account
+// lock keeps the move from racing a create, an upload or a delete into either
+// side.
+func (uc *UseCase) Move(
+	ctx context.Context,
+	userID, folderID, destinationID string,
+) (entity.Folder, error) {
+	folder, err := uc.folders.Get(ctx, userID, folderID)
+	if err != nil {
+		return entity.Folder{}, fmt.Errorf("FolderUseCase - Move - uc.folders.Get: %w", err)
+	}
+
+	if folder.IsRoot() {
+		return entity.Folder{}, entity.ErrRootFolder
+	}
+
+	if _, err := uc.folders.Get(ctx, userID, destinationID); err != nil {
+		return entity.Folder{}, fmt.Errorf("FolderUseCase - Move - uc.folders.Get(destination): %w", err)
+	}
+
+	if folder.ParentID != nil && *folder.ParentID == destinationID {
+		return folder, nil
+	}
+
+	return uc.moveFolder(ctx, userID, &folder, destinationID)
+}
+
+func (uc *UseCase) moveFolder(
+	ctx context.Context,
+	userID string,
+	folder *entity.Folder,
+	destinationID string,
+) (entity.Folder, error) {
+	err := uc.uow.Do(ctx, func(ctx context.Context) error {
+		if err := uc.folders.LockUser(ctx, userID); err != nil {
+			return fmt.Errorf("uc.folders.LockUser: %w", err)
+		}
+
+		all, err := uc.folders.ListAll(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("uc.folders.ListAll: %w", err)
+		}
+
+		if !folderExists(all, folder.ID) || !folderExists(all, destinationID) {
+			return entity.ErrFolderNotFound
+		}
+
+		if folderIsDescendant(all, folder.ID, destinationID) {
+			return entity.ErrFolderCycle
+		}
+
+		if err := uc.checkName(ctx, userID, destinationID, folder.Name); err != nil {
+			return err
+		}
+
+		now := time.Now().UTC()
+		folder.ParentID = &destinationID
+		folder.UpdatedAt = now
+
+		if err := uc.folders.Move(ctx, userID, folder.ID, destinationID); err != nil {
+			return fmt.Errorf("uc.folders.Move: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return entity.Folder{}, fmt.Errorf("FolderUseCase - Move - uc.uow.Do: %w", err)
+	}
+
+	return *folder, nil
+}
+
+func folderExists(folders []entity.Folder, id string) bool {
+	for i := range folders {
+		if folders[i].ID == id {
+			return true
+		}
+	}
+
+	return false
+}
+
+func folderIsDescendant(folders []entity.Folder, folderID, destinationID string) bool {
+	parentOf := make(map[string]*string, len(folders))
+	for i := range folders {
+		f := folders[i]
+		parentOf[f.ID] = f.ParentID
+	}
+
+	current := destinationID
+	seen := make(map[string]bool)
+
+	for current != "" {
+		if current == folderID {
+			return true
+		}
+
+		if seen[current] {
+			return false
+		}
+
+		seen[current] = true
+
+		parent, ok := parentOf[current]
+		if !ok {
+			return false
+		}
+
+		if parent == nil {
+			return false
+		}
+
+		current = *parent
+	}
+
+	return false
+}
+
 // Delete removes a folder and everything under it, and then removes the
 // objects of the files it held. The rows go first, inside one transaction that
 // also deletes the file rows and reads back their keys, so a file inserted

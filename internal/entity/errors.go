@@ -17,5 +17,6 @@ var (
 	ErrInvalidName           = errors.New("invalid name")
 	ErrFileTooLarge          = errors.New("file too large")
 	ErrRootFolder            = errors.New("root folder cannot be changed")
+	ErrFolderCycle           = errors.New("folder cannot be moved into itself or its subtree")
 	ErrStorageCleanup        = errors.New("storage cleanup failed")
 )

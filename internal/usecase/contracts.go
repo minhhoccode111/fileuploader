@@ -34,6 +34,7 @@ type (
 		List(ctx context.Context, userID, folderID string) (entity.FolderView, error)
 		Create(ctx context.Context, userID, parentID, name string) (entity.Folder, error)
 		Rename(ctx context.Context, userID, folderID, name string) (entity.Folder, error)
+		Move(ctx context.Context, userID, folderID, destinationID string) (entity.Folder, error)
 		Delete(ctx context.Context, userID, folderID string) (entity.Folder, error)
 		ListAll(ctx context.Context, userID string) ([]entity.Folder, error)
 	}

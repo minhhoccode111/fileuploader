@@ -16,20 +16,23 @@ var errStorage = errors.New("storage failed")
 // fakeFolderRepo answers from the folders the test set up and records what the
 // use case asked it to store or delete.
 type fakeFolderRepo struct {
-	byID      map[string]entity.Folder
-	root      entity.Folder
-	rootErr   error
-	getErr    error
-	items     []entity.FolderItem
-	refs      []entity.FolderRef
-	taken     bool
-	nameErr   error
-	storeErr  error
-	renameErr error
-	deleteErr error
-	stored    *entity.Folder
-	renamed   *entity.Folder
-	deletedID string
+	byID       map[string]entity.Folder
+	root       entity.Folder
+	rootErr    error
+	getErr     error
+	items      []entity.FolderItem
+	refs       []entity.FolderRef
+	taken      bool
+	nameErr    error
+	storeErr   error
+	renameErr  error
+	moveErr    error
+	deleteErr  error
+	listAllErr error
+	all        []entity.Folder
+	stored     *entity.Folder
+	renamed    *entity.Folder
+	deletedID  string
 }
 
 func (f *fakeFolderRepo) Store(_ context.Context, folder *entity.Folder) error {
@@ -95,6 +98,10 @@ func (f *fakeFolderRepo) Rename(_ context.Context, folder *entity.Folder) error 
 	return nil
 }
 
+func (f *fakeFolderRepo) Move(_ context.Context, _, _, _ string) error {
+	return f.moveErr
+}
+
 func (f *fakeFolderRepo) Delete(_ context.Context, _, folderID string) error {
 	f.deletedID = folderID
 
@@ -102,7 +109,20 @@ func (f *fakeFolderRepo) Delete(_ context.Context, _, folderID string) error {
 }
 
 func (f *fakeFolderRepo) ListAll(_ context.Context, _ string) ([]entity.Folder, error) {
-	return nil, f.deleteErr
+	if f.listAllErr != nil {
+		return nil, f.listAllErr
+	}
+
+	if f.all != nil {
+		return f.all, nil
+	}
+
+	out := make([]entity.Folder, 0, len(f.byID))
+	for _, folder := range f.byID {
+		out = append(out, folder)
+	}
+
+	return out, nil
 }
 
 // fakeFileRepo supplies the file side of the folder checks.
@@ -448,5 +468,100 @@ func TestListReadsTheRootWhenNoFolderCameIn(t *testing.T) {
 
 	if len(view.Folders) != 1 || len(view.Files) != 1 {
 		t.Errorf("List() returned %d folders and %d files, want 1 and 1", len(view.Folders), len(view.Files))
+	}
+}
+
+func TestMoveChangesParent(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{byID: map[string]entity.Folder{
+		"source":      {ID: "source", UserID: "user", ParentID: new("old"), Name: "Reports"},
+		"old":         {ID: "old", UserID: "user", Name: "Old"},
+		"destination": {ID: "destination", UserID: "user", Name: "Destination"},
+	}}
+	uc := New(folders, &fakeFileRepo{}, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	moved, err := uc.Move(context.Background(), "user", "source", "destination")
+	if err != nil {
+		t.Fatalf("Move() error = %v, want nil", err)
+	}
+
+	if moved.ParentID == nil || *moved.ParentID != "destination" {
+		t.Errorf("moved parent = %v, want destination", moved.ParentID)
+	}
+}
+
+func TestMoveRejectsRootSelfAndDescendant(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		folderID      string
+		destinationID string
+		folders       map[string]entity.Folder
+		wantErr       error
+	}{
+		{
+			name:          "root",
+			folderID:      "root",
+			destinationID: "other",
+			folders: map[string]entity.Folder{
+				"root":  {ID: "root", UserID: "user", Name: "/"},
+				"other": {ID: "other", UserID: "user", ParentID: new("root"), Name: "Other"},
+			},
+			wantErr: entity.ErrRootFolder,
+		},
+		{
+			name:          "self",
+			folderID:      "source",
+			destinationID: "source",
+			folders: map[string]entity.Folder{
+				"source": {ID: "source", UserID: "user", ParentID: new("root"), Name: "Source"},
+				"root":   {ID: "root", UserID: "user", Name: "/"},
+			},
+			wantErr: entity.ErrFolderCycle,
+		},
+		{
+			name:          "descendant",
+			folderID:      "parent",
+			destinationID: "child",
+			folders: map[string]entity.Folder{
+				"root":   {ID: "root", UserID: "user", Name: "/"},
+				"parent": {ID: "parent", UserID: "user", ParentID: new("root"), Name: "Parent"},
+				"child":  {ID: "child", UserID: "user", ParentID: new("parent"), Name: "Child"},
+			},
+			wantErr: entity.ErrFolderCycle,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			folders := &fakeFolderRepo{byID: tc.folders}
+			uc := New(folders, &fakeFileRepo{}, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+			_, err := uc.Move(context.Background(), "user", tc.folderID, tc.destinationID)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("Move() error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestMoveRejectsNameCollision(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{byID: map[string]entity.Folder{
+		"source":      {ID: "source", UserID: "user", ParentID: new("old"), Name: "Reports"},
+		"old":         {ID: "old", UserID: "user", Name: "Old"},
+		"destination": {ID: "destination", UserID: "user", Name: "Destination"},
+	}}
+	files := &fakeFileRepo{nameTaken: true}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.Move(context.Background(), "user", "source", "destination")
+	if !errors.Is(err, entity.ErrEntryAlreadyExists) {
+		t.Errorf("Move() error = %v, want %v", err, entity.ErrEntryAlreadyExists)
 	}
 }

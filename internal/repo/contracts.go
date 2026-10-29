@@ -50,6 +50,7 @@ type (
 		Breadcrumb(ctx context.Context, userID, folderID string) ([]entity.FolderRef, error)
 		NameTaken(ctx context.Context, userID, parentID, name string) (bool, error)
 		Rename(ctx context.Context, folder *entity.Folder) error
+		Move(ctx context.Context, userID, folderID, parentID string) error
 		Delete(ctx context.Context, userID, folderID string) error
 	}
 

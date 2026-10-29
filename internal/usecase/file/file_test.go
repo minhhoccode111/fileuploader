@@ -124,6 +124,10 @@ func (f *fakeFolderRepo) Rename(_ context.Context, _ *entity.Folder) error {
 	return nil
 }
 
+func (f *fakeFolderRepo) Move(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
 func (f *fakeFolderRepo) Delete(_ context.Context, _, _ string) error {
 	return nil
 }

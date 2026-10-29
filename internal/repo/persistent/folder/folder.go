@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,9 @@ SELECT id, name FROM ancestors ORDER BY depth DESC`
 
 // _userIDColumn is the column every query of the repository scopes by.
 const _userIDColumn = "user_id"
+
+// _idColumn is the primary key column of the folders table.
+const _idColumn = "id"
 
 // _lockSubtreeQuery locks every folder under a folder, in identifier order, so
 // two deletes of overlapping subtrees take the locks in the same order and an
@@ -403,6 +407,37 @@ func (r *Repo) Rename(ctx context.Context, folder *entity.Folder) error {
 		}
 
 		return fmt.Errorf("FolderRepo - Rename - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrFolderNotFound
+	}
+
+	return nil
+}
+
+// Move changes the parent of a folder. A missing folder maps to
+// ErrFolderNotFound; a name that already exists in the destination maps to
+// ErrEntryAlreadyExists through the unique index on siblings.
+func (r *Repo) Move(ctx context.Context, userID, folderID, parentID string) error {
+	sql, args, err := r.Builder.
+		Update("folders").
+		Set("parent_id", parentID).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: folderID, _userIDColumn: userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("FolderRepo - Move - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return entity.ErrEntryAlreadyExists
+		}
+
+		return fmt.Errorf("FolderRepo - Move - r.Querier(ctx).Exec: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {
