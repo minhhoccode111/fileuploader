@@ -211,6 +211,63 @@ func (uc *UseCase) Rename(ctx context.Context, userID, fileID, rawName string) (
 	return file, nil
 }
 
+// Move changes the folder a file is listed in. The object key is built from
+// identifiers, so nothing in the bucket moves. The destination folder is
+// locked while the name is checked and the row is written, so a move and an
+// upload cannot both claim one name in the destination. Moving into the
+// current folder is a no-op.
+func (uc *UseCase) Move(
+	ctx context.Context,
+	userID, fileID, folderID string,
+) (entity.File, error) {
+	file, err := uc.files.Get(ctx, userID, fileID)
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - Move - uc.files.Get: %w", err)
+	}
+
+	_, err = uc.folders.Get(ctx, userID, folderID)
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - Move - uc.folders.Get: %w", err)
+	}
+
+	if file.FolderID == folderID {
+		return file, nil
+	}
+
+	now := time.Now().UTC()
+	file.FolderID = folderID
+	file.UpdatedAt = now
+
+	err = uc.uow.Do(ctx, func(ctx context.Context) error {
+		userLockErr := uc.folders.LockUser(ctx, userID)
+		if userLockErr != nil {
+			return fmt.Errorf("uc.folders.LockUser: %w", userLockErr)
+		}
+
+		_, lockErr := uc.folders.Lock(ctx, userID, folderID)
+		if lockErr != nil {
+			return fmt.Errorf("uc.folders.Lock: %w", lockErr)
+		}
+
+		checkErr := uc.checkName(ctx, userID, folderID, file.Name)
+		if checkErr != nil {
+			return checkErr
+		}
+
+		moveErr := uc.files.Move(ctx, userID, fileID, folderID)
+		if moveErr != nil {
+			return fmt.Errorf("uc.files.Move: %w", moveErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - Move - uc.uow.Do: %w", err)
+	}
+
+	return file, nil
+}
+
 // Delete removes the row and then the object. The row goes first: a file that
 // is no longer listed cannot be downloaded, while the opposite would leave a
 // listed file without bytes behind it. A failed cleanup is marked, so the

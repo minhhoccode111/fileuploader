@@ -57,6 +57,10 @@ func (f *fakeFileRepo) Rename(_ context.Context, file *entity.File) error {
 	return nil
 }
 
+func (f *fakeFileRepo) Move(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
 func (f *fakeFileRepo) Delete(_ context.Context, _, _ string) (entity.File, error) {
 	f.deleted = true
 
@@ -122,6 +126,10 @@ func (f *fakeFolderRepo) Rename(_ context.Context, _ *entity.Folder) error {
 
 func (f *fakeFolderRepo) Delete(_ context.Context, _, _ string) error {
 	return nil
+}
+
+func (f *fakeFolderRepo) ListAll(_ context.Context, _ string) ([]entity.Folder, error) {
+	return nil, nil
 }
 
 // fakeUnitOfWork runs the callback and records that it was used.

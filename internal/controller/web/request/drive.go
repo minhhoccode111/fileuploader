@@ -48,3 +48,14 @@ type FolderRename struct {
 func (r *FolderRename) Sanitize() {
 	r.Name = strings.TrimSpace(r.Name)
 }
+
+// FileMove is the form that moves one file to another folder. The destination
+// travels as a form field.
+type FileMove struct {
+	FolderID string `form:"folder" validate:"required,uuid4"`
+}
+
+// Sanitize trims the folder id before validation runs.
+func (r *FileMove) Sanitize() {
+	r.FolderID = strings.TrimSpace(r.FolderID)
+}

@@ -82,6 +82,17 @@ func (uc *UseCase) List(ctx context.Context, userID, folderID string) (entity.Fo
 	}, nil
 }
 
+// ListAll returns every folder of the account. Roots come first, then children
+// in name order. Used to build a destination picker for moves and uploads.
+func (uc *UseCase) ListAll(ctx context.Context, userID string) ([]entity.Folder, error) {
+	folders, err := uc.folders.ListAll(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("FolderUseCase - ListAll - uc.folders.ListAll: %w", err)
+	}
+
+	return folders, nil
+}
+
 // Create makes one folder inside another. The name has to be free in that
 // folder, for a folder and for a file alike, because a listing shows both in
 // one list and two entries with the same name would be indistinguishable. The

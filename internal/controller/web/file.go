@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -107,7 +108,7 @@ func (c *Controller) uploadError(ctx *fiber.Ctx, err error) error {
 func (c *Controller) fileDrawer(ctx *fiber.Ctx) error {
 	fileID := ctx.Params("file")
 	if !c.validID(fileID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
 	}
 
 	userID, ok := c.userID(ctx)
@@ -123,17 +124,29 @@ func (c *Controller) fileDrawer(ctx *fiber.Ctx) error {
 	return c.renderPage(ctx, templates.FileDrawerContent(response.NewFileInfo(&file)))
 }
 
-// fileRename changes the name of one file and refreshes the table it sits in.
-func (c *Controller) fileRename(ctx *fiber.Ctx) error {
+// _fileActionReq is any request body that can be sanitized before validation.
+type _fileActionReq interface {
+	Sanitize()
+}
+
+// fileAction runs the shared boilerplate of file actions that take a body and
+// refresh the file's folder: decode, validate, resolve the user, run the
+// action, then re-render the folder table. The action closure captures the
+// concrete request type so it can read its fields.
+func (c *Controller) fileAction(
+	ctx *fiber.Ctx,
+	req _fileActionReq,
+	badRequest string,
+	run func(context.Context, string, string) (entity.File, error),
+	action string,
+) error {
 	fileID := ctx.Params("file")
 	if !c.validID(fileID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
 	}
 
-	var req request.FileRename
-
-	if err := ctx.BodyParser(&req); err != nil {
-		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Enter a name for the file."})
+	if err := ctx.BodyParser(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{badRequest})
 	}
 
 	req.Sanitize()
@@ -147,9 +160,9 @@ func (c *Controller) fileRename(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _loginPath)
 	}
 
-	file, err := c.files.Rename(ctx.UserContext(), userID, fileID, req.Name)
+	file, err := run(ctx.UserContext(), userID, fileID)
 	if err != nil {
-		return c.driveError(ctx, err, "fileRename - uc.files.Rename")
+		return c.driveError(ctx, err, action)
 	}
 
 	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
@@ -157,12 +170,96 @@ func (c *Controller) fileRename(ctx *fiber.Ctx) error {
 	return c.renderEntries(ctx, userID, file.FolderID)
 }
 
+// fileRename changes the name of one file and refreshes the table it sits in.
+func (c *Controller) fileRename(ctx *fiber.Ctx) error {
+	var req request.FileRename
+
+	return c.fileAction(
+		ctx,
+		&req,
+		"Enter a name for the file.",
+		func(ctx context.Context, userID, fileID string) (entity.File, error) {
+			return c.files.Rename(ctx, userID, fileID, req.Name)
+		},
+		"fileRename - uc.files.Rename",
+	)
+}
+
+// fileMove moves one file to another folder and refreshes the table of the
+// folder the file came from, so the visitor stays on the page they were on.
+func (c *Controller) fileMove(ctx *fiber.Ctx) error {
+	fileID := ctx.Params("file")
+	if !c.validID(fileID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
+	}
+
+	var req request.FileMove
+
+	if err := ctx.BodyParser(&req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Choose a folder."})
+	}
+
+	req.Sanitize()
+
+	if err := c.v.Struct(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	file, err := c.files.Get(ctx.UserContext(), userID, fileID)
+	if err != nil {
+		return c.driveError(ctx, err, "fileMove - uc.files.Get")
+	}
+
+	currentFolderID := file.FolderID
+
+	file, err = c.files.Move(ctx.UserContext(), userID, fileID, req.FolderID)
+	if err != nil {
+		return c.driveError(ctx, err, "fileMove - uc.files.Move")
+	}
+
+	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
+
+	return c.renderEntries(ctx, userID, currentFolderID)
+}
+
+// fileMoveForm fills the drawer with the form that moves one file to another
+// folder. The destination folder is picked from a select of the account's
+// folders, with the file's current folder pre-selected.
+func (c *Controller) fileMoveForm(ctx *fiber.Ctx) error {
+	fileID := ctx.Params("file")
+	if !c.validID(fileID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	file, err := c.files.Get(ctx.UserContext(), userID, fileID)
+	if err != nil {
+		return c.driveError(ctx, err, "fileMoveForm - uc.files.Get")
+	}
+
+	folders, err := c.folders.ListAll(ctx.UserContext(), userID)
+	if err != nil {
+		return c.driveError(ctx, err, "fileMoveForm - uc.folders.ListAll")
+	}
+
+	return c.renderPage(ctx, templates.FileMoveContent(fileID, file.FolderID, response.FolderOptions(folders)))
+}
+
 // fileDelete removes one file and the object behind it, then refreshes the
 // table it sat in.
 func (c *Controller) fileDelete(ctx *fiber.Ctx) error {
 	fileID := ctx.Params("file")
 	if !c.validID(fileID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
 	}
 
 	userID, ok := c.userID(ctx)

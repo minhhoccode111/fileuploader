@@ -101,6 +101,10 @@ func (f *fakeFolderRepo) Delete(_ context.Context, _, folderID string) error {
 	return f.deleteErr
 }
 
+func (f *fakeFolderRepo) ListAll(_ context.Context, _ string) ([]entity.Folder, error) {
+	return nil, f.deleteErr
+}
+
 // fakeFileRepo supplies the file side of the folder checks.
 type fakeFileRepo struct {
 	items     []entity.FileItem
@@ -123,6 +127,10 @@ func (f *fakeFileRepo) List(_ context.Context, _, _ string) ([]entity.FileItem, 
 }
 
 func (f *fakeFileRepo) Rename(_ context.Context, _ *entity.File) error {
+	return nil
+}
+
+func (f *fakeFileRepo) Move(_ context.Context, _, _, _ string) error {
 	return nil
 }
 

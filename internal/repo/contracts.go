@@ -46,6 +46,7 @@ type (
 		LockSubtree(ctx context.Context, userID, folderID string) error
 		GetRoot(ctx context.Context, userID string) (entity.Folder, error)
 		List(ctx context.Context, userID, folderID string) ([]entity.FolderItem, error)
+		ListAll(ctx context.Context, userID string) ([]entity.Folder, error)
 		Breadcrumb(ctx context.Context, userID, folderID string) ([]entity.FolderRef, error)
 		NameTaken(ctx context.Context, userID, parentID, name string) (bool, error)
 		Rename(ctx context.Context, folder *entity.Folder) error
@@ -58,6 +59,7 @@ type (
 		Get(ctx context.Context, userID, fileID string) (entity.File, error)
 		List(ctx context.Context, userID, folderID string) ([]entity.FileItem, error)
 		Rename(ctx context.Context, file *entity.File) error
+		Move(ctx context.Context, userID, fileID, folderID string) error
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		NameTaken(ctx context.Context, userID, folderID, name string) (bool, error)
 		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]string, error)

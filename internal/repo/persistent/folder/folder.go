@@ -261,6 +261,58 @@ func (r *Repo) List(ctx context.Context, userID, folderID string) ([]entity.Fold
 	return items, nil
 }
 
+// ListAll returns every folder of the account. Roots come first, then
+// children in name order. Callers use it to build a destination picker.
+func (r *Repo) ListAll(ctx context.Context, userID string) ([]entity.Folder, error) {
+	sql, args, err := r.Builder.
+		Select(_folderColumns).
+		From("folders").
+		Where(sq.Eq{_userIDColumn: userID}).
+		OrderBy("parent_id IS NULL DESC", "lower(name) ASC", "id ASC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("FolderRepo - ListAll - r.Builder: %w", err)
+	}
+
+	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("FolderRepo - ListAll - r.Querier(ctx).Query: %w", err)
+	}
+	defer rows.Close()
+
+	folders := make([]entity.Folder, 0)
+
+	for rows.Next() {
+		var folder entity.Folder
+
+		var parentID string
+
+		err = rows.Scan(
+			&folder.ID,
+			&folder.UserID,
+			&parentID,
+			&folder.Name,
+			&folder.CreatedAt,
+			&folder.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("FolderRepo - ListAll - rows.Scan: %w", err)
+		}
+
+		if parentID != "" {
+			folder.ParentID = &parentID
+		}
+
+		folders = append(folders, folder)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("FolderRepo - ListAll - rows.Err: %w", err)
+	}
+
+	return folders, nil
+}
+
 // Breadcrumb returns the path from the root to the folder, root first. An
 // unknown folder returns no rows, which maps to ErrFolderNotFound.
 func (r *Repo) Breadcrumb(ctx context.Context, userID, folderID string) ([]entity.FolderRef, error) {

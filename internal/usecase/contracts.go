@@ -35,6 +35,7 @@ type (
 		Create(ctx context.Context, userID, parentID, name string) (entity.Folder, error)
 		Rename(ctx context.Context, userID, folderID, name string) (entity.Folder, error)
 		Delete(ctx context.Context, userID, folderID string) (entity.Folder, error)
+		ListAll(ctx context.Context, userID string) ([]entity.Folder, error)
 	}
 
 	// File is the drive's file logic: one upload at a time, a rename, a
@@ -50,5 +51,6 @@ type (
 		Rename(ctx context.Context, userID, fileID, name string) (entity.File, error)
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		Download(ctx context.Context, userID, fileID string) (string, error)
+		Move(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
 	}
 )

@@ -153,6 +153,10 @@ func (f *fakeFolderRepo) Delete(_ context.Context, _, _ string) error {
 	return f.err
 }
 
+func (f *fakeFolderRepo) ListAll(_ context.Context, _ string) ([]entity.Folder, error) {
+	return nil, f.err
+}
+
 // fakeUnitOfWork records how the unit of work ended.
 type fakeUnitOfWork struct {
 	called     bool

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
@@ -152,6 +153,31 @@ func (r *Repo) Rename(ctx context.Context, file *entity.File) error {
 		}
 
 		return fmt.Errorf("FileRepo - Rename - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrFileNotFound
+	}
+
+	return nil
+}
+
+// Move changes the folder a file is listed in. A missing file maps to
+// ErrFileNotFound.
+func (r *Repo) Move(ctx context.Context, userID, fileID, folderID string) error {
+	sql, args, err := r.Builder.
+		Update("files").
+		Set("folder_id", folderID).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{"id": fileID, _userIDColumn: userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("FileRepo - Move - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("FileRepo - Move - r.Querier(ctx).Exec: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {

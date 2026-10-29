@@ -17,25 +17,6 @@ const (
 	// root, so only its children use it.
 	_foldersPath = "/folders/"
 
-	// _newFolderPath is the fragment the create-folder drawer asks for.
-	_newFolderPath = "/htmx/folders/new"
-
-	// _folderCreatePath takes the create-folder form.
-	_folderCreatePath = "/htmx/folders"
-
-	// _newFilePath is the fragment the upload drawer asks for.
-	_newFilePath = "/htmx/files/new"
-
-	// _fileUploadPath takes the one-file upload form.
-	_fileUploadPath = "/htmx/files"
-
-	// _filePath is the page route of one file's drawer. The rename and delete
-	// actions hang off the same prefix.
-	_filePath = "/htmx/files/"
-
-	// _downloadPath hands the browser a time-limited link to the bytes.
-	_downloadPath = "/files/"
-
 	// _idValidation is the rule every identifier from a path has to pass
 	// before it reaches a query, so a malformed path is a caller error.
 	_idValidation = "required,uuid4"
@@ -129,7 +110,7 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 		return c.renderErrors(ctx, http.StatusNotFound, []string{"That folder is not here any more."})
 
 	case errors.Is(err, entity.ErrFileNotFound):
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_fileNotFoundMessage})
 
 	case errors.Is(err, entity.ErrEntryAlreadyExists):
 		return c.renderErrors(

@@ -15,6 +15,10 @@ const (
 	// _rootCrumbIndex is the position of the root of the drive in a
 	// breadcrumb: the path is always root first.
 	_rootCrumbIndex = 0
+
+	// _folderIndentPx is the left padding per level of depth in a folder
+	// destination select, so the tree shape is visible.
+	_folderIndentPx = 24
 )
 
 // Crumb is one step of the breadcrumb above a folder listing.
@@ -141,4 +145,56 @@ func itemLabel(count int) string {
 	}
 
 	return fmt.Sprintf("%d items", count)
+}
+
+// FolderOption is one folder in a destination select. Depth is the number of
+// ancestors above it, so the tree shape shows as indentation in a flat list.
+type FolderOption struct {
+	ID    string
+	Name  string
+	Depth int
+	Style string // inline style, e.g. "padding-left: 48px"
+}
+
+// FolderOptions maps a flat list of folders to select options, computing the
+// depth of each one from its parent chain so the tree shape is visible.
+func FolderOptions(folders []entity.Folder) []FolderOption {
+	byID := make(map[string]entity.Folder, len(folders))
+	for _, f := range folders {
+		byID[f.ID] = f
+	}
+
+	depth := make(map[string]int)
+
+	var depthOf func(id string) int
+
+	depthOf = func(id string) int {
+		if d, ok := depth[id]; ok {
+			return d
+		}
+
+		f, ok := byID[id]
+		if !ok || f.ParentID == nil {
+			depth[id] = 0
+
+			return 0
+		}
+
+		depth[id] = 1 + depthOf(*f.ParentID)
+
+		return depth[id]
+	}
+
+	opts := make([]FolderOption, 0, len(folders))
+	for _, f := range folders {
+		d := depthOf(f.ID)
+		opts = append(opts, FolderOption{
+			ID:    f.ID,
+			Name:  f.Name,
+			Depth: d,
+			Style: fmt.Sprintf("padding-left: %dpx", d*_folderIndentPx),
+		})
+	}
+
+	return opts
 }

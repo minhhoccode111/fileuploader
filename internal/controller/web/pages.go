@@ -22,6 +22,10 @@ const (
 	// must not see. The real error is logged instead.
 	_genericErrorMessage = "Something went wrong. Please try again."
 
+	// _fileNotFoundMessage is shown when an entry the request names does not
+	// exist or belongs to another account.
+	_fileNotFoundMessage = "That file is not here any more."
+
 	// _sessionLocal is where the auth guard parks the session it resolved, which
 	// is how a handler learns who the visitor is and what role they hold.
 	_sessionLocal = "session"
@@ -34,17 +38,8 @@ const (
 	// admin area.
 	_adminUsersPath = "/admin/users"
 
-	// _adminUsersTablePath serves the account table the user management page
-	// asks for once it is on the screen.
-	_adminUsersTablePath = "/htmx/admin/users"
-
 	// _adminSettingsPath is the settings page of the admin area.
 	_adminSettingsPath = "/admin/settings"
-
-	// _adminUsersEditPath serves the edit form of one account — the fragment
-	// the drawer of the account list fills when a row is clicked — and takes
-	// the form data the drawer submits.
-	_adminUsersEditPath = "/htmx/admin/users/edit"
 )
 
 // renderErrors renders the error fragment htmx swaps into a form's error target.

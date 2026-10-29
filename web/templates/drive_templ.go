@@ -840,46 +840,164 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-4\"><path d=\"M12 3v12\"></path> <path d=\"m7 10 5 5 5-5\"></path> <path d=\"M5 21h14\"></path></svg> Download</a><form class=\"flex flex-col gap-3\" novalidate hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-4\"><path d=\"M12 3v12\"></path> <path d=\"m7 10 5 5 5-5\"></path> <path d=\"M5 21h14\"></path></svg> Download</a> <button type=\"button\" class=\"btn btn-sm btn-outline whitespace-nowrap\" hx-get=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var47 string
-		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue("/htmx/files/" + file.ID + "/rename")
+		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.ResolveAttributeValue("/htmx/files/" + file.ID + "/move")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 400, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 400, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" hx-target=\"#drive-entries\" hx-swap=\"innerHTML\" hx-status:4xx=\"target:#entry-error\" hx-status:5xx=\"target:#entry-error\"><label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Name</span> <input class=\"input w-full\" type=\"text\" name=\"name\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" hx-target=\"#entry-panel\" hx-swap=\"innerHTML\" hx-on:htmx:after:swap=\"document.getElementById('entry-drawer').checked = true\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"size-4\"><path d=\"M9 2l5.5 5.5-5.5 5.5\"></path> <path d=\"M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7\"></path></svg> Move</button><form class=\"flex flex-col gap-3\" novalidate hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var48 string
-		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(file.Name)
+		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue("/htmx/files/" + file.ID + "/rename")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 412, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 414, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" required maxlength=\"255\" autocomplete=\"off\"></label><div id=\"entry-error\" class=\"text-error text-sm\" role=\"alert\"></div><button type=\"submit\" class=\"btn btn-sm\">Save name</button></form><form hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" hx-target=\"#drive-entries\" hx-swap=\"innerHTML\" hx-status:4xx=\"target:#entry-error\" hx-status:5xx=\"target:#entry-error\"><label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Name</span> <input class=\"input w-full\" type=\"text\" name=\"name\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var49 string
-		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue("/htmx/files/" + file.ID + "/delete")
+		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(file.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 422, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 426, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" hx-target=\"#drive-entries\" hx-swap=\"innerHTML\" hx-confirm=\"Delete this file?\" hx-status:4xx=\"target:#entry-error\" hx-status:5xx=\"target:#entry-error\"><button type=\"submit\" class=\"btn btn-sm btn-error btn-outline\">Delete file</button></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" required maxlength=\"255\" autocomplete=\"off\"></label><div id=\"entry-error\" class=\"text-error text-sm\" role=\"alert\"></div><button type=\"submit\" class=\"btn btn-sm\">Save name</button></form><form hx-post=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var50 string
+		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue("/htmx/files/" + file.ID + "/delete")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 436, Col: 49}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\" hx-target=\"#drive-entries\" hx-swap=\"innerHTML\" hx-confirm=\"Delete this file?\" hx-status:4xx=\"target:#entry-error\" hx-status:5xx=\"target:#entry-error\"><button type=\"submit\" class=\"btn btn-sm btn-error btn-outline\">Delete file</button></form></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// FileMoveContent is the drawer form that moves one file to another folder.
+// The destination folder is picked from a select of the account's folders,
+// indented by depth so the tree shape shows. The file's current folder is
+// pre-selected.
+func FileMoveContent(fileID string, currentFolderID string, folders []response.FolderOption) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var51 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var51 == nil {
+			templ_7745c5c3_Var51 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div class=\"flex flex-col gap-4 p-4\"><div class=\"flex items-start justify-between gap-2\"><h3 class=\"text-lg font-bold\">Move file</h3><label for=\"entry-drawer\" aria-label=\"Close the panel\" class=\"btn btn-circle btn-ghost btn-sm\">✕</label></div><form class=\"flex flex-col gap-3\" novalidate hx-post=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var52 string
+		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue("/htmx/files/" + fileID + "/move")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 461, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" hx-target=\"#drive-entries\" hx-swap=\"innerHTML\" hx-status:4xx=\"target:#move-error\" hx-status:5xx=\"target:#move-error\"><label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Destination folder</span> <select class=\"select select-bordered w-full\" name=\"folder\" required autofocus>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		for _, f := range folders {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<option value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var53 string
+			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 476, Col: 26}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if f.ID == currentFolderID {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, " style=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var54 string
+			templ_7745c5c3_Var54, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(f.Style)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 476, Col: 84}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var55 string
+			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 476, Col: 95}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</option>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</select></label><div id=\"move-error\" class=\"text-error text-sm\" role=\"alert\"></div><button type=\"submit\" class=\"btn btn-primary\">Move file</button> <label for=\"entry-drawer\" class=\"btn btn-ghost\">Cancel</label></form></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
