@@ -1,10 +1,12 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
@@ -129,6 +131,49 @@ func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 	return middleware.Redirect(ctx, path)
 }
 
+// folderDestinationForm runs the shared boilerplate of folder destination
+// forms: resolve the user, read the source folder, reject the root, list all
+// folders, then render the template with the folder's current parent
+// pre-selected.
+func (c *Controller) folderDestinationForm(
+	ctx *fiber.Ctx,
+	rootMessage string,
+	render func(folderID, currentFolderID string, folders []response.FolderOption) templ.Component,
+) error {
+	folderID := ctx.Params("folder")
+	if !c.validID(folderID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	folder, err := c.folders.Get(ctx.UserContext(), userID, folderID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderDestinationForm - uc.folders.Get")
+	}
+
+	if folder.IsRoot() {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{rootMessage})
+	}
+
+	all, err := c.folders.ListAll(ctx.UserContext(), userID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderDestinationForm - uc.folders.ListAll")
+	}
+
+	valid := movableFolders(all, folderID)
+
+	currentFolderID := ""
+	if folder.ParentID != nil {
+		currentFolderID = *folder.ParentID
+	}
+
+	return c.renderPage(ctx, render(folderID, currentFolderID, response.FolderOptions(valid)))
+}
+
 // folderMoveForm fills the drawer with the form that moves one folder to
 // another. The destination folder is picked from a select of the account's
 // folders, indented by depth so the tree shape shows. The folder's current
@@ -212,6 +257,89 @@ func (c *Controller) folderMove(ctx *fiber.Ctx) error {
 	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
 
 	return c.renderEntries(ctx, userID, currentFolderID)
+}
+
+// _folderActionReq is any request body that can be sanitized before validation.
+type _folderActionReq interface {
+	Sanitize()
+}
+
+// folderActionWithGet runs the shared boilerplate of folder actions that take a
+// body, read the source folder first (to know which folder table to refresh
+// after the action), then run the action. The action closure captures the
+// concrete request type so it can read its fields.
+func (c *Controller) folderActionWithGet(
+	ctx *fiber.Ctx,
+	req _folderActionReq,
+	badRequest string,
+	run func(context.Context, string, string) error,
+	action string,
+) error {
+	folderID := ctx.Params("folder")
+	if !c.validID(folderID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
+	}
+
+	if err := ctx.BodyParser(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{badRequest})
+	}
+
+	req.Sanitize()
+
+	if err := c.v.Struct(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	folder, err := c.folders.Get(ctx.UserContext(), userID, folderID)
+	if err != nil {
+		return c.driveError(ctx, err, action+" - uc.folders.Get")
+	}
+
+	currentFolderID := ""
+	if folder.ParentID != nil {
+		currentFolderID = *folder.ParentID
+	}
+
+	if err := run(ctx.UserContext(), userID, folderID); err != nil {
+		return c.driveError(ctx, err, action)
+	}
+
+	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
+
+	return c.renderEntries(ctx, userID, currentFolderID)
+}
+
+// folderDuplicateForm fills the drawer with the form that copies one folder to
+// another folder. The destination folder is picked from a select of the
+// account's folders, with the folder's current parent pre-selected. The folder
+// and its subtree are left out of the list, because copying into them would
+// close a cycle.
+func (c *Controller) folderDuplicateForm(ctx *fiber.Ctx) error {
+	return c.folderDestinationForm(ctx, "The root folder cannot be duplicated.", templates.FolderDuplicateContent)
+}
+
+// folderDuplicate copies one folder and everything under it to another folder
+// and refreshes the table of the folder the source sits in, so the visitor
+// stays on the page they were on.
+func (c *Controller) folderDuplicate(ctx *fiber.Ctx) error {
+	var req request.FolderDuplicate
+
+	return c.folderActionWithGet(
+		ctx,
+		&req,
+		"Choose a folder.",
+		func(ctx context.Context, userID, folderID string) error {
+			_, err := c.folders.Duplicate(ctx, userID, folderID, req.FolderID)
+
+			return err
+		},
+		"folderDuplicate - uc.folders.Duplicate",
+	)
 }
 
 // folderDelete removes a folder with everything inside it and sends the

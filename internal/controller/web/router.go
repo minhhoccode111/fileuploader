@@ -22,6 +22,8 @@ type Controller struct {
 }
 
 // NewRouter registers the transport middleware, static assets and HTML/page routes.
+//
+//nolint:funlen // route registration for all transports
 func NewRouter(
 	app *fiber.App,
 	u usecase.User,
@@ -78,6 +80,8 @@ func NewRouter(
 	app.Get("/htmx/folders/:folder/move", middleware.RequireAuth(u), c.folderMoveForm)
 	app.Post("/htmx/folders/:folder/rename", middleware.RequireAuth(u), c.folderRename)
 	app.Post("/htmx/folders/:folder/move", middleware.RequireAuth(u), c.folderMove)
+	app.Get("/htmx/folders/:folder/duplicate", middleware.RequireAuth(u), c.folderDuplicateForm)
+	app.Post("/htmx/folders/:folder/duplicate", middleware.RequireAuth(u), c.folderDuplicate)
 	app.Post("/htmx/folders/:folder/delete", middleware.RequireAuth(u), c.folderDelete)
 	app.Get("/htmx/files/new", middleware.RequireAuth(u), c.fileNew)
 	app.Post("/htmx/files", middleware.RequireAuth(u), c.fileUploadSubmit)

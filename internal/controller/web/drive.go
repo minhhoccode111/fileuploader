@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
@@ -141,10 +142,15 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 		)
 
 	case errors.Is(err, entity.ErrFolderCycle):
+		message := "A folder cannot be copied into itself or one of its folders."
+		if strings.Contains(action, "Move") {
+			message = "That folder cannot be moved there."
+		}
+
 		return c.renderErrors(
 			ctx,
 			http.StatusUnprocessableEntity,
-			[]string{"That folder cannot be moved there."},
+			[]string{message},
 		)
 
 	default:
