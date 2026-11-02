@@ -16,6 +16,9 @@ import (
 	"github.com/minhhoccode111/fileuploader/pkg/postgres"
 )
 
+// _idColumn is the column every query of the repository keys by.
+const _idColumn = "id"
+
 // Repo -.
 type Repo struct {
 	*postgres.Postgres
@@ -30,8 +33,8 @@ func New(pg *postgres.Postgres) repo.UserRepo {
 func (r *Repo) Store(ctx context.Context, user *entity.User) error {
 	sql, args, err := r.Builder.
 		Insert("users").
-		Columns("id, username, email, password_hash, role, created_at, updated_at").
-		Values(user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.CreatedAt, user.UpdatedAt).
+		Columns("id, username, email, password_hash, role, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
+		Values(user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.StorageQuotaBytes, user.StorageUsedBytes, user.UploadRateBytesPerSec, user.DownloadRateBytesPerSec, user.CreatedAt, user.UpdatedAt).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - Store - r.Builder: %w", err)
@@ -65,7 +68,7 @@ func uniqueViolation(pgErr *pgconn.PgError) error {
 
 // GetByID -.
 func (r *Repo) GetByID(ctx context.Context, id string) (entity.User, error) {
-	return r.getUser(ctx, "id", id)
+	return r.getUser(ctx, _idColumn, id)
 }
 
 // GetByEmail -.
@@ -80,7 +83,7 @@ func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRo
 		Update("users").
 		Set("role", role).
 		Set("updated_at", time.Now().UTC()).
-		Where(sq.Eq{"id": userID}).
+		Where(sq.Eq{_idColumn: userID}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - UpdateRole - r.Builder: %w", err)
@@ -110,7 +113,7 @@ func (r *Repo) Update(ctx context.Context, user *entity.User) error {
 		Set("password_hash", user.PasswordHash).
 		Set("role", user.Role).
 		Set("updated_at", user.UpdatedAt).
-		Where(sq.Eq{"id": user.ID}).
+		Where(sq.Eq{_idColumn: user.ID}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - Update - r.Builder: %w", err)
@@ -124,6 +127,37 @@ func (r *Repo) Update(ctx context.Context, user *entity.User) error {
 		}
 
 		return fmt.Errorf("UserRepo - Update - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// SetUserLimits updates the per-account storage and transfer limits. A missing
+// account maps to ErrUserNotFound.
+func (r *Repo) SetUserLimits(
+	ctx context.Context,
+	userID string,
+	quota, uploadRate, downloadRate int64,
+) error {
+	sql, args, err := r.Builder.
+		Update("users").
+		Set("storage_quota_bytes", quota).
+		Set("upload_rate_bytes_per_sec", uploadRate).
+		Set("download_rate_bytes_per_sec", downloadRate).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - SetUserLimits - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("UserRepo - SetUserLimits - r.Querier(ctx).Exec: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {
@@ -163,7 +197,7 @@ func (r *Repo) List(ctx context.Context, filter *entity.UserFilter) (entity.User
 	offset := max((filter.Page-_userFirstPage)*filter.Limit, 0)
 
 	pageSQL, pageArgs, err := r.Builder.
-		Select("id, username, email, role, created_at, updated_at").
+		Select("id, username, email, role, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
 		From("users").
 		Where(where).
 		OrderBy(listOrder(filter)...).
@@ -186,7 +220,7 @@ func (r *Repo) List(ctx context.Context, filter *entity.UserFilter) (entity.User
 	for rows.Next() {
 		var user entity.UserListItem
 
-		err = rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		err = rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.StorageQuotaBytes, &user.StorageUsedBytes, &user.UploadRateBytesPerSec, &user.DownloadRateBytesPerSec, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			return entity.UserList{}, fmt.Errorf("UserRepo - List - rows.Scan: %w", err)
 		}
@@ -279,9 +313,37 @@ func escapeLike(query string) string {
 	return replacer.Replace(query)
 }
 
+// AdjustStorageUsed applies a signed byte delta to an account's stored usage.
+func (r *Repo) AdjustStorageUsed(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) adjustStorageUsage(ctx context.Context, userID string, delta int64) error {
+	sql, args, err := r.Builder.
+		Update("users").
+		Set("storage_used_bytes", sq.Expr("GREATEST(storage_used_bytes + ?, 0)", delta)).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - AdjustStorageUsed - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("UserRepo - AdjustStorageUsed - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
+}
+
 func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, error) {
 	sql, args, err := r.Builder.
-		Select("id, username, email, password_hash, role, created_at, updated_at").
+		Select("id, username, email, password_hash, role, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
 		From("users").
 		Where(sq.Eq{column: value}).
 		ToSql()
@@ -292,7 +354,7 @@ func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, 
 	var user entity.User
 
 	err = r.Querier(ctx).QueryRow(ctx, sql, args...).
-		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.StorageQuotaBytes, &user.StorageUsedBytes, &user.UploadRateBytesPerSec, &user.DownloadRateBytesPerSec, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.User{}, entity.ErrUserNotFound

@@ -80,12 +80,16 @@ func (d UserSortDirection) IsValid() bool {
 // the edit drawer opens an account by, and no password hash, so the hash never
 // leaves the database.
 type UserListItem struct {
-	ID        string
-	Username  string
-	Email     string
-	Role      UserRole
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID                      string
+	Username                string
+	Email                   string
+	Role                    UserRole
+	StorageQuotaBytes       int64
+	StorageUsedBytes        int64
+	UploadRateBytesPerSec   int64
+	DownloadRateBytesPerSec int64
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 // The bounds of the account list window. The pager offers these page sizes in
@@ -151,11 +155,49 @@ func (f *UserFilter) Sanitize() {
 
 // User -.
 type User struct {
-	ID           string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
-	Username     string    `json:"username"   example:"johndoe"`
-	Email        string    `json:"email"      example:"john@example.com"`
-	PasswordHash string    `json:"-"`
-	Role         UserRole  `json:"role"       example:"user"`
-	CreatedAt    time.Time `json:"created_at" example:"2026-01-01T00:00:00Z"`
-	UpdatedAt    time.Time `json:"updated_at" example:"2026-01-01T00:00:00Z"`
+	ID                      string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username                string    `json:"username"   example:"johndoe"`
+	Email                   string    `json:"email"      example:"john@example.com"`
+	PasswordHash            string    `json:"-"`
+	Role                    UserRole  `json:"role"                      example:"user"`
+	StorageQuotaBytes       int64     `json:"storage_quota_bytes"        example:"0"`
+	StorageUsedBytes        int64     `json:"storage_used_bytes"         example:"0"`
+	UploadRateBytesPerSec   int64     `json:"upload_rate_bytes_per_sec"  example:"0"`
+	DownloadRateBytesPerSec int64     `json:"download_rate_bytes_per_sec" example:"0"`
+	CreatedAt               time.Time `json:"created_at"                example:"2026-01-01T00:00:00Z"`
+	UpdatedAt               time.Time `json:"updated_at"                example:"2026-01-01T00:00:00Z"`
+}
+
+// EffectiveStorageQuota resolves a per-user override against the global default.
+// A zero stored value means "inherit the default".
+//
+//nolint:gocritic // value receiver keeps the method callable on composite literals
+func (u User) EffectiveStorageQuota(defaultQuota int64) int64 {
+	if u.StorageQuotaBytes != 0 {
+		return u.StorageQuotaBytes
+	}
+
+	return defaultQuota
+}
+
+// EffectiveUploadRate resolves a per-user override against the global default.
+//
+//nolint:gocritic // value receiver keeps the method callable on composite literals
+func (u User) EffectiveUploadRate(defaultRate int64) int64 {
+	if u.UploadRateBytesPerSec != 0 {
+		return u.UploadRateBytesPerSec
+	}
+
+	return defaultRate
+}
+
+// EffectiveDownloadRate resolves a per-user override against the global default.
+//
+//nolint:gocritic // value receiver keeps the method callable on composite literals
+func (u User) EffectiveDownloadRate(defaultRate int64) int64 {
+	if u.DownloadRateBytesPerSec != 0 {
+		return u.DownloadRateBytesPerSec
+	}
+
+	return defaultRate
 }

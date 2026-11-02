@@ -198,6 +198,26 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.userUpdateError(ctx, err)
 	}
 
+	// Limits are persisted separately, and only when the edited values differ
+	// from what the account already holds, so an unchanged form does not
+	// rewrite the row.
+	if req.StorageQuotaBytes != user.StorageQuotaBytes ||
+		req.UploadRateBytesPerSec != user.UploadRateBytesPerSec ||
+		req.DownloadRateBytesPerSec != user.DownloadRateBytesPerSec {
+		updated, err := c.u.SetUserLimits(
+			ctx.UserContext(),
+			req.ID,
+			req.StorageQuotaBytes,
+			req.UploadRateBytesPerSec,
+			req.DownloadRateBytesPerSec,
+		)
+		if err != nil {
+			return c.userUpdateError(ctx, err)
+		}
+
+		user = updated
+	}
+
 	ctx.Set(_hxTriggerHeader, _usersUpdatedEvent)
 
 	return c.renderPage(
@@ -236,6 +256,9 @@ func (c *Controller) userUpdateError(ctx *fiber.Ctx, err error) error {
 
 	case errors.Is(err, entity.ErrPasswordTooLong):
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Password is too long."})
+
+	case errors.Is(err, entity.ErrInvalidLimits):
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Limits must not be negative."})
 
 	default:
 		c.l.Error(fmt.Errorf("web - userUpdateError - uc.UpdateUser: %w", err))

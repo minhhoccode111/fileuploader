@@ -27,6 +27,8 @@ type (
 		List(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error)
 		UpdateRole(ctx context.Context, userID string, role entity.UserRole) error
 		Update(ctx context.Context, user *entity.User) error
+		AdjustStorageUsed(ctx context.Context, userID string, delta int64) error
+		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) error
 	}
 
 	// SessionRepo -.
@@ -63,7 +65,7 @@ type (
 		Move(ctx context.Context, userID, fileID, folderID string) error
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		NameTaken(ctx context.Context, userID, folderID, name string) (bool, error)
-		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]string, error)
+		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]entity.File, error)
 	}
 
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the

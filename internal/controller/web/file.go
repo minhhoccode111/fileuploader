@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/a-h/templ"
@@ -14,6 +15,7 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 	"github.com/minhhoccode111/fileuploader/web/templates"
+	"golang.org/x/time/rate"
 )
 
 // fileNew fills the drawer with the form that uploads one file into the folder
@@ -26,6 +28,8 @@ func (c *Controller) fileNew(ctx *fiber.Ctx) error {
 // the one in the form, not the one the browser sent with the file, so the
 // visitor can name it before it is stored. The body limit of the server and
 // the use case both guard the size.
+//
+//nolint:funlen // upload flow combines parsing, throttling and rendering
 func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 	var req request.FileUpload
 
@@ -46,6 +50,11 @@ func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 	userID, ok := c.userID(ctx)
 	if !ok {
 		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	rateLimit, err := c.uploadRate(ctx, userID)
+	if err != nil {
+		return c.driveError(ctx, err, "fileUploadSubmit - c.u.GetUser")
 	}
 
 	header, err := ctx.FormFile("file")
@@ -75,6 +84,8 @@ func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 		}
 	}()
 
+	body := newThrottledReader(ctx.UserContext(), upload, rateLimit)
+
 	_, err = c.files.Upload(
 		ctx.UserContext(),
 		userID,
@@ -82,7 +93,7 @@ func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 		req.Name,
 		header.Header.Get(fiber.HeaderContentType),
 		header.Size,
-		upload,
+		body,
 	)
 	if err != nil {
 		return c.uploadError(ctx, err)
@@ -363,4 +374,55 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Redirect(link, fiber.StatusFound)
+}
+
+// uploadRate resolves the effective upload rate for the signed-in account.
+func (c *Controller) uploadRate(ctx *fiber.Ctx, userID string) (int64, error) {
+	user, err := c.u.GetUser(ctx.UserContext(), userID)
+	if err != nil {
+		return 0, err
+	}
+
+	return user.EffectiveUploadRate(0), nil
+}
+
+// newThrottledReader wraps upload with a rate limiter when rateLimit is
+// positive. A non-positive limit leaves the stream untouched.
+func newThrottledReader(ctx context.Context, upload io.Reader, rateLimit int64) io.Reader {
+	if rateLimit <= 0 {
+		return upload
+	}
+
+	return &throttledReader{
+		r:       upload,
+		limiter: rate.NewLimiter(rate.Limit(rateLimit), int(rateLimit)),
+		ctx:     ctx,
+	}
+}
+
+// throttledReader wraps an upload stream with a per-request rate limiter. Each
+// completed read is accounted for before it is returned, so the consumer only
+// sees the bytes once the limiter has admitted them.
+type throttledReader struct {
+	r       io.Reader
+	limiter *rate.Limiter
+	ctx     context.Context
+}
+
+// Read pulls bytes from the wrapped reader and waits for the limiter to admit
+// them before returning.
+func (t *throttledReader) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if n > 0 && t.limiter != nil {
+		waitCtx := t.ctx
+		if waitCtx == nil {
+			waitCtx = context.Background()
+		}
+
+		if waitErr := t.limiter.WaitN(waitCtx, n); waitErr != nil {
+			return n, waitErr
+		}
+	}
+
+	return n, err
 }

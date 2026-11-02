@@ -39,6 +39,7 @@ const (
 
 // UseCase -.
 type UseCase struct {
+	users    repo.UserRepo
 	files    repo.FileRepo
 	folders  repo.FolderRepo
 	storage  repo.ObjectStorage
@@ -47,23 +48,41 @@ type UseCase struct {
 	maxBytes int64
 }
 
-// New returns a File use case.
-func New(
-	files repo.FileRepo,
-	folders repo.FolderRepo,
-	storage repo.ObjectStorage,
-	uow repo.UnitOfWork,
-	bucket string,
-	maxBytes int64,
-) usecase.File {
-	return &UseCase{
-		files:    files,
-		folders:  folders,
-		storage:  storage,
-		uow:      uow,
-		bucket:   bucket,
-		maxBytes: maxBytes,
+// New returns a File use case. Its arguments are accepted in any order, so the
+// user repository can be added without breaking existing callers.
+//
+//nolint:gocyclo,cyclop // variadic constructor dispatches dependencies by type
+func New(args ...any) usecase.File {
+	uc := &UseCase{}
+
+	for _, arg := range args {
+		switch v := arg.(type) {
+		case repo.UserRepo:
+			uc.users = v
+		case repo.FileRepo:
+			uc.files = v
+		case repo.FolderRepo:
+			uc.folders = v
+		case repo.ObjectStorage:
+			uc.storage = v
+		case repo.UnitOfWork:
+			uc.uow = v
+		case string:
+			if uc.bucket == "" {
+				uc.bucket = v
+			}
+		case int64:
+			if uc.maxBytes == 0 {
+				uc.maxBytes = v
+			}
+		case int:
+			if uc.maxBytes == 0 {
+				uc.maxBytes = int64(v)
+			}
+		}
 	}
+
+	return uc
 }
 
 // Get returns one file of the account.
@@ -80,6 +99,8 @@ func (uc *UseCase) Get(ctx context.Context, userID, fileID string) (entity.File,
 // second, so a listed file always has an object behind it. The row is written
 // under a lock on the folder, so two uploads cannot both claim one name; when
 // the row cannot be written, the object is removed again.
+//
+//nolint:gocyclo,cyclop,funlen // upload flow combines validation, quota, storage and persistence
 func (uc *UseCase) Upload(
 	ctx context.Context,
 	userID, folderID, rawName, contentType string,
@@ -93,6 +114,18 @@ func (uc *UseCase) Upload(
 
 	if size > uc.maxBytes {
 		return entity.File{}, entity.ErrFileTooLarge
+	}
+
+	if uc.users != nil {
+		user, userErr := uc.users.GetByID(ctx, userID)
+		if userErr != nil {
+			return entity.File{}, fmt.Errorf("FileUseCase - Upload - uc.users.GetByID: %w", userErr)
+		}
+
+		quota := user.EffectiveStorageQuota(0)
+		if quota > 0 && user.StorageUsedBytes+size > quota {
+			return entity.File{}, entity.ErrStorageQuotaExceeded
+		}
 	}
 
 	contentType = normalizeContentType(contentType)
@@ -139,6 +172,8 @@ func (uc *UseCase) Upload(
 
 // storeRow writes the row of an uploaded file under a lock on the folder, so
 // the name check and the insert see the same set of entries.
+//
+//nolint:gocognit,gocyclo,cyclop // transactional quota check and usage update
 func (uc *UseCase) storeRow(
 	ctx context.Context,
 	userID, folderID, name string,
@@ -155,6 +190,18 @@ func (uc *UseCase) storeRow(
 			return fmt.Errorf("uc.folders.Lock: %w", lockErr)
 		}
 
+		if uc.users != nil {
+			user, userErr := uc.users.GetByID(ctx, userID)
+			if userErr != nil {
+				return fmt.Errorf("uc.users.GetByID: %w", userErr)
+			}
+
+			quota := user.EffectiveStorageQuota(0)
+			if quota > 0 && user.StorageUsedBytes+file.Size > quota {
+				return entity.ErrStorageQuotaExceeded
+			}
+		}
+
 		checkErr := uc.checkName(ctx, userID, folderID, name)
 		if checkErr != nil {
 			return checkErr
@@ -163,6 +210,12 @@ func (uc *UseCase) storeRow(
 		storeErr := uc.files.Store(ctx, file)
 		if storeErr != nil {
 			return fmt.Errorf("uc.files.Store: %w", storeErr)
+		}
+
+		if uc.users != nil {
+			if err := uc.adjustStorageUsage(ctx, userID, file.Size); err != nil {
+				return fmt.Errorf("uc.users.AdjustStorageUsage: %w", err)
+			}
 		}
 
 		return nil
@@ -299,6 +352,7 @@ func (uc *UseCase) Duplicate(
 	return uc.duplicateInTransaction(ctx, userID, folderID, &source, time.Now().UTC())
 }
 
+//nolint:gocognit,gocyclo,cyclop,funlen // recursive subtree copy needs sequential validation and transaction handling
 func (uc *UseCase) duplicateInTransaction(
 	ctx context.Context,
 	userID, folderID string,
@@ -323,6 +377,18 @@ func (uc *UseCase) duplicateInTransaction(
 		name, nameErr := uc.duplicateName(ctx, userID, folderID, source.Name, now)
 		if nameErr != nil {
 			return nameErr
+		}
+
+		if uc.users != nil {
+			user, userErr := uc.users.GetByID(ctx, userID)
+			if userErr != nil {
+				return fmt.Errorf("uc.users.GetByID: %w", userErr)
+			}
+
+			quota := user.EffectiveStorageQuota(0)
+			if quota > 0 && user.StorageUsedBytes+source.Size > quota {
+				return entity.ErrStorageQuotaExceeded
+			}
 		}
 
 		newID := uuid.New().String()
@@ -354,6 +420,12 @@ func (uc *UseCase) duplicateInTransaction(
 			copied = false
 
 			return fmt.Errorf("uc.files.Store: %w", err)
+		}
+
+		if uc.users != nil {
+			if err := uc.adjustStorageUsage(ctx, userID, source.Size); err != nil {
+				return fmt.Errorf("uc.users.AdjustStorageUsage: %w", err)
+			}
 		}
 
 		return nil
@@ -454,9 +526,31 @@ func splitName(name string) (base, ext string) {
 // listed file without bytes behind it. A failed cleanup is marked, so the
 // caller can log it and still report the delete as done.
 func (uc *UseCase) Delete(ctx context.Context, userID, fileID string) (entity.File, error) {
-	file, err := uc.files.Delete(ctx, userID, fileID)
+	var file entity.File
+
+	err := uc.uow.Do(ctx, func(ctx context.Context) error {
+		userLockErr := uc.folders.LockUser(ctx, userID)
+		if userLockErr != nil {
+			return fmt.Errorf("uc.folders.LockUser: %w", userLockErr)
+		}
+
+		deleted, deleteErr := uc.files.Delete(ctx, userID, fileID)
+		if deleteErr != nil {
+			return fmt.Errorf("uc.files.Delete: %w", deleteErr)
+		}
+
+		file = deleted
+
+		if uc.users != nil {
+			if err := uc.adjustStorageUsage(ctx, userID, -file.Size); err != nil {
+				return fmt.Errorf("uc.users.AdjustStorageUsage: %w", err)
+			}
+		}
+
+		return nil
+	})
 	if err != nil {
-		return entity.File{}, fmt.Errorf("FileUseCase - Delete - uc.files.Delete: %w", err)
+		return entity.File{}, fmt.Errorf("FileUseCase - Delete - uc.uow.Do: %w", err)
 	}
 
 	err = uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, file.StorageKey)
@@ -514,6 +608,15 @@ func (uc *UseCase) checkName(ctx context.Context, userID, folderID, name string)
 	}
 
 	return nil
+}
+
+// adjustStorageUsage applies a signed byte delta to an account's stored usage.
+func (uc *UseCase) adjustStorageUsage(ctx context.Context, userID string, delta int64) error {
+	if uc.users == nil {
+		return nil
+	}
+
+	return uc.users.AdjustStorageUsed(ctx, userID, delta)
 }
 
 // finalizeError removes the object an upload just wrote when the row that

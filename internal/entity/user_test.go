@@ -56,3 +56,41 @@ func TestUserFilterSanitizeSort(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveLimitsInheritDefaults(t *testing.T) {
+	t.Parallel()
+
+	user := User{}
+	if got := user.EffectiveStorageQuota(100); got != 100 {
+		t.Errorf("quota = %d, want 100", got)
+	}
+
+	if got := user.EffectiveUploadRate(10); got != 10 {
+		t.Errorf("upload rate = %d, want 10", got)
+	}
+
+	if got := user.EffectiveDownloadRate(20); got != 20 {
+		t.Errorf("download rate = %d, want 20", got)
+	}
+}
+
+func TestEffectiveLimitsUseOverride(t *testing.T) {
+	t.Parallel()
+
+	user := User{
+		StorageQuotaBytes:       50,
+		UploadRateBytesPerSec:   7,
+		DownloadRateBytesPerSec: 9,
+	}
+	if got := user.EffectiveStorageQuota(100); got != 50 {
+		t.Errorf("quota = %d, want 50", got)
+	}
+
+	if got := user.EffectiveUploadRate(10); got != 7 {
+		t.Errorf("upload rate = %d, want 7", got)
+	}
+
+	if got := user.EffectiveDownloadRate(20); got != 9 {
+		t.Errorf("download rate = %d, want 9", got)
+	}
+}

@@ -18,6 +18,7 @@ type (
 		GetUser(ctx context.Context, userID string) (entity.User, error)
 		ListUsers(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error)
 		SetRole(ctx context.Context, email string, role entity.UserRole) error
+		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) (entity.User, error)
 		UpdateUser(
 			ctx context.Context,
 			userID, username, email string,
