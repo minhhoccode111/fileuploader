@@ -216,6 +216,43 @@ func (uc *UseCase) SetRole(ctx context.Context, email string, role entity.UserRo
 	return nil
 }
 
+// SetUserLimits updates the per-account storage and transfer limits. Negative
+// values are a caller error, not a server fault.
+func (uc *UseCase) SetUserLimits(
+	ctx context.Context,
+	userID string,
+	quota, uploadRate, downloadRate int64,
+) (entity.User, error) {
+	if quota < 0 || uploadRate < 0 || downloadRate < 0 {
+		return entity.User{}, entity.ErrInvalidLimits
+	}
+
+	user, err := uc.repo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, entity.ErrUserNotFound
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - SetUserLimits - uc.repo.GetByID: %w", err)
+	}
+
+	err = uc.repo.SetUserLimits(ctx, userID, quota, uploadRate, downloadRate)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, entity.ErrUserNotFound
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - SetUserLimits - uc.repo.SetUserLimits: %w", err)
+	}
+
+	user.StorageQuotaBytes = quota
+	user.UploadRateBytesPerSec = uploadRate
+	user.DownloadRateBytesPerSec = downloadRate
+	user.UpdatedAt = time.Now().UTC()
+
+	return user, nil
+}
+
 // UpdateUser rewrites an account: its name, its email, its role and, when the
 // caller brings one, its password. It reports whether the live sessions were
 // ended, which only happens when the role or the password changed, because

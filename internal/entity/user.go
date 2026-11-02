@@ -80,12 +80,16 @@ func (d UserSortDirection) IsValid() bool {
 // the edit drawer opens an account by, and no password hash, so the hash never
 // leaves the database.
 type UserListItem struct {
-	ID        string
-	Username  string
-	Email     string
-	Role      UserRole
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID                      string
+	Username                string
+	Email                   string
+	Role                    UserRole
+	StorageQuotaBytes       int64
+	StorageUsedBytes        int64
+	UploadRateBytesPerSec   int64
+	DownloadRateBytesPerSec int64
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 // The bounds of the account list window. The pager offers these page sizes in

@@ -24,6 +24,12 @@ type fakeUserRepo struct {
 	roleSet bool
 	updated *entity.User
 	err     error
+
+	limitsSet    bool
+	limitsUserID string
+	quota        int64
+	uploadRate   int64
+	downloadRate int64
 }
 
 func (f *fakeUserRepo) Store(_ context.Context, user *entity.User) error {
@@ -67,6 +73,20 @@ func (f *fakeUserRepo) Update(_ context.Context, user *entity.User) error {
 	}
 
 	f.updated = user
+
+	return nil
+}
+
+func (f *fakeUserRepo) SetUserLimits(_ context.Context, userID string, quota, uploadRate, downloadRate int64) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.limitsSet = true
+	f.limitsUserID = userID
+	f.quota = quota
+	f.uploadRate = uploadRate
+	f.downloadRate = downloadRate
 
 	return nil
 }
