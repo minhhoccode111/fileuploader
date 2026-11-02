@@ -55,7 +55,7 @@ func initUseCases(
 	return useCases{
 		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
 		folder: usecaseFolder.New(folders, files, storage, pg, cfg.MinIO.Bucket),
-		file:   usecaseFile.New(files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes),
+		file:   usecaseFile.New(users, files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes),
 	}
 }
 

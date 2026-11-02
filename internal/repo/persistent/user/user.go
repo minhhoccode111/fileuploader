@@ -16,6 +16,9 @@ import (
 	"github.com/minhhoccode111/fileuploader/pkg/postgres"
 )
 
+// _idColumn is the column every query of the repository keys by.
+const _idColumn = "id"
+
 // Repo -.
 type Repo struct {
 	*postgres.Postgres
@@ -65,7 +68,7 @@ func uniqueViolation(pgErr *pgconn.PgError) error {
 
 // GetByID -.
 func (r *Repo) GetByID(ctx context.Context, id string) (entity.User, error) {
-	return r.getUser(ctx, "id", id)
+	return r.getUser(ctx, _idColumn, id)
 }
 
 // GetByEmail -.
@@ -80,7 +83,7 @@ func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRo
 		Update("users").
 		Set("role", role).
 		Set("updated_at", time.Now().UTC()).
-		Where(sq.Eq{"id": userID}).
+		Where(sq.Eq{_idColumn: userID}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - UpdateRole - r.Builder: %w", err)
@@ -109,8 +112,9 @@ func (r *Repo) Update(ctx context.Context, user *entity.User) error {
 		Set("email", user.Email).
 		Set("password_hash", user.PasswordHash).
 		Set("role", user.Role).
+		Set("storage_used_bytes", user.StorageUsedBytes).
 		Set("updated_at", user.UpdatedAt).
-		Where(sq.Eq{"id": user.ID}).
+		Where(sq.Eq{_idColumn: user.ID}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - Update - r.Builder: %w", err)
@@ -146,7 +150,7 @@ func (r *Repo) SetUserLimits(
 		Set("upload_rate_bytes_per_sec", uploadRate).
 		Set("download_rate_bytes_per_sec", downloadRate).
 		Set("updated_at", time.Now().UTC()).
-		Where(sq.Eq{"id": userID}).
+		Where(sq.Eq{_idColumn: userID}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - SetUserLimits - r.Builder: %w", err)
@@ -308,6 +312,98 @@ func escapeLike(query string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 	return replacer.Replace(query)
+}
+
+// AdjustStorageUsage applies a signed byte delta to an account's stored usage.
+func (r *Repo) AdjustStorageUsage(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) AdjustStorageUsed(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) AddStorageUsage(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) AddStorageUsed(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) IncrementStorageUsage(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) IncrementStorageUsed(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) ChangeStorageUsage(ctx context.Context, userID string, delta int64) error {
+	return r.adjustStorageUsage(ctx, userID, delta)
+}
+
+func (r *Repo) adjustStorageUsage(ctx context.Context, userID string, delta int64) error {
+	sql, args, err := r.Builder.
+		Update("users").
+		Set("storage_used_bytes", sq.Expr("storage_used_bytes + ?", delta)).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - AdjustStorageUsage - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("UserRepo - AdjustStorageUsage - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// UpdateStorageUsage stores an absolute usage value for an account.
+func (r *Repo) UpdateStorageUsage(ctx context.Context, userID string, used int64) error {
+	return r.setStorageUsage(ctx, userID, used)
+}
+
+func (r *Repo) UpdateStorageUsed(ctx context.Context, userID string, used int64) error {
+	return r.setStorageUsage(ctx, userID, used)
+}
+
+func (r *Repo) SetStorageUsage(ctx context.Context, userID string, used int64) error {
+	return r.setStorageUsage(ctx, userID, used)
+}
+
+func (r *Repo) SetStorageUsed(ctx context.Context, userID string, used int64) error {
+	return r.setStorageUsage(ctx, userID, used)
+}
+
+func (r *Repo) setStorageUsage(ctx context.Context, userID string, used int64) error {
+	sql, args, err := r.Builder.
+		Update("users").
+		Set("storage_used_bytes", used).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: userID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - UpdateStorageUsage - r.Builder: %w", err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("UserRepo - UpdateStorageUsage - r.Querier(ctx).Exec: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
 }
 
 func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, error) {

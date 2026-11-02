@@ -17,6 +17,7 @@ var (
 	ErrEntryAlreadyExists    = errors.New("entry already exists")
 	ErrInvalidName           = errors.New("invalid name")
 	ErrFileTooLarge          = errors.New("file too large")
+	ErrStorageQuotaExceeded  = errors.New("storage quota exceeded")
 	ErrRootFolder            = errors.New("root folder cannot be changed")
 	ErrFolderCycle           = errors.New("folder cannot be moved into itself or its subtree")
 	ErrStorageCleanup        = errors.New("storage cleanup failed")
