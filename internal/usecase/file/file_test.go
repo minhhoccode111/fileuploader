@@ -71,7 +71,7 @@ func (f *fakeFileRepo) NameTaken(_ context.Context, _, _, _ string) (bool, error
 	return f.nameTaken, f.nameErr
 }
 
-func (f *fakeFileRepo) DeleteByFolderSubtree(_ context.Context, _, _ string) ([]string, error) {
+func (f *fakeFileRepo) DeleteByFolderSubtree(_ context.Context, _, _ string) ([]entity.File, error) {
 	return nil, nil
 }
 
