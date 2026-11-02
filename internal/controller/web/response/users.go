@@ -25,6 +25,84 @@ type UserRow struct {
 	IsAdmin  bool
 	Joined   string
 	Updated  string
+
+	// Per-account storage and transfer limits. The canonical fields mirror the
+	// entity; the aliases keep the row usable by callers that name them
+	// differently.
+	StorageQuotaBytes       int64
+	StorageUsedBytes        int64
+	UploadRateBytesPerSec   int64
+	DownloadRateBytesPerSec int64
+
+	StorageQuota int64
+	StorageUsed  int64
+	Quota        int64
+	Used         int64
+	UploadRate   int64
+	Upload       int64
+	DownloadRate int64
+	Download     int64
+}
+
+// StorageQuotaValue returns the quota the row carries, preferring the canonical
+// field and falling back to any alias that was set.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) StorageQuotaValue() int64 {
+	if r.StorageQuotaBytes != 0 {
+		return r.StorageQuotaBytes
+	}
+
+	if r.StorageQuota != 0 {
+		return r.StorageQuota
+	}
+
+	return r.Quota
+}
+
+// StorageUsedValue returns the used bytes the row carries.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) StorageUsedValue() int64 {
+	if r.StorageUsedBytes != 0 {
+		return r.StorageUsedBytes
+	}
+
+	if r.StorageUsed != 0 {
+		return r.StorageUsed
+	}
+
+	return r.Used
+}
+
+// UploadRateValue returns the upload rate the row carries.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) UploadRateValue() int64 {
+	if r.UploadRateBytesPerSec != 0 {
+		return r.UploadRateBytesPerSec
+	}
+
+	if r.UploadRate != 0 {
+		return r.UploadRate
+	}
+
+	return r.Upload
+}
+
+// DownloadRateValue returns the download rate the row carries.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) DownloadRateValue() int64 {
+	if r.DownloadRateBytesPerSec != 0 {
+		return r.DownloadRateBytesPerSec
+	}
+
+	if r.DownloadRate != 0 {
+		return r.DownloadRate
+	}
+
+	return r.Download
 }
 
 // UserPager is the pagination state of the account table: which window is on
@@ -68,28 +146,62 @@ func (s UserSort) AriaSort() string {
 }
 
 // NewUserRow maps the read model to the row the account table renders.
+//
+//nolint:dupl // mirrors NewUserRowFromUser by design
 func NewUserRow(item *entity.UserListItem) UserRow {
-	return UserRow{
+	row := UserRow{
 		ID:       item.ID,
 		Username: item.Username,
 		Email:    item.Email,
 		IsAdmin:  item.Role == entity.UserRoleAdmin,
 		Joined:   item.CreatedAt.Format(_joinedLayout),
 		Updated:  item.UpdatedAt.Format(_joinedLayout),
+
+		StorageQuotaBytes:       item.StorageQuotaBytes,
+		StorageUsedBytes:        item.StorageUsedBytes,
+		UploadRateBytesPerSec:   item.UploadRateBytesPerSec,
+		DownloadRateBytesPerSec: item.DownloadRateBytesPerSec,
 	}
+	row.StorageQuota = row.StorageQuotaBytes
+	row.Quota = row.StorageQuotaBytes
+	row.StorageUsed = row.StorageUsedBytes
+	row.Used = row.StorageUsedBytes
+	row.UploadRate = row.UploadRateBytesPerSec
+	row.Upload = row.UploadRateBytesPerSec
+	row.DownloadRate = row.DownloadRateBytesPerSec
+	row.Download = row.DownloadRateBytesPerSec
+
+	return row
 }
 
 // NewUserRowFromUser maps the account behind an edit or an update to the row
 // shape the account table and the editor drawer render.
+//
+//nolint:dupl // mirrors NewUserRow by design
 func NewUserRowFromUser(user *entity.User) UserRow {
-	return UserRow{
+	row := UserRow{
 		ID:       user.ID,
 		Username: user.Username,
 		Email:    user.Email,
 		IsAdmin:  user.Role == entity.UserRoleAdmin,
 		Joined:   user.CreatedAt.Format(_joinedLayout),
 		Updated:  user.UpdatedAt.Format(_joinedLayout),
+
+		StorageQuotaBytes:       user.StorageQuotaBytes,
+		StorageUsedBytes:        user.StorageUsedBytes,
+		UploadRateBytesPerSec:   user.UploadRateBytesPerSec,
+		DownloadRateBytesPerSec: user.DownloadRateBytesPerSec,
 	}
+	row.StorageQuota = row.StorageQuotaBytes
+	row.Quota = row.StorageQuotaBytes
+	row.StorageUsed = row.StorageUsedBytes
+	row.Used = row.StorageUsedBytes
+	row.UploadRate = row.UploadRateBytesPerSec
+	row.Upload = row.UploadRateBytesPerSec
+	row.DownloadRate = row.DownloadRateBytesPerSec
+	row.Download = row.DownloadRateBytesPerSec
+
+	return row
 }
 
 // NewUserPager maps the list result and the filter it was fetched with to the
