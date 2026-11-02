@@ -314,11 +314,7 @@ func escapeLike(query string) string {
 	return replacer.Replace(query)
 }
 
-// AdjustStorageUsage applies a signed byte delta to an account's stored usage.
-func (r *Repo) AdjustStorageUsage(ctx context.Context, userID string, delta int64) error {
-	return r.adjustStorageUsage(ctx, userID, delta)
-}
-
+// AdjustStorageUsed applies a signed byte delta to an account's stored usage.
 func (r *Repo) AdjustStorageUsed(ctx context.Context, userID string, delta int64) error {
 	return r.adjustStorageUsage(ctx, userID, delta)
 }
@@ -326,17 +322,17 @@ func (r *Repo) AdjustStorageUsed(ctx context.Context, userID string, delta int64
 func (r *Repo) adjustStorageUsage(ctx context.Context, userID string, delta int64) error {
 	sql, args, err := r.Builder.
 		Update("users").
-		Set("storage_used_bytes", sq.Expr("storage_used_bytes + ?", delta)).
+		Set("storage_used_bytes", sq.Expr("GREATEST(storage_used_bytes + ?, 0)", delta)).
 		Set("updated_at", time.Now().UTC()).
 		Where(sq.Eq{_idColumn: userID}).
 		ToSql()
 	if err != nil {
-		return fmt.Errorf("UserRepo - AdjustStorageUsage - r.Builder: %w", err)
+		return fmt.Errorf("UserRepo - AdjustStorageUsed - r.Builder: %w", err)
 	}
 
 	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
 	if err != nil {
-		return fmt.Errorf("UserRepo - AdjustStorageUsage - r.Querier(ctx).Exec: %w", err)
+		return fmt.Errorf("UserRepo - AdjustStorageUsed - r.Querier(ctx).Exec: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {
