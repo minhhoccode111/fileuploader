@@ -22,16 +22,16 @@ type UserUpdate struct {
 	// Per-account storage and transfer limits. Zero inherits the default;
 	// negative values are rejected by validation.
 	StorageQuotaBytes       int64 `form:"storage_quota_bytes"     validate:"min=0"`
-	StorageUsedBytes        int64 `form:"storage_used_bytes"`
+	StorageUsedBytes        int64 `form:"storage_used_bytes"      validate:"min=0"`
 	UploadRateBytesPerSec   int64 `form:"upload_rate_bytes_per_sec" validate:"min=0"`
 	DownloadRateBytesPerSec int64 `form:"download_rate_bytes_per_sec" validate:"min=0"`
 
 	// Aliases accepted from the form, so the field name a caller uses does
 	// not matter.
 	StorageQuota int64 `form:"storage_quota" validate:"min=0"`
-	StorageUsed  int64 `form:"storage_used"`
+	StorageUsed  int64 `form:"storage_used" validate:"min=0"`
 	Quota        int64 `form:"quota"        validate:"min=0"`
-	Used         int64 `form:"used"`
+	Used         int64 `form:"used"         validate:"min=0"`
 	UploadRate   int64 `form:"upload_rate"  validate:"min=0"`
 	Upload       int64 `form:"upload"       validate:"min=0"`
 	DownloadRate int64 `form:"download_rate" validate:"min=0"`
