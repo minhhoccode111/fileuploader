@@ -319,60 +319,21 @@ func (uc *UseCase) Duplicate(
 		return entity.Folder{}, fmt.Errorf("FolderUseCase - Duplicate - uc.folders.Get(destination): %w", err)
 	}
 
-	all, err := uc.folders.ListAll(ctx, userID)
-	if err != nil {
-		return entity.Folder{}, fmt.Errorf("FolderUseCase - Duplicate - uc.folders.ListAll: %w", err)
-	}
-
-	if !folderExists(all, source.ID) || !folderExists(all, destinationID) {
-		return entity.Folder{}, entity.ErrFolderNotFound
-	}
-
-	if folderIsDescendant(all, source.ID, destinationID) {
-		return entity.Folder{}, entity.ErrFolderCycle
-	}
-
-	sourceIDs := collectFolderSubtree(all, source.ID)
-
-	filesToCopy := make([]struct {
-		file     entity.File
-		folderID string
-	}, 0)
-
-	for _, oldFolderID := range sourceIDs {
-		items, err := uc.files.List(ctx, userID, oldFolderID)
-		if err != nil {
-			return entity.Folder{}, fmt.Errorf("FolderUseCase - Duplicate - uc.files.List: %w", err)
-		}
-
-		for i := range items {
-			file, err := uc.files.Get(ctx, userID, items[i].ID)
-			if err != nil {
-				return entity.Folder{}, fmt.Errorf("FolderUseCase - Duplicate - uc.files.Get: %w", err)
-			}
-
-			filesToCopy = append(filesToCopy, struct {
-				file     entity.File
-				folderID string
-			}{file: file, folderID: oldFolderID})
-		}
-	}
-
 	now := time.Now().UTC()
-
-	name, err := uc.duplicateName(ctx, userID, destinationID, source.Name, now)
-	if err != nil {
-		return entity.Folder{}, err
-	}
-
-	idMap := make(map[string]string, len(sourceIDs))
-	for _, oldID := range sourceIDs {
-		idMap[oldID] = uuid.New().String()
-	}
 
 	var (
 		newTop     entity.Folder
 		copiedKeys []string
+	)
+
+	var (
+		all         []entity.Folder
+		sourceIDs   []string
+		idMap       map[string]string
+		filesToCopy []struct {
+			file     entity.File
+			folderID string
+		}
 	)
 
 	err = uc.uow.Do(ctx, func(ctx context.Context) error {
@@ -380,8 +341,68 @@ func (uc *UseCase) Duplicate(
 			return fmt.Errorf("uc.folders.LockUser: %w", err)
 		}
 
+		if err := uc.folders.LockSubtree(ctx, userID, source.ID); err != nil {
+			return fmt.Errorf("uc.folders.LockSubtree: %w", err)
+		}
+
 		if _, err := uc.folders.Lock(ctx, userID, destinationID); err != nil {
 			return fmt.Errorf("uc.folders.Lock: %w", err)
+		}
+
+		all, err = uc.folders.ListAll(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("uc.folders.ListAll: %w", err)
+		}
+
+		if !folderExists(all, source.ID) || !folderExists(all, destinationID) {
+			return entity.ErrFolderNotFound
+		}
+
+		if folderIsDescendant(all, source.ID, destinationID) {
+			return entity.ErrFolderCycle
+		}
+
+		freshSource, ok := folderByID(all, source.ID)
+		if !ok {
+			return entity.ErrFolderNotFound
+		}
+
+		source = freshSource
+
+		sourceIDs = collectFolderSubtree(all, source.ID)
+
+		filesToCopy = make([]struct {
+			file     entity.File
+			folderID string
+		}, 0)
+
+		for _, oldFolderID := range sourceIDs {
+			items, err := uc.files.List(ctx, userID, oldFolderID)
+			if err != nil {
+				return fmt.Errorf("uc.files.List: %w", err)
+			}
+
+			for i := range items {
+				file, err := uc.files.Get(ctx, userID, items[i].ID)
+				if err != nil {
+					return fmt.Errorf("uc.files.Get: %w", err)
+				}
+
+				filesToCopy = append(filesToCopy, struct {
+					file     entity.File
+					folderID string
+				}{file: file, folderID: oldFolderID})
+			}
+		}
+
+		idMap = make(map[string]string, len(sourceIDs))
+		for _, oldID := range sourceIDs {
+			idMap[oldID] = uuid.New().String()
+		}
+
+		name, err := uc.duplicateName(ctx, userID, destinationID, source.Name, now)
+		if err != nil {
+			return err
 		}
 
 		taken, err := uc.folders.NameTaken(ctx, userID, destinationID, name)
@@ -389,15 +410,13 @@ func (uc *UseCase) Duplicate(
 			return fmt.Errorf("uc.folders.NameTaken: %w", err)
 		}
 
-		if taken {
-			fileTaken, err := uc.files.NameTaken(ctx, userID, destinationID, name)
-			if err != nil {
-				return fmt.Errorf("uc.files.NameTaken: %w", err)
-			}
+		fileTaken, err := uc.files.NameTaken(ctx, userID, destinationID, name)
+		if err != nil {
+			return fmt.Errorf("uc.files.NameTaken: %w", err)
+		}
 
-			if fileTaken {
-				return entity.ErrEntryAlreadyExists
-			}
+		if taken || fileTaken {
+			return entity.ErrEntryAlreadyExists
 		}
 
 		for _, oldID := range sourceIDs {
@@ -470,10 +489,22 @@ func (uc *UseCase) Duplicate(
 		return nil
 	})
 	if err != nil {
+		cleanupErrs := make([]error, 0, len(copiedKeys))
+
 		for _, key := range copiedKeys {
 			if removeErr := uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, key); removeErr != nil {
-				_ = removeErr
+				cleanupErrs = append(cleanupErrs, removeErr)
 			}
+		}
+
+		if len(cleanupErrs) > 0 {
+			cleanupErrs = append(cleanupErrs, entity.ErrStorageCleanup)
+
+			return entity.Folder{}, fmt.Errorf(
+				"FolderUseCase - Duplicate - uc.uow.Do: %w; cleanup: %w",
+				err,
+				errors.Join(cleanupErrs...),
+			)
 		}
 
 		return entity.Folder{}, fmt.Errorf("FolderUseCase - Duplicate - uc.uow.Do: %w", err)
@@ -520,6 +551,15 @@ func (uc *UseCase) duplicateName(
 	candidate := fmt.Sprintf("%s (%d)%s", base, now.Unix(), ext)
 	if utf8.RuneCountInString(candidate) > _maxNameLength {
 		return "", entity.ErrInvalidName
+	}
+
+	taken, err = uc.nameTakenInFolder(ctx, userID, folderID, candidate)
+	if err != nil {
+		return "", fmt.Errorf("FolderUseCase - duplicateName - uc.nameTakenInFolder: %w", err)
+	}
+
+	if taken {
+		return "", entity.ErrEntryAlreadyExists
 	}
 
 	return candidate, nil

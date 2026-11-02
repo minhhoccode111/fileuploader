@@ -280,6 +280,11 @@ func (c *Controller) folderActionWithGet(
 		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
 	}
 
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
 	if err := ctx.BodyParser(req); err != nil {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{badRequest})
 	}
@@ -288,11 +293,6 @@ func (c *Controller) folderActionWithGet(
 
 	if err := c.v.Struct(req); err != nil {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
-	}
-
-	userID, ok := c.userID(ctx)
-	if !ok {
-		return middleware.Redirect(ctx, _loginPath)
 	}
 
 	folder, err := c.folders.Get(ctx.UserContext(), userID, folderID)
