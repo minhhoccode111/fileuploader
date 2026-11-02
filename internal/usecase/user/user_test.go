@@ -91,6 +91,10 @@ func (f *fakeUserRepo) SetUserLimits(_ context.Context, userID string, quota, up
 	return nil
 }
 
+func (f *fakeUserRepo) AdjustStorageUsed(_ context.Context, _ string, _ int64) error {
+	return f.err
+}
+
 // fakeSessionRepo records the session it was asked to store.
 type fakeSessionRepo struct {
 	stored *entity.Session

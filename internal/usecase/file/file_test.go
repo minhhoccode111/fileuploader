@@ -461,6 +461,14 @@ func (f *fakeUserRepoForFile) SetUserLimits(_ context.Context, _ string, _, _, _
 	return nil
 }
 
+func (f *fakeUserRepoForFile) AdjustStorageUsed(_ context.Context, _ string, delta int64) error {
+	f.user.StorageUsedBytes += delta
+	updated := f.user
+	f.updated = &updated
+
+	return nil
+}
+
 func TestUploadRejectsWhenQuotaExceeded(t *testing.T) {
 	t.Parallel()
 

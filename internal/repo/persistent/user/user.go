@@ -323,26 +323,6 @@ func (r *Repo) AdjustStorageUsed(ctx context.Context, userID string, delta int64
 	return r.adjustStorageUsage(ctx, userID, delta)
 }
 
-func (r *Repo) AddStorageUsage(ctx context.Context, userID string, delta int64) error {
-	return r.adjustStorageUsage(ctx, userID, delta)
-}
-
-func (r *Repo) AddStorageUsed(ctx context.Context, userID string, delta int64) error {
-	return r.adjustStorageUsage(ctx, userID, delta)
-}
-
-func (r *Repo) IncrementStorageUsage(ctx context.Context, userID string, delta int64) error {
-	return r.adjustStorageUsage(ctx, userID, delta)
-}
-
-func (r *Repo) IncrementStorageUsed(ctx context.Context, userID string, delta int64) error {
-	return r.adjustStorageUsage(ctx, userID, delta)
-}
-
-func (r *Repo) ChangeStorageUsage(ctx context.Context, userID string, delta int64) error {
-	return r.adjustStorageUsage(ctx, userID, delta)
-}
-
 func (r *Repo) adjustStorageUsage(ctx context.Context, userID string, delta int64) error {
 	sql, args, err := r.Builder.
 		Update("users").
@@ -357,46 +337,6 @@ func (r *Repo) adjustStorageUsage(ctx context.Context, userID string, delta int6
 	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
 	if err != nil {
 		return fmt.Errorf("UserRepo - AdjustStorageUsage - r.Querier(ctx).Exec: %w", err)
-	}
-
-	if tag.RowsAffected() == 0 {
-		return entity.ErrUserNotFound
-	}
-
-	return nil
-}
-
-// UpdateStorageUsage stores an absolute usage value for an account.
-func (r *Repo) UpdateStorageUsage(ctx context.Context, userID string, used int64) error {
-	return r.setStorageUsage(ctx, userID, used)
-}
-
-func (r *Repo) UpdateStorageUsed(ctx context.Context, userID string, used int64) error {
-	return r.setStorageUsage(ctx, userID, used)
-}
-
-func (r *Repo) SetStorageUsage(ctx context.Context, userID string, used int64) error {
-	return r.setStorageUsage(ctx, userID, used)
-}
-
-func (r *Repo) SetStorageUsed(ctx context.Context, userID string, used int64) error {
-	return r.setStorageUsage(ctx, userID, used)
-}
-
-func (r *Repo) setStorageUsage(ctx context.Context, userID string, used int64) error {
-	sql, args, err := r.Builder.
-		Update("users").
-		Set("storage_used_bytes", used).
-		Set("updated_at", time.Now().UTC()).
-		Where(sq.Eq{_idColumn: userID}).
-		ToSql()
-	if err != nil {
-		return fmt.Errorf("UserRepo - UpdateStorageUsage - r.Builder: %w", err)
-	}
-
-	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
-	if err != nil {
-		return fmt.Errorf("UserRepo - UpdateStorageUsage - r.Querier(ctx).Exec: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {

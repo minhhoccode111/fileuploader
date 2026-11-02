@@ -27,6 +27,7 @@ type (
 		List(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error)
 		UpdateRole(ctx context.Context, userID string, role entity.UserRole) error
 		Update(ctx context.Context, user *entity.User) error
+		AdjustStorageUsed(ctx context.Context, userID string, delta int64) error
 		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) error
 	}
 
