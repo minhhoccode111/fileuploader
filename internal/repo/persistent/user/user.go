@@ -112,7 +112,6 @@ func (r *Repo) Update(ctx context.Context, user *entity.User) error {
 		Set("email", user.Email).
 		Set("password_hash", user.PasswordHash).
 		Set("role", user.Role).
-		Set("storage_used_bytes", user.StorageUsedBytes).
 		Set("updated_at", user.UpdatedAt).
 		Where(sq.Eq{_idColumn: user.ID}).
 		ToSql()
