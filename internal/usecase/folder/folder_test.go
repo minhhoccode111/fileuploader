@@ -132,6 +132,10 @@ type fakeFileRepo struct {
 	nameErr   error
 	keys      []string
 	keysErr   error
+	files     []entity.File
+	filesErr  error
+	file      entity.File
+	fileErr   error
 }
 
 func (f *fakeFileRepo) Store(_ context.Context, _ *entity.File) error {
@@ -139,6 +143,10 @@ func (f *fakeFileRepo) Store(_ context.Context, _ *entity.File) error {
 }
 
 func (f *fakeFileRepo) Get(_ context.Context, _, _ string) (entity.File, error) {
+	if f.file.ID != "" {
+		return f.file, f.fileErr
+	}
+
 	return entity.File{}, entity.ErrFileNotFound
 }
 
@@ -162,8 +170,21 @@ func (f *fakeFileRepo) NameTaken(_ context.Context, _, _, _ string) (bool, error
 	return f.nameTaken, f.nameErr
 }
 
-func (f *fakeFileRepo) DeleteByFolderSubtree(_ context.Context, _, _ string) ([]string, error) {
-	return f.keys, f.keysErr
+func (f *fakeFileRepo) DeleteByFolderSubtree(_ context.Context, _, _ string) ([]entity.File, error) {
+	if f.files != nil {
+		return f.files, f.filesErr
+	}
+
+	if f.keysErr != nil {
+		return nil, f.keysErr
+	}
+
+	out := make([]entity.File, 0, len(f.keys))
+	for _, key := range f.keys {
+		out = append(out, entity.File{StorageKey: key})
+	}
+
+	return out, nil
 }
 
 // fakeUnitOfWork runs the callback and records that it was used.
@@ -563,5 +584,95 @@ func TestMoveRejectsNameCollision(t *testing.T) {
 	_, err := uc.Move(context.Background(), "user", "source", "destination")
 	if !errors.Is(err, entity.ErrEntryAlreadyExists) {
 		t.Errorf("Move() error = %v, want %v", err, entity.ErrEntryAlreadyExists)
+	}
+}
+
+// fakeUserRepoForFolder is a minimal user repository for quota tests.
+type fakeUserRepoForFolder struct {
+	user    entity.User
+	updated *entity.User
+	getErr  error
+}
+
+func (f *fakeUserRepoForFolder) Store(_ context.Context, _ *entity.User) error { return nil }
+func (f *fakeUserRepoForFolder) GetByID(_ context.Context, _ string) (entity.User, error) {
+	return f.user, f.getErr
+}
+
+func (f *fakeUserRepoForFolder) GetByEmail(_ context.Context, _ string) (entity.User, error) {
+	return f.user, f.getErr
+}
+
+func (f *fakeUserRepoForFolder) List(_ context.Context, _ *entity.UserFilter) (entity.UserList, error) {
+	return entity.UserList{}, nil
+}
+
+func (f *fakeUserRepoForFolder) UpdateRole(_ context.Context, _ string, _ entity.UserRole) error {
+	return nil
+}
+
+func (f *fakeUserRepoForFolder) Update(_ context.Context, user *entity.User) error {
+	f.updated = user
+
+	return nil
+}
+
+func (f *fakeUserRepoForFolder) SetUserLimits(_ context.Context, _ string, _, _, _ int64) error {
+	return nil
+}
+
+func (f *fakeUserRepoForFolder) AdjustStorageUsed(_ context.Context, _ string, delta int64) error {
+	f.user.StorageUsedBytes += delta
+	updated := f.user
+	f.updated = &updated
+
+	return nil
+}
+
+func TestDeleteFreesQuotaFolder(t *testing.T) {
+	t.Parallel()
+
+	parentID := "parent"
+
+	folders := &fakeFolderRepo{byID: map[string]entity.Folder{
+		"child":  {ID: "child", UserID: "user", ParentID: &parentID},
+		"parent": {ID: parentID, UserID: "user"},
+	}}
+	files := &fakeFileRepo{files: []entity.File{{StorageKey: "one", Size: 4}}}
+	users := &fakeUserRepoForFolder{user: entity.User{StorageQuotaBytes: 10, StorageUsedBytes: 4}}
+	storage := &fakeStorage{}
+	uc := New(users, folders, files, storage, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.Delete(context.Background(), "user", "child")
+	if err != nil {
+		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+
+	if users.updated == nil || users.updated.StorageUsedBytes != 0 {
+		t.Errorf("usage = %v, want 0", users.updated)
+	}
+}
+
+func TestDuplicateChargesQuotaFolder(t *testing.T) {
+	t.Parallel()
+
+	rootID := "root"
+
+	folders := &fakeFolderRepo{byID: map[string]entity.Folder{
+		"root":   {ID: rootID, UserID: "user", Name: "/"},
+		"source": {ID: "source", UserID: "user", ParentID: &rootID, Name: "Source"},
+		"dest":   {ID: "dest", UserID: "user", ParentID: &rootID, Name: "Dest"},
+	}}
+	files := &fakeFileRepo{
+		items: []entity.FileItem{{ID: "file1", Name: "note.txt"}},
+		file:  entity.File{ID: "file1", UserID: "user", FolderID: "source", StorageKey: "users/user/files/file1", Size: 4, ContentType: "text/plain", Name: "note.txt"},
+	}
+	users := &fakeUserRepoForFolder{user: entity.User{StorageQuotaBytes: 4, StorageUsedBytes: 2}}
+	storage := &fakeStorage{}
+	uc := New(users, folders, files, storage, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.Duplicate(context.Background(), "user", "source", "dest")
+	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
+		t.Fatalf("Duplicate() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
 	}
 }

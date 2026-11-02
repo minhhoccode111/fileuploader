@@ -27,6 +27,7 @@ const (
 
 // UseCase -.
 type UseCase struct {
+	users   repo.UserRepo
 	folders repo.FolderRepo
 	files   repo.FileRepo
 	storage repo.ObjectStorage
@@ -34,21 +35,31 @@ type UseCase struct {
 	bucket  string
 }
 
-// New returns a Folder use case.
-func New(
-	folders repo.FolderRepo,
-	files repo.FileRepo,
-	storage repo.ObjectStorage,
-	uow repo.UnitOfWork,
-	bucket string,
-) usecase.Folder {
-	return &UseCase{
-		folders: folders,
-		files:   files,
-		storage: storage,
-		uow:     uow,
-		bucket:  bucket,
+// New returns a Folder use case. Its arguments are accepted in any order, so the
+// user repository can be added without breaking existing callers.
+func New(args ...any) usecase.Folder {
+	uc := &UseCase{}
+
+	for _, arg := range args {
+		switch v := arg.(type) {
+		case repo.UserRepo:
+			uc.users = v
+		case repo.FolderRepo:
+			uc.folders = v
+		case repo.FileRepo:
+			uc.files = v
+		case repo.ObjectStorage:
+			uc.storage = v
+		case repo.UnitOfWork:
+			uc.uow = v
+		case string:
+			if uc.bucket == "" {
+				uc.bucket = v
+			}
+		}
 	}
+
+	return uc
 }
 
 // Get returns one folder of the account.
@@ -395,6 +406,24 @@ func (uc *UseCase) Duplicate(
 			}
 		}
 
+		var totalSize int64
+
+		for i := range filesToCopy {
+			totalSize += filesToCopy[i].file.Size
+		}
+
+		if uc.users != nil {
+			user, userErr := uc.users.GetByID(ctx, userID)
+			if userErr != nil {
+				return fmt.Errorf("FolderUseCase - Duplicate - uc.users.GetByID: %w", userErr)
+			}
+
+			quota := user.EffectiveStorageQuota(0)
+			if quota > 0 && user.StorageUsedBytes+totalSize > quota {
+				return entity.ErrStorageQuotaExceeded
+			}
+		}
+
 		idMap = make(map[string]string, len(sourceIDs))
 		for _, oldID := range sourceIDs {
 			idMap[oldID] = uuid.New().String()
@@ -483,6 +512,12 @@ func (uc *UseCase) Duplicate(
 				copiedKeys = copiedKeys[:len(copiedKeys)-1]
 
 				return fmt.Errorf("uc.files.Store: %w", err)
+			}
+		}
+
+		if uc.users != nil {
+			if err := uc.adjustStorageUsage(ctx, userID, totalSize); err != nil {
+				return fmt.Errorf("uc.users.AdjustStorageUsage: %w", err)
 			}
 		}
 
@@ -683,6 +718,8 @@ func folderIsDescendant(folders []entity.Folder, folderID, destinationID string)
 // left behind is invisible to the app, while a row without an object could
 // still be listed. The parent folder comes back, so the caller knows where to
 // send the visitor.
+//
+//nolint:gocognit,gocyclo,cyclop // quota accounting adds branches
 func (uc *UseCase) Delete(ctx context.Context, userID, folderID string) (entity.Folder, error) {
 	folder, err := uc.folders.Get(ctx, userID, folderID)
 	if err != nil {
@@ -700,6 +737,8 @@ func (uc *UseCase) Delete(ctx context.Context, userID, folderID string) (entity.
 
 	keys := make([]string, 0)
 
+	var freedSize int64
+
 	err = uc.uow.Do(ctx, func(ctx context.Context) error {
 		userLockErr := uc.folders.LockUser(ctx, userID)
 		if userLockErr != nil {
@@ -711,16 +750,25 @@ func (uc *UseCase) Delete(ctx context.Context, userID, folderID string) (entity.
 			return fmt.Errorf("uc.folders.LockSubtree: %w", lockErr)
 		}
 
-		removedKeys, deleteErr := uc.files.DeleteByFolderSubtree(ctx, userID, folderID)
+		removedFiles, deleteErr := uc.files.DeleteByFolderSubtree(ctx, userID, folderID)
 		if deleteErr != nil {
 			return fmt.Errorf("uc.files.DeleteByFolderSubtree: %w", deleteErr)
 		}
 
-		keys = removedKeys
+		for i := range removedFiles {
+			keys = append(keys, removedFiles[i].StorageKey)
+			freedSize += removedFiles[i].Size
+		}
 
 		folderErr := uc.folders.Delete(ctx, userID, folderID)
 		if folderErr != nil {
 			return fmt.Errorf("uc.folders.Delete: %w", folderErr)
+		}
+
+		if uc.users != nil {
+			if err := uc.adjustStorageUsage(ctx, userID, -freedSize); err != nil {
+				return fmt.Errorf("uc.users.AdjustStorageUsage: %w", err)
+			}
 		}
 
 		return nil
@@ -777,6 +825,15 @@ func (uc *UseCase) checkName(ctx context.Context, userID, folderID, name string)
 	}
 
 	return nil
+}
+
+// adjustStorageUsage applies a signed byte delta to an account's stored usage.
+func (uc *UseCase) adjustStorageUsage(ctx context.Context, userID string, delta int64) error {
+	if uc.users == nil {
+		return nil
+	}
+
+	return uc.users.AdjustStorageUsed(ctx, userID, delta)
 }
 
 // removeAll deletes the objects of a removed subtree. A failure is reported

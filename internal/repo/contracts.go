@@ -65,7 +65,7 @@ type (
 		Move(ctx context.Context, userID, fileID, folderID string) error
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		NameTaken(ctx context.Context, userID, folderID, name string) (bool, error)
-		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]string, error)
+		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]entity.File, error)
 	}
 
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the

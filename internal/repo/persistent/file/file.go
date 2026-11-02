@@ -33,7 +33,7 @@ WITH RECURSIVE tree AS (
 )
 DELETE FROM files
 WHERE user_id = $1 AND folder_id IN (SELECT id FROM tree)
-RETURNING storage_key`
+RETURNING id, user_id, folder_id, name, content_type, storage_key, size, created_at, updated_at`
 
 // Repo -.
 type Repo struct {
@@ -236,7 +236,7 @@ func (r *Repo) NameTaken(ctx context.Context, userID, folderID, name string) (bo
 func (r *Repo) DeleteByFolderSubtree(
 	ctx context.Context,
 	userID, folderID string,
-) ([]string, error) {
+) ([]entity.File, error) {
 	rows, err := r.Querier(ctx).Query(ctx, _deleteSubtreeFilesQuery, userID, folderID)
 	if err != nil {
 		return nil, fmt.Errorf("FileRepo - DeleteByFolderSubtree - r.Querier(ctx).Query: %w", err)
@@ -244,24 +244,38 @@ func (r *Repo) DeleteByFolderSubtree(
 
 	defer rows.Close()
 
-	keys := make([]string, 0)
+	files := make([]entity.File, 0)
 
 	for rows.Next() {
-		var key string
+		var file entity.File
 
-		err = rows.Scan(&key)
+		var folderID string
+
+		err = rows.Scan(
+			&file.ID,
+			&file.UserID,
+			&folderID,
+			&file.Name,
+			&file.ContentType,
+			&file.StorageKey,
+			&file.Size,
+			&file.CreatedAt,
+			&file.UpdatedAt,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("FileRepo - DeleteByFolderSubtree - rows.Scan: %w", err)
 		}
 
-		keys = append(keys, key)
+		file.FolderID = folderID
+
+		files = append(files, file)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("FileRepo - DeleteByFolderSubtree - rows.Err: %w", err)
 	}
 
-	return keys, nil
+	return files, nil
 }
 
 // scanFile reads one file row.
