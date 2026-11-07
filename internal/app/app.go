@@ -13,11 +13,13 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	fileRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/file"
 	folderRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/folder"
+	shareRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/share"
 	userRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
 	"github.com/minhhoccode111/fileuploader/internal/repo/session"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	usecaseFile "github.com/minhhoccode111/fileuploader/internal/usecase/file"
 	usecaseFolder "github.com/minhhoccode111/fileuploader/internal/usecase/folder"
+	usecaseShare "github.com/minhhoccode111/fileuploader/internal/usecase/share"
 	usecaseUser "github.com/minhhoccode111/fileuploader/internal/usecase/user"
 	"github.com/minhhoccode111/fileuploader/pkg/httpserver"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
@@ -35,6 +37,7 @@ type useCases struct {
 	user   usecase.User
 	folder usecase.Folder
 	file   usecase.File
+	share  usecase.Share
 }
 
 type servers struct {
@@ -51,11 +54,13 @@ func initUseCases(
 	sessionRepo := session.New(rdb)
 	folders := folderRepo.New(pg)
 	files := fileRepo.New(pg)
+	shares := shareRepo.New(pg)
 
 	return useCases{
 		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
 		folder: usecaseFolder.New(users, folders, files, storage, pg, cfg.MinIO.Bucket),
 		file:   usecaseFile.New(users, files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes),
+		share:  usecaseShare.New(shares, folders, files, pg),
 	}
 }
 
@@ -75,7 +80,7 @@ func initServers(
 	// Validator
 	v := validatorx.New()
 
-	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, l, v, cfg)
+	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, uc.share, l, v, cfg)
 
 	return servers{
 		http: httpServer,

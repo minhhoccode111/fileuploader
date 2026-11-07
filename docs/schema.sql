@@ -64,3 +64,21 @@ CREATE TABLE "public"."files" (
 CREATE INDEX "files_folder_idx" ON "public"."files" ("folder_id");
 -- Create index "files_folder_name_key" to table: "files"
 CREATE UNIQUE INDEX "files_folder_name_key" ON "public"."files" ("folder_id", (lower((name)::text)));
+-- Create "shares" table
+CREATE TABLE "public"."shares" (
+  "id" uuid NOT NULL,
+  "user_id" uuid NOT NULL,
+  "folder_id" uuid NOT NULL,
+  "expires_at" timestamp NULL,
+  "created_at" timestamp NOT NULL DEFAULT now(),
+  "updated_at" timestamp NOT NULL DEFAULT now(),
+  PRIMARY KEY ("id"),
+  CONSTRAINT "shares_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "public"."folders" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "shares_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
+);
+-- Create index "shares_folder_id_idx" to table: "shares"
+CREATE INDEX "shares_folder_id_idx" ON "public"."shares" ("folder_id");
+-- Create index "shares_user_folder_key" to table: "shares"
+CREATE UNIQUE INDEX "shares_user_folder_key" ON "public"."shares" ("user_id", "folder_id");
+-- Create index "shares_user_id_idx" to table: "shares"
+CREATE INDEX "shares_user_id_idx" ON "public"."shares" ("user_id");

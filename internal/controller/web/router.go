@@ -16,6 +16,7 @@ type Controller struct {
 	u       usecase.User
 	folders usecase.Folder
 	files   usecase.File
+	shares  usecase.Share
 	l       logger.Interface
 	v       *validator.Validate
 	cfg     *config.Config
@@ -29,6 +30,7 @@ func NewRouter(
 	u usecase.User,
 	folders usecase.Folder,
 	files usecase.File,
+	shares usecase.Share,
 	l logger.Interface,
 	v *validator.Validate,
 	cfg *config.Config,
@@ -37,6 +39,7 @@ func NewRouter(
 		u:       u,
 		folders: folders,
 		files:   files,
+		shares:  shares,
 		l:       l,
 		v:       v,
 		cfg:     cfg,
@@ -58,7 +61,10 @@ func NewRouter(
 	// Pages
 	app.Get("/", middleware.RequireAuth(u), c.home)
 	app.Get("/folders/:folder", middleware.RequireAuth(u), c.folderPage)
-	app.Get("/share", c.share)
+	app.Get("/share", middleware.RequireAuth(u), c.shareIndex)
+	app.Get("/share/:share", c.sharedRoot)
+	app.Get("/share/:share/folders/:folder", c.sharedFolderRoute)
+	app.Get("/share/:share/files/:file/download", c.sharedFileDownload)
 	app.Get("/public", c.public)
 	app.Get("/admin", middleware.RequireAdmin(u), c.admin)
 	app.Get("/admin/users", middleware.RequireAdmin(u), c.adminUsers)
@@ -72,6 +78,12 @@ func NewRouter(
 	app.Post("/htmx/register", c.registerSubmit)
 	app.Post("/htmx/logout", c.logoutSubmit)
 	app.Post("/htmx/admin/role", middleware.RequireAdmin(u), c.roleSubmit)
+
+	// Shares
+	app.Get("/htmx/folders/:folder/share", middleware.RequireAuth(u), c.shareForm)
+	app.Post("/htmx/shares", middleware.RequireAuth(u), c.shareCreate)
+	app.Post("/htmx/shares/:share/time", middleware.RequireAuth(u), c.shareUpdateTime)
+	app.Post("/htmx/shares/:share/delete", middleware.RequireAuth(u), c.shareDelete)
 
 	// Drive
 	app.Get("/htmx/folders/new", middleware.RequireAuth(u), c.folderNew)

@@ -110,12 +110,6 @@ func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent(), templates.AdminSettingsTitle)
 }
 
-// share renders a placeholder page for the Share section. It is public, so the
-// visitor may be anonymous; c.view reports whether they are signed in.
-func (c *Controller) share(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Share(c.view(ctx)), templates.ShareContent(), templates.ShareTitle)
-}
-
 // public renders a placeholder page for the Public section. It is auth-only,
 // so the guard has already resolved a user before it runs.
 func (c *Controller) public(ctx *fiber.Ctx) error {

@@ -1,19 +1,193 @@
 package templates
 
-templ Share(view View) {
+import (
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+)
+
+// ShareIndex is the page where an account manages the folders it has shared.
+templ ShareIndex(view View, shares []response.ShareRow) {
 	@Layout(ShareTitle, view) {
-		@ShareContent()
+		@ShareIndexContent(shares)
 	}
 }
 
-// ShareContent is the fragment htmx swaps into <main> on client-side navigation.
-templ ShareContent() {
+// ShareIndexContent is the fragment htmx swaps into <main>.
+templ ShareIndexContent(shares []response.ShareRow) {
 	@PageColumnWide() {
 		<section class="card bg-base-100 shadow">
 			<div class="card-body gap-4">
-				<h1 class="text-4xl font-bold tracking-tight">Hello from Share</h1>
-				<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in.</p>
+				<h1 class="text-3xl font-bold tracking-tight">Shared folders</h1>
+				if len(shares) == 0 {
+					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
+						<p class="text-base-content/70 text-sm">You have not shared any folder yet.</p>
+					</div>
+				} else {
+					<div class="overflow-x-auto">
+						<table class="table table-zebra table-fixed w-full">
+							<thead>
+								<tr>
+									<th>Folder</th>
+									<th>Link</th>
+									<th>Expires</th>
+									<th class="w-72">Update expiry</th>
+									<th class="w-24"></th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, share := range shares {
+									<tr>
+										<td class="font-medium">
+											<a href={ templ.URL(share.Link) } class="link link-primary">{ share.FolderName }</a>
+										</td>
+										<td class="text-xs break-all">{ share.Link }</td>
+										<td class="whitespace-nowrap">{ share.Expires }</td>
+										<td>
+											<form
+												class="flex items-center gap-2"
+												hx-post={ "/htmx/shares/" + share.ID + "/time" }
+												hx-target="#page-content"
+												hx-swap="innerHTML"
+											>
+												<input
+													class="input input-sm"
+													type="datetime-local"
+													name="expires_at"
+												/>
+												<label class="flex items-center gap-1 text-xs">
+													<input type="checkbox" name="unlimited" value="true" class="checkbox checkbox-sm" />
+													Unlimited
+												</label>
+												<button type="submit" class="btn btn-sm">Save</button>
+											</form>
+										</td>
+										<td class="text-right">
+											<form
+												hx-post={ "/htmx/shares/" + share.ID + "/delete" }
+												hx-target="#page-content"
+												hx-swap="innerHTML"
+												hx-confirm="Stop sharing this folder?"
+											>
+												<button type="submit" class="btn btn-sm btn-error btn-outline">Delete</button>
+											</form>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				}
 			</div>
 		</section>
 	}
+}
+
+// SharedDrive is the read-only view of a shared folder.
+templ SharedDrive(view View, page response.SharedDrive) {
+	@Layout(SharedTitle, view) {
+		@SharedDriveContent(page)
+	}
+}
+
+// SharedDriveContent is the fragment htmx swaps into <main>.
+templ SharedDriveContent(page response.SharedDrive) {
+	@PageColumnWide() {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-4">
+				<nav aria-label="Breadcrumb" class="breadcrumbs text-sm">
+					<ul>
+						for _, crumb := range page.Breadcrumb {
+							<li>
+								if crumb.Current {
+									<span aria-current="page">{ crumb.Name }</span>
+								} else {
+									<a href={ templ.URL(crumb.Href) } hx-get={ crumb.Href } hx-target="#page-content" hx-swap="innerHTML" hx-push-url="true">{ crumb.Name }</a>
+								}
+							</li>
+						}
+					</ul>
+				</nav>
+				if len(page.Folders) == 0 && len(page.Files) == 0 {
+					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
+						<p class="text-base-content/70 text-sm">This shared folder is empty.</p>
+					</div>
+				} else {
+					<table class="table table-zebra table-fixed w-full">
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th class="w-32">Size</th>
+								<th class="w-40">Modified</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, folder := range page.Folders {
+								<tr class="cursor-pointer hover:bg-base-200/50" aria-label={ "Open folder " + folder.Name } hx-get={ folder.Href } hx-target="#page-content" hx-swap="innerHTML" hx-push-url="true">
+									<td class="font-medium">
+										<span class="flex items-center gap-2">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-warning">
+												<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
+											</svg>
+											<span class="block min-w-0 flex-1 truncate" title={ folder.Name }>{ folder.Name }</span>
+										</span>
+									</td>
+									<td class="whitespace-nowrap">{ folder.Items }</td>
+									<td class="whitespace-nowrap">{ folder.Updated }</td>
+								</tr>
+							}
+							for _, file := range page.Files {
+								<tr>
+									<td class="font-medium">
+										<span class="flex items-center gap-2">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
+												<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+												<path d="M14 2v6h6"></path>
+											</svg>
+											<a href={ templ.URL(file.Download) } class="link">{ file.Name }</a>
+										</span>
+									</td>
+									<td class="whitespace-nowrap">{ file.Size }</td>
+									<td class="whitespace-nowrap">{ file.Updated }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</div>
+		</section>
+	}
+}
+// ShareCreateContent is the drawer form that creates a public link to a folder.
+templ ShareCreateContent(folderID, name string) {
+	<div class="flex flex-col gap-4 p-4">
+		<div class="flex items-center justify-between">
+			<h3 class="text-lg font-bold break-all">Share { name }</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		<form
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post="/htmx/shares"
+			hx-target="#drive-entries"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#share-error"
+			hx-status:5xx="target:#share-error"
+		>
+			<input type="hidden" name="folder" value={ folderID }/>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Valid until</span>
+				<input
+					class="input w-full"
+					type="datetime-local"
+					name="expires_at"
+				/>
+			</label>
+			<label class="flex items-center gap-2 text-sm">
+				<input type="checkbox" name="unlimited" value="true" class="checkbox" />
+				No expiry (unlimited)
+			</label>
+			<div id="share-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-primary">Create share link</button>
+			<label for="entry-drawer" class="btn btn-ghost">Cancel</label>
+		</form>
+	</div>
 }

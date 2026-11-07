@@ -8,6 +8,7 @@ const (
 	LoginTitle         = "Login"
 	RegisterTitle      = "Register"
 	ShareTitle         = "Share"
+	SharedTitle        = "Shared folder"
 	PublicTitle        = "Public"
 	LogoutTitle        = "Logout"
 	AdminUsersTitle    = "Admin · Users"

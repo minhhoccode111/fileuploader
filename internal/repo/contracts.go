@@ -68,6 +68,17 @@ type (
 		DeleteByFolderSubtree(ctx context.Context, userID, folderID string) ([]entity.File, error)
 	}
 
+	// ShareRepo stores the public links an account creates to its folders.
+	ShareRepo interface {
+		Store(ctx context.Context, share *entity.Share) error
+		Get(ctx context.Context, shareID string) (entity.Share, error)
+		GetActiveByUserAndFolder(ctx context.Context, userID, folderID string) (entity.Share, error)
+		GetByUserAndFolder(ctx context.Context, userID, folderID string) (entity.Share, error)
+		ListByUser(ctx context.Context, userID string) ([]entity.Share, error)
+		UpdateExpiry(ctx context.Context, userID, shareID string, expiresAt *time.Time) error
+		Delete(ctx context.Context, userID, shareID string) error
+	}
+
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the
 	// only thing the repository layer knows about it, so the storage can be
 	// swapped without touching the domain.

@@ -4,6 +4,7 @@ package usecase
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
@@ -39,6 +40,19 @@ type (
 		Duplicate(ctx context.Context, userID, folderID, destinationID string) (entity.Folder, error)
 		Delete(ctx context.Context, userID, folderID string) (entity.Folder, error)
 		ListAll(ctx context.Context, userID string) ([]entity.Folder, error)
+	}
+
+	// Share is the public-link logic for folders: create a link with an
+	// expiry, list and revoke the links of an account, and resolve a link
+	// to the folder (and anything inside it) it opens.
+	Share interface {
+		Create(ctx context.Context, userID, folderID string, expiresAt *time.Time) (entity.Share, error)
+		List(ctx context.Context, userID string) ([]entity.Share, error)
+		Delete(ctx context.Context, userID, shareID string) error
+		UpdateExpiry(ctx context.Context, userID, shareID string, expiresAt *time.Time) (entity.Share, error)
+		Get(ctx context.Context, shareID string) (entity.Share, error)
+		ResolveFolder(ctx context.Context, shareID, folderID string) (entity.Share, entity.Folder, error)
+		ResolveFile(ctx context.Context, shareID, fileID string) (entity.Share, entity.File, error)
 	}
 
 	// File is the drive's file logic: one upload at a time, a rename, a

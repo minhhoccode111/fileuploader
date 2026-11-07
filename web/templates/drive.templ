@@ -322,6 +322,16 @@ templ FolderEditContent(folderID, name string) {
 			>
 				Duplicate folder
 			</button>
+			<button
+				type="button"
+				class="btn btn-sm btn-outline whitespace-nowrap"
+				hx-get={ "/htmx/folders/" + folderID + "/share" }
+				hx-target="#entry-panel"
+				hx-swap="innerHTML"
+				hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+			>
+				Share folder
+			</button>
 		}
 		<form
 			hx-post={ "/htmx/folders/" + folderID + "/delete" }
