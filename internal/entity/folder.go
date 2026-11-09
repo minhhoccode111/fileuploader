@@ -12,10 +12,76 @@ const (
 	// the only folder without a parent, and the only folder that may hold it.
 	RootFolderName = "/"
 
+	// MaxFolderDepth is the deepest level of nesting a drive may hold. The
+	// root folder sits at depth 0, so a folder at this depth is the deepest
+	// one that may be created.
+	MaxFolderDepth = 20
+
 	// _maxNameLength is the width of the name columns of the folders and files
 	// tables. A name longer than that would be truncated by the database.
 	_maxNameLength = 255
 )
+
+// FolderDepth reports how many ancestors the folder with the given identifier
+// has among the list. A root folder has depth 0.
+func FolderDepth(folders []Folder, id string) int {
+	parentOf := make(map[string]*string, len(folders))
+	for i := range folders {
+		f := folders[i]
+		parentOf[f.ID] = f.ParentID
+	}
+
+	depth := 0
+	current := id
+	seen := make(map[string]bool)
+
+	for {
+		parent, ok := parentOf[current]
+		if !ok || parent == nil {
+			break
+		}
+
+		if seen[current] {
+			break
+		}
+
+		seen[current] = true
+		current = *parent
+		depth++
+	}
+
+	return depth
+}
+
+// FolderSubtreeHeight reports the deepest level of nesting below the folder
+// with the given identifier, relative to it. A leaf folder has height 0.
+func FolderSubtreeHeight(folders []Folder, id string) int {
+	children := make(map[string][]string, len(folders))
+	for i := range folders {
+		f := folders[i]
+		if f.ParentID != nil {
+			children[*f.ParentID] = append(children[*f.ParentID], f.ID)
+		}
+	}
+
+	maxHeight := 0
+
+	var dfs func(node string, height int)
+
+	dfs = func(node string, height int) {
+		if height > maxHeight {
+			maxHeight = height
+		}
+
+		for _, child := range children[node] {
+			dfs(child, height+1)
+		}
+	}
+
+	dfs(id, 0)
+
+	return maxHeight
+}
 
 // Folder is one directory of an account's drive. The root folder is the only
 // one with a nil parent, and Register creates it with the account.

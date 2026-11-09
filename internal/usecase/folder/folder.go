@@ -151,6 +151,15 @@ func (uc *UseCase) Create(
 			return fmt.Errorf("uc.folders.Lock: %w", lockErr)
 		}
 
+		all, listErr := uc.folders.ListAll(ctx, userID)
+		if listErr != nil {
+			return fmt.Errorf("uc.folders.ListAll: %w", listErr)
+		}
+
+		if entity.FolderDepth(all, parentID)+1 > entity.MaxFolderDepth {
+			return entity.ErrFolderTooDeep
+		}
+
 		checkErr := uc.checkName(ctx, userID, parentID, name)
 		if checkErr != nil {
 			return checkErr
@@ -275,12 +284,8 @@ func (uc *UseCase) moveFolder(
 			return fmt.Errorf("uc.folders.ListAll: %w", err)
 		}
 
-		if !folderExists(all, folder.ID) || !folderExists(all, destinationID) {
-			return entity.ErrFolderNotFound
-		}
-
-		if folderIsDescendant(all, folder.ID, destinationID) {
-			return entity.ErrFolderCycle
+		if err := validateMove(all, folder, destinationID); err != nil {
+			return err
 		}
 
 		if err := uc.checkName(ctx, userID, destinationID, folder.Name); err != nil {
@@ -371,6 +376,10 @@ func (uc *UseCase) Duplicate(
 
 		if folderIsDescendant(all, source.ID, destinationID) {
 			return entity.ErrFolderCycle
+		}
+
+		if exceedsMaxDepth(all, source.ID, destinationID) {
+			return entity.ErrFolderTooDeep
 		}
 
 		freshSource, ok := folderByID(all, source.ID)
@@ -673,6 +682,32 @@ func folderExists(folders []entity.Folder, id string) bool {
 	}
 
 	return false
+}
+
+// validateMove checks that the move is allowed: both folders exist, the
+// destination is not the source or one of its descendants, and the move would
+// not push the subtree past the deepest level the drive allows.
+func validateMove(all []entity.Folder, folder *entity.Folder, destinationID string) error {
+	if !folderExists(all, folder.ID) || !folderExists(all, destinationID) {
+		return entity.ErrFolderNotFound
+	}
+
+	if folderIsDescendant(all, folder.ID, destinationID) {
+		return entity.ErrFolderCycle
+	}
+
+	if exceedsMaxDepth(all, folder.ID, destinationID) {
+		return entity.ErrFolderTooDeep
+	}
+
+	return nil
+}
+
+// exceedsMaxDepth reports whether moving or copying the folder with folderID into
+// destinationID would push the subtree past the deepest level the drive allows.
+func exceedsMaxDepth(folders []entity.Folder, folderID, destinationID string) bool {
+	return entity.FolderDepth(folders, destinationID)+1+
+		entity.FolderSubtreeHeight(folders, folderID) > entity.MaxFolderDepth
 }
 
 func folderIsDescendant(folders []entity.Folder, folderID, destinationID string) bool {

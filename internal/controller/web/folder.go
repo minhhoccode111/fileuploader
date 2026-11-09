@@ -342,6 +342,22 @@ func (c *Controller) folderDuplicate(ctx *fiber.Ctx) error {
 	)
 }
 
+// folderTree fills the drawer with an expandable tree of every folder of the
+// account. Clicking a folder expands its children; the arrow navigates into it.
+func (c *Controller) folderTree(ctx *fiber.Ctx) error {
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	all, err := c.folders.ListAll(ctx.UserContext(), userID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderTree - uc.folders.ListAll")
+	}
+
+	return c.renderPage(ctx, templates.FolderTreeContent(response.FolderTree(all)))
+}
+
 // folderDelete removes a folder with everything inside it and sends the
 // visitor to the folder that held it. The root folder is refused by the use
 // case, so a hand-made request cannot wipe the drive.
@@ -374,7 +390,9 @@ func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 }
 
 // movableFolders drops the folder being moved and everything under it from the
-// list of possible destinations, so a move cannot close a cycle in the tree.
+// list of possible destinations, so a move cannot close a cycle in the tree. It
+// also drops destinations that would push the moved subtree past the deepest
+// level the drive allows.
 func movableFolders(folders []entity.Folder, rootID string) []entity.Folder {
 	excluded := map[string]bool{rootID: true}
 
@@ -395,12 +413,20 @@ func movableFolders(folders []entity.Folder, rootID string) []entity.Folder {
 		}
 	}
 
+	sourceHeight := entity.FolderSubtreeHeight(folders, rootID)
+
 	out := make([]entity.Folder, 0, len(folders))
 	for i := range folders {
 		f := folders[i]
-		if !excluded[f.ID] {
-			out = append(out, f)
+		if excluded[f.ID] {
+			continue
 		}
+
+		if entity.FolderDepth(folders, f.ID)+1+sourceHeight > entity.MaxFolderDepth {
+			continue
+		}
+
+		out = append(out, f)
 	}
 
 	return out

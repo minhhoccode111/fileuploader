@@ -106,6 +106,14 @@ func (c *Controller) renderEntries(
 // may see. Only the entity sentinels are translated; everything else is a
 // server fault and is logged instead of leaked.
 func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error {
+	if errors.Is(err, entity.ErrFolderTooDeep) {
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"That would nest folders deeper than this server allows."},
+		)
+	}
+
 	switch {
 	case errors.Is(err, entity.ErrFolderNotFound):
 		return c.renderErrors(ctx, http.StatusNotFound, []string{_folderNotFoundMessage})
@@ -142,15 +150,10 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 		)
 
 	case errors.Is(err, entity.ErrFolderCycle):
-		message := "A folder cannot be copied into itself or one of its folders."
-		if strings.Contains(action, "Move") {
-			message = "That folder cannot be moved there."
-		}
-
 		return c.renderErrors(
 			ctx,
 			http.StatusUnprocessableEntity,
-			[]string{message},
+			[]string{folderCycleMessage(action)},
 		)
 
 	default:
@@ -158,6 +161,15 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
+}
+
+// folderCycleMessage words the cycle error for the action that triggered it.
+func folderCycleMessage(action string) string {
+	if strings.Contains(action, "Move") {
+		return "That folder cannot be moved there."
+	}
+
+	return "A folder cannot be copied into itself or one of its folders."
 }
 
 // userID returns the account behind the request. The auth guard parks its

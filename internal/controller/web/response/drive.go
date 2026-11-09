@@ -2,7 +2,9 @@ package response
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
@@ -156,45 +158,156 @@ type FolderOption struct {
 	Style string // inline style, e.g. "padding-left: 48px"
 }
 
-// FolderOptions maps a flat list of folders to select options, computing the
-// depth of each one from its parent chain so the tree shape is visible.
+// FolderOptions maps a flat list of folders to select options. The folders are
+// ordered as a tree (parents before their children, siblings in name order) so
+// the indentation reads as a tree, and the depth of each one is computed from
+// its parent chain.
 func FolderOptions(folders []entity.Folder) []FolderOption {
 	byID := make(map[string]entity.Folder, len(folders))
 	for _, f := range folders {
 		byID[f.ID] = f
 	}
 
-	depth := make(map[string]int)
+	children := make(map[string][]string)
+	roots := make([]string, 0)
 
-	var depthOf func(id string) int
+	for _, f := range folders {
+		if f.ParentID == nil {
+			roots = append(roots, f.ID)
 
-	depthOf = func(id string) int {
-		if d, ok := depth[id]; ok {
-			return d
+			continue
 		}
 
-		f, ok := byID[id]
-		if !ok || f.ParentID == nil {
-			depth[id] = 0
+		if _, ok := byID[*f.ParentID]; !ok {
+			// The parent is not in the list (for example, it was filtered out
+			// by a move). Treat the folder as a root so it still shows up.
+			roots = append(roots, f.ID)
 
-			return 0
+			continue
 		}
 
-		depth[id] = 1 + depthOf(*f.ParentID)
-
-		return depth[id]
+		children[*f.ParentID] = append(children[*f.ParentID], f.ID)
 	}
 
-	opts := make([]FolderOption, 0, len(folders))
-	for _, f := range folders {
-		d := depthOf(f.ID)
-		opts = append(opts, FolderOption{
-			ID:    f.ID,
-			Name:  f.Name,
-			Depth: d,
-			Style: fmt.Sprintf("padding-left: %dpx", d*_folderIndentPx),
+	sortByName := func(ids []string) {
+		sort.Slice(ids, func(i, j int) bool {
+			a, b := byID[ids[i]], byID[ids[j]]
+
+			if cmp := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); cmp != 0 {
+				return cmp < 0
+			}
+
+			return a.ID < b.ID
 		})
 	}
 
+	sortByName(roots)
+
+	for parent := range children {
+		sortByName(children[parent])
+	}
+
+	opts := make([]FolderOption, 0, len(folders))
+
+	for _, root := range roots {
+		appendFolderTree(&opts, byID, children, root, 0)
+	}
+
 	return opts
+}
+
+// FolderNode is one folder in the quick-navigate tree, with its children
+// already nested so the template can render them recursively.
+type FolderNode struct {
+	ID       string
+	Name     string
+	Children []FolderNode
+}
+
+// FolderTree turns a flat list of folders into a nested tree, roots first and
+// siblings in name order. Used by the quick-navigate view.
+func FolderTree(folders []entity.Folder) []FolderNode {
+	byID := make(map[string]entity.Folder, len(folders))
+	for _, f := range folders {
+		byID[f.ID] = f
+	}
+
+	children := make(map[string][]string)
+	roots := make([]string, 0)
+
+	for _, f := range folders {
+		if f.ParentID == nil {
+			roots = append(roots, f.ID)
+
+			continue
+		}
+
+		if _, ok := byID[*f.ParentID]; !ok {
+			roots = append(roots, f.ID)
+
+			continue
+		}
+
+		children[*f.ParentID] = append(children[*f.ParentID], f.ID)
+	}
+
+	sortByName := func(ids []string) {
+		sort.Slice(ids, func(i, j int) bool {
+			a, b := byID[ids[i]], byID[ids[j]]
+
+			if cmp := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); cmp != 0 {
+				return cmp < 0
+			}
+
+			return a.ID < b.ID
+		})
+	}
+
+	sortByName(roots)
+
+	for parent := range children {
+		sortByName(children[parent])
+	}
+
+	var build func(id string) FolderNode
+
+	build = func(id string) FolderNode {
+		node := FolderNode{ID: id, Name: byID[id].Name}
+
+		for _, child := range children[id] {
+			node.Children = append(node.Children, build(child))
+		}
+
+		return node
+	}
+
+	out := make([]FolderNode, 0, len(roots))
+
+	for _, root := range roots {
+		out = append(out, build(root))
+	}
+
+	return out
+}
+
+// appendFolderTree appends one folder and its descendants to opts in tree order.
+func appendFolderTree(
+	opts *[]FolderOption,
+	byID map[string]entity.Folder,
+	children map[string][]string,
+	id string,
+	depth int,
+) {
+	f := byID[id]
+
+	*opts = append(*opts, FolderOption{
+		ID:    f.ID,
+		Name:  f.Name,
+		Depth: depth,
+		Style: fmt.Sprintf("padding-left: %dpx", depth*_folderIndentPx),
+	})
+
+	for _, child := range children[id] {
+		appendFolderTree(opts, byID, children, child, depth+1)
+	}
 }

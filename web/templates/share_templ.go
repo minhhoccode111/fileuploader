@@ -161,7 +161,7 @@ func ShareIndexContent(shares []response.ShareRow) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</td><td><form class=\"flex items-center gap-2\" hx-post=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</td><td><form class=\"flex flex-wrap items-center gap-2\" hx-post=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -174,7 +174,7 @@ func ShareIndexContent(shares []response.ShareRow) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" hx-target=\"#page-content\" hx-swap=\"innerHTML\"><input class=\"input input-sm\" type=\"datetime-local\" name=\"expires_at\"> <label class=\"flex items-center gap-1 text-xs\"><input type=\"checkbox\" name=\"unlimited\" value=\"true\" class=\"checkbox checkbox-sm\"> Unlimited</label> <button type=\"submit\" class=\"btn btn-sm\">Save</button></form></td><td class=\"text-right\"><form hx-post=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" hx-target=\"#page-content\" hx-swap=\"innerHTML\"><input class=\"input input-sm min-w-0\" type=\"datetime-local\" name=\"expires_at\"> <label class=\"flex items-center gap-1 text-xs\"><input type=\"checkbox\" name=\"unlimited\" value=\"true\" class=\"checkbox checkbox-sm\"> Unlimited</label> <button type=\"submit\" class=\"btn btn-sm\">Save</button></form></td><td class=\"text-right\"><form hx-post=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

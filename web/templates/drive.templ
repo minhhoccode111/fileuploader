@@ -52,7 +52,7 @@ templ DriveContent(page response.Drive) {
 			</div>
 			<div class="drawer-side z-30">
 				<label for="entry-drawer" aria-label="Close the panel" class="drawer-overlay"></label>
-				<aside id="entry-panel" class="bg-base-100 min-h-full w-96"></aside>
+				<aside id="entry-panel" class="bg-base-100 min-h-full w-1/2"></aside>
 			</div>
 		</div>
 	}
@@ -86,6 +86,16 @@ templ DriveToolbar(page response.Drive) {
 			</ul>
 		</nav>
 		<div class="ml-auto flex shrink-0 items-center gap-2">
+			<button
+				type="button"
+				class="btn btn-sm whitespace-nowrap"
+				hx-get="/htmx/folders/tree"
+				hx-target="#entry-panel"
+				hx-swap="innerHTML"
+				hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+			>
+				Navigate
+			</button>
 			<button
 				type="button"
 				class="btn btn-sm whitespace-nowrap"
@@ -645,4 +655,70 @@ templ FileDuplicateContent(fileID string, currentFolderID string, folders []resp
 			<label for="entry-drawer" class="btn btn-ghost">Cancel</label>
 		</form>
 	</div>
+}
+
+// FolderTreeContent is the drawer view that lets the visitor browse the whole
+// folder tree without leaving the page: clicking a folder expands its children,
+// and the arrow navigates into it.
+templ FolderTreeContent(nodes []response.FolderNode) {
+	<div class="flex flex-col gap-2 p-4">
+		<div class="flex items-center justify-between">
+			<h3 class="text-lg font-bold">Navigate</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		@folderTreeNodes(nodes)
+	</div>
+}
+
+templ folderTreeNodes(nodes []response.FolderNode) {
+	<ul class="space-y-1">
+		for _, node := range nodes {
+			<li x-data="{ open: false }">
+				<div class="flex items-center gap-2 w-full">
+					if len(node.Children) > 0 {
+						<button
+							type="button"
+							class="btn btn-square btn-ghost btn-xs shrink-0"
+							@click="open = !open"
+							:aria-expanded="open"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="size-4 transition-transform"
+								:class="open ? 'rotate-90' : ''"
+							>
+								<path d="m9 6 6 6-6 6"></path>
+							</svg>
+						</button>
+					} else {
+						<span class="w-6 shrink-0"></span>
+					}
+					<span class="flex-1 truncate">{ node.Name }</span>
+					<a
+						class="btn btn-square btn-ghost btn-xs shrink-0 ml-auto"
+						aria-label={ "Open " + node.Name }
+						href={ templ.URL("/folders/" + node.ID) }
+						hx-get={ "/folders/" + node.ID }
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = false"
+					>
+						→
+					</a>
+				</div>
+				if len(node.Children) > 0 {
+					<div class="border-l border-base-300/30 pl-4 mt-1" x-show="open" x-transition>
+						@folderTreeNodes(node.Children)
+					</div>
+				}
+			</li>
+		}
+	</ul>
 }

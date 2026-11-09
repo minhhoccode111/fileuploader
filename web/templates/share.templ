@@ -43,13 +43,13 @@ templ ShareIndexContent(shares []response.ShareRow) {
 										<td class="whitespace-nowrap">{ share.Expires }</td>
 										<td>
 											<form
-												class="flex items-center gap-2"
+												class="flex flex-wrap items-center gap-2"
 												hx-post={ "/htmx/shares/" + share.ID + "/time" }
 												hx-target="#page-content"
 												hx-swap="innerHTML"
 											>
 												<input
-													class="input input-sm"
+													class="input input-sm min-w-0"
 													type="datetime-local"
 													name="expires_at"
 												/>

@@ -86,6 +86,7 @@ func NewRouter(
 	app.Post("/htmx/shares/:share/delete", middleware.RequireAuth(u), c.shareDelete)
 
 	// Drive
+	app.Get("/htmx/folders/tree", middleware.RequireAuth(u), c.folderTree)
 	app.Get("/htmx/folders/new", middleware.RequireAuth(u), c.folderNew)
 	app.Post("/htmx/folders", middleware.RequireAuth(u), c.folderCreate)
 	app.Get("/htmx/folders/:folder/edit", middleware.RequireAuth(u), c.folderEdit)

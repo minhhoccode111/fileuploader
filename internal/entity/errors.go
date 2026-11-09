@@ -20,6 +20,7 @@ var (
 	ErrStorageQuotaExceeded  = errors.New("storage quota exceeded")
 	ErrRootFolder            = errors.New("root folder cannot be changed")
 	ErrFolderCycle           = errors.New("folder cannot be moved into itself or its subtree")
+	ErrFolderTooDeep         = errors.New("folder nesting is too deep")
 	ErrStorageCleanup        = errors.New("storage cleanup failed")
 	ErrShareNotFound         = errors.New("share not found")
 	ErrShareExpired          = errors.New("share expired")
