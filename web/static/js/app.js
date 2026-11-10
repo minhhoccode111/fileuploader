@@ -97,3 +97,86 @@ function truncateAllMiddle(root = document) {
 document.addEventListener("htmx:after:swap", () => truncateAllMiddle());
 window.addEventListener("resize", () => truncateAllMiddle());
 truncateAllMiddle();
+
+function uploadFileWithProgress(form) {
+  const progress = document.getElementById("upload-progress");
+  if (progress) {
+    progress.classList.remove("hidden");
+    progress.value = 0;
+  }
+
+  const xhr = new XMLHttpRequest();
+  xhr.open(form.method || "POST", form.action);
+  xhr.upload.onprogress = (event) => {
+    if (event.lengthComputable && progress) {
+      progress.value = (event.loaded / event.total) * 100;
+    }
+  };
+  xhr.onload = () => {
+    const entries = document.getElementById("drive-entries");
+    if (entries) {
+      entries.innerHTML = xhr.responseText;
+    }
+    if (progress) {
+      progress.classList.add("hidden");
+    }
+    document.dispatchEvent(new CustomEvent("entrySaved"));
+  };
+  xhr.onerror = () => {
+    if (progress) {
+      progress.classList.add("hidden");
+    }
+  };
+  xhr.send(new FormData(form));
+
+  return false;
+}
+
+async function downloadWithProgress(url, filename) {
+  const progress = document.getElementById("download-progress");
+  if (progress) {
+    progress.classList.remove("hidden");
+    progress.value = 0;
+  }
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok || !response.body) {
+      window.location.href = url;
+      return false;
+    }
+
+    const total = Number(response.headers.get("Content-Length")) || 0;
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      if (total && progress) {
+        progress.value = (loaded / total) * 100;
+      }
+    }
+
+    const blob = new Blob(chunks);
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename || "download";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    window.location.href = url;
+  } finally {
+    if (progress) {
+      progress.classList.add("hidden");
+    }
+  }
+
+  return false;
+}

@@ -67,6 +67,17 @@ func (m *MinIO) RemoveObject(ctx context.Context, bucket, key string) error {
 	return nil
 }
 
+// GetObject opens one object for reading. The caller closes the returned
+// reader when it is done.
+func (m *MinIO) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+	object, err := m.Client.GetObject(ctx, bucket, key, miniogo.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("minio - GetObject - m.Client.GetObject: %w", err)
+	}
+
+	return object, nil
+}
+
 // CopyObject duplicates one object into another key in the same bucket. It is
 // a server-side copy, so the bytes never leave the bucket.
 func (m *MinIO) CopyObject(ctx context.Context, bucket, dstKey, srcKey string) error {

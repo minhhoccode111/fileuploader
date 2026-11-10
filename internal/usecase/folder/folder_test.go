@@ -1,6 +1,7 @@
 package folder
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -231,6 +232,10 @@ func (f *fakeStorage) RemoveObject(_ context.Context, _, key string) error {
 
 func (f *fakeStorage) CopyObject(_ context.Context, _, _, _ string) error {
 	return nil
+}
+
+func (f *fakeStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 
 func TestCreateStoresTheFolder(t *testing.T) {

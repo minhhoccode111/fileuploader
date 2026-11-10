@@ -221,14 +221,37 @@ func (c *Controller) sharedFileDownload(ctx *fiber.Ctx) error {
 		return c.sharedError(ctx, shareID, err)
 	}
 
-	link, err := c.files.Download(ctx.UserContext(), share.UserID, file.ID)
+	reader, opened, err := c.files.OpenDownload(ctx.UserContext(), share.UserID, file.ID)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - sharedFileDownload - uc.files.Download: %w", err))
+		c.l.Error(fmt.Errorf("web - sharedFileDownload - uc.files.OpenDownload: %w", err))
 
 		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
 	}
 
-	return ctx.Redirect(link, fiber.StatusFound)
+	rateLimit := int64(0)
+	if user, userErr := c.u.GetUser(ctx.UserContext(), share.UserID); userErr == nil {
+		rateLimit = user.EffectiveDownloadRate(0)
+	}
+
+	if rateLimit > 0 {
+		reader = newThrottledReader(ctx.UserContext(), reader, rateLimit)
+	}
+
+	ctx.Set(fiber.HeaderContentType, opened.ContentType)
+	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", opened.Name))
+
+	if opened.Size > 0 {
+		ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", opened.Size))
+	}
+
+	defer func() {
+		closeErr := reader.Close()
+		if closeErr != nil {
+			c.l.Error(fmt.Errorf("web - sharedFileDownload - reader.Close: %w", closeErr))
+		}
+	}()
+
+	return ctx.SendStream(reader)
 }
 
 // resolveSharedFolder resolves a share and a folder inside its tree, mapping

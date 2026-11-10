@@ -2,9 +2,11 @@
 package folder
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,6 +28,12 @@ const (
 )
 
 // UseCase -.
+// _zipEntry is one file inside a streamed zip archive.
+type _zipEntry struct {
+	path string
+	file entity.File
+}
+
 type UseCase struct {
 	users   repo.UserRepo
 	folders repo.FolderRepo
@@ -666,6 +674,173 @@ func splitFolderName(name string) (base, ext string) {
 	}
 
 	return name, ""
+}
+
+// DownloadZip streams a zip archive of the folder and everything under it.
+// The returned reader is the archive; the caller closes it. The name is the
+// file name the browser should save the archive under.
+func (uc *UseCase) DownloadZip(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error) {
+	entries, root, err := uc.collectZipEntries(ctx, userID, folderID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	name := root.Name
+	if name == "/" || name == "" {
+		name = "root"
+	}
+
+	filename := name + ".zip"
+
+	reader, writer := io.Pipe()
+
+	go uc.writeZip(ctx, writer, entries)
+
+	return reader, filename, nil
+}
+
+// collectZipEntries gathers the files that make up the archive.
+func (uc *UseCase) collectZipEntries(
+	ctx context.Context,
+	userID, folderID string,
+) ([]_zipEntry, entity.Folder, error) {
+	root, err := uc.read(ctx, userID, folderID)
+	if err != nil {
+		return nil, entity.Folder{}, fmt.Errorf("FolderUseCase - DownloadZip - uc.read: %w", err)
+	}
+
+	all, err := uc.folders.ListAll(ctx, userID)
+	if err != nil {
+		return nil, entity.Folder{}, fmt.Errorf("FolderUseCase - DownloadZip - uc.folders.ListAll: %w", err)
+	}
+
+	if !folderExists(all, root.ID) {
+		return nil, entity.Folder{}, entity.ErrFolderNotFound
+	}
+
+	relative := uc.relativePaths(all, root.ID)
+
+	subtree := collectFolderSubtree(all, root.ID)
+
+	entries := make([]_zipEntry, 0)
+
+	for _, id := range subtree {
+		items, listErr := uc.files.List(ctx, userID, id)
+		if listErr != nil {
+			return nil, entity.Folder{}, fmt.Errorf("FolderUseCase - DownloadZip - uc.files.List: %w", listErr)
+		}
+
+		for i := range items {
+			file, getErr := uc.files.Get(ctx, userID, items[i].ID)
+			if getErr != nil {
+				return nil, entity.Folder{}, fmt.Errorf("FolderUseCase - DownloadZip - uc.files.Get: %w", getErr)
+			}
+
+			path := items[i].Name
+			if relative[id] != "" {
+				path = relative[id] + "/" + items[i].Name
+			}
+
+			entries = append(entries, _zipEntry{path: path, file: file})
+		}
+	}
+
+	return entries, root, nil
+}
+
+// relativePaths maps each folder in the subtree to its path inside the archive.
+func (uc *UseCase) relativePaths(all []entity.Folder, rootID string) map[string]string {
+	relative := map[string]string{rootID: ""}
+
+	var walk func(id, prefix string)
+
+	walk = func(id, prefix string) {
+		for i := range all {
+			f := all[i]
+			if f.ParentID == nil || *f.ParentID != id {
+				continue
+			}
+
+			childPrefix := f.Name
+			if prefix != "" {
+				childPrefix = prefix + "/" + f.Name
+			}
+
+			relative[f.ID] = childPrefix
+			walk(f.ID, childPrefix)
+		}
+	}
+
+	walk(rootID, "")
+
+	return relative
+}
+
+// writeZip writes the archive to the pipe writer.
+func (uc *UseCase) writeZip(ctx context.Context, writer *io.PipeWriter, entries []_zipEntry) {
+	zw := zip.NewWriter(writer)
+	defer zw.Close()
+
+	for i := range entries {
+		e := entries[i]
+
+		header := &zip.FileHeader{
+			Name:     e.path,
+			Method:   zip.Deflate,
+			Modified: e.file.UpdatedAt,
+		}
+
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			writer.CloseWithError(fmt.Errorf("FolderUseCase - DownloadZip - CreateHeader: %w", err))
+
+			return
+		}
+
+		object, err := uc.storage.GetObject(ctx, uc.bucket, e.file.StorageKey)
+		if err != nil {
+			writer.CloseWithError(fmt.Errorf("FolderUseCase - DownloadZip - GetObject: %w", err))
+
+			return
+		}
+
+		if _, err := io.Copy(w, object); err != nil {
+			_ = object.Close()
+
+			writer.CloseWithError(fmt.Errorf("FolderUseCase - DownloadZip - Copy: %w", err))
+
+			return
+		}
+
+		if err := object.Close(); err != nil {
+			writer.CloseWithError(fmt.Errorf("FolderUseCase - DownloadZip - Close: %w", err))
+
+			return
+		}
+	}
+
+	if err := zw.Close(); err != nil {
+		writer.CloseWithError(fmt.Errorf("FolderUseCase - DownloadZip - CloseZip: %w", err))
+
+		return
+	}
+
+	_ = writer.Close()
+}
+
+// DownloadFolder is an alias for DownloadZip.
+func (uc *UseCase) DownloadFolder(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error) {
+	return uc.DownloadZip(ctx, userID, folderID)
+}
+
+// ZipFolder is an alias for DownloadZip.
+func (uc *UseCase) ZipFolder(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error) {
+	return uc.DownloadZip(ctx, userID, folderID)
+}
+
+// FolderZip is an alias for DownloadZip.
+func (uc *UseCase) FolderZip(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error) {
+	return uc.DownloadZip(ctx, userID, folderID)
 }
 
 // storageKey builds the object key of a file. It holds identifiers only, so a

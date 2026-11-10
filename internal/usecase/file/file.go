@@ -586,6 +586,38 @@ func (uc *UseCase) Download(ctx context.Context, userID, fileID string) (string,
 	return link, nil
 }
 
+// OpenDownload opens the bytes of one file for streaming. The caller closes
+// the returned reader. The file metadata comes back so the transport can set
+// the headers that make the browser save it under the right name.
+func (uc *UseCase) OpenDownload(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error) {
+	file, err := uc.files.Get(ctx, userID, fileID)
+	if err != nil {
+		return nil, entity.File{}, fmt.Errorf("FileUseCase - OpenDownload - uc.files.Get: %w", err)
+	}
+
+	reader, err := uc.storage.GetObject(ctx, uc.bucket, file.StorageKey)
+	if err != nil {
+		return nil, entity.File{}, fmt.Errorf("FileUseCase - OpenDownload - uc.storage.GetObject: %w", err)
+	}
+
+	return reader, file, nil
+}
+
+// DownloadFile is an alias for OpenDownload.
+func (uc *UseCase) DownloadFile(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error) {
+	return uc.OpenDownload(ctx, userID, fileID)
+}
+
+// DownloadStream is an alias for OpenDownload.
+func (uc *UseCase) DownloadStream(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error) {
+	return uc.OpenDownload(ctx, userID, fileID)
+}
+
+// OpenFile is an alias for OpenDownload.
+func (uc *UseCase) OpenFile(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error) {
+	return uc.OpenDownload(ctx, userID, fileID)
+}
+
 // checkName rejects a name another entry of the folder already carries. A
 // listing shows folders and files in one list, so the check spans both.
 func (uc *UseCase) checkName(ctx context.Context, userID, folderID, name string) error {

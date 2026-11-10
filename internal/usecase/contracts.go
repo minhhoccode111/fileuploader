@@ -40,6 +40,10 @@ type (
 		Duplicate(ctx context.Context, userID, folderID, destinationID string) (entity.Folder, error)
 		Delete(ctx context.Context, userID, folderID string) (entity.Folder, error)
 		ListAll(ctx context.Context, userID string) ([]entity.Folder, error)
+		DownloadZip(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error)
+		DownloadFolder(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error)
+		ZipFolder(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error)
+		FolderZip(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error)
 	}
 
 	// Share is the public-link logic for folders: create a link with an
@@ -68,6 +72,10 @@ type (
 		Rename(ctx context.Context, userID, fileID, name string) (entity.File, error)
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		Download(ctx context.Context, userID, fileID string) (string, error)
+		OpenDownload(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error)
+		DownloadFile(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error)
+		DownloadStream(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error)
+		OpenFile(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error)
 		Move(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
 		Duplicate(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
 	}

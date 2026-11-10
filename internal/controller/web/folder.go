@@ -389,6 +389,50 @@ func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 	return middleware.Redirect(ctx, path)
 }
 
+// folderDownloadZip streams a zip archive of the folder and everything under
+// it, so a whole directory can be downloaded at once. The per-user download
+// speed limit applies to the stream.
+func (c *Controller) folderDownloadZip(ctx *fiber.Ctx) error {
+	folderID := ctx.Params("folder")
+
+	if folderID != "" && !c.validID(folderID) {
+		return middleware.Redirect(ctx, _homePath)
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	rateLimit, err := c.downloadRate(ctx, userID)
+	if err != nil {
+		return c.driveError(ctx, err, "folderDownloadZip - c.u.GetUser")
+	}
+
+	reader, filename, err := c.folders.DownloadZip(ctx.UserContext(), userID, folderID)
+	if err != nil {
+		c.l.Error(fmt.Errorf("web - folderDownloadZip - uc.folders.DownloadZip: %w", err))
+
+		return middleware.Redirect(ctx, _homePath)
+	}
+
+	if rateLimit > 0 {
+		reader = newThrottledReader(ctx.UserContext(), reader, rateLimit)
+	}
+
+	ctx.Set(fiber.HeaderContentType, "application/zip")
+	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", filename))
+
+	defer func() {
+		closeErr := reader.Close()
+		if closeErr != nil {
+			c.l.Error(fmt.Errorf("web - folderDownloadZip - reader.Close: %w", closeErr))
+		}
+	}()
+
+	return ctx.SendStream(reader)
+}
+
 // movableFolders drops the folder being moved and everything under it from the
 // list of possible destinations, so a move cannot close a cycle in the tree. It
 // also drops destinations that would push the moved subtree past the deepest

@@ -351,8 +351,8 @@ func (c *Controller) fileDelete(ctx *fiber.Ctx) error {
 	return c.renderEntries(ctx, userID, file.FolderID)
 }
 
-// fileDownload sends the browser to a time-limited link to the object. The
-// request is a plain navigation, so the redirect leaves the app entirely.
+// fileDownload streams the bytes of one file through the app, so the per-user
+// download speed limit applies. The browser saves it under the file's name.
 func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 	fileID := ctx.Params("file")
 	if !c.validID(fileID) {
@@ -364,16 +364,49 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _loginPath)
 	}
 
-	link, err := c.files.Download(ctx.UserContext(), userID, fileID)
+	rateLimit, err := c.downloadRate(ctx, userID)
+	if err != nil {
+		return c.driveError(ctx, err, "fileDownload - c.u.GetUser")
+	}
+
+	reader, file, err := c.files.OpenDownload(ctx.UserContext(), userID, fileID)
 	if err != nil {
 		if !errors.Is(err, entity.ErrFileNotFound) {
-			c.l.Error(fmt.Errorf("web - fileDownload - uc.files.Download: %w", err))
+			c.l.Error(fmt.Errorf("web - fileDownload - uc.files.OpenDownload: %w", err))
 		}
 
 		return middleware.Redirect(ctx, _homePath)
 	}
 
-	return ctx.Redirect(link, fiber.StatusFound)
+	if rateLimit > 0 {
+		reader = newThrottledReader(ctx.UserContext(), reader, rateLimit)
+	}
+
+	ctx.Set(fiber.HeaderContentType, file.ContentType)
+	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", file.Name))
+
+	if file.Size > 0 {
+		ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", file.Size))
+	}
+
+	defer func() {
+		closeErr := reader.Close()
+		if closeErr != nil {
+			c.l.Error(fmt.Errorf("web - fileDownload - reader.Close: %w", closeErr))
+		}
+	}()
+
+	return ctx.SendStream(reader)
+}
+
+// downloadRate resolves the effective download rate for the signed-in account.
+func (c *Controller) downloadRate(ctx *fiber.Ctx, userID string) (int64, error) {
+	user, err := c.u.GetUser(ctx.UserContext(), userID)
+	if err != nil {
+		return 0, err
+	}
+
+	return user.EffectiveDownloadRate(0), nil
 }
 
 // uploadRate resolves the effective upload rate for the signed-in account.
@@ -388,16 +421,26 @@ func (c *Controller) uploadRate(ctx *fiber.Ctx, userID string) (int64, error) {
 
 // newThrottledReader wraps upload with a rate limiter when rateLimit is
 // positive. A non-positive limit leaves the stream untouched.
-func newThrottledReader(ctx context.Context, upload io.Reader, rateLimit int64) io.Reader {
+func newThrottledReader(ctx context.Context, upload io.Reader, rateLimit int64) io.ReadCloser {
 	if rateLimit <= 0 {
-		return upload
+		if closer, ok := upload.(io.ReadCloser); ok {
+			return closer
+		}
+
+		return io.NopCloser(upload)
 	}
 
-	return &throttledReader{
+	reader := &throttledReader{
 		r:       upload,
 		limiter: rate.NewLimiter(rate.Limit(rateLimit), int(rateLimit)),
 		ctx:     ctx,
 	}
+
+	if closer, ok := upload.(io.Closer); ok {
+		reader.closer = closer
+	}
+
+	return reader
 }
 
 // throttledReader wraps an upload stream with a per-request rate limiter. Each
@@ -407,6 +450,16 @@ type throttledReader struct {
 	r       io.Reader
 	limiter *rate.Limiter
 	ctx     context.Context
+	closer  io.Closer
+}
+
+// Close closes the wrapped reader when it can be closed.
+func (t *throttledReader) Close() error {
+	if t.closer != nil {
+		return t.closer.Close()
+	}
+
+	return nil
 }
 
 // Read pulls bytes from the wrapped reader and waits for the limiter to admit

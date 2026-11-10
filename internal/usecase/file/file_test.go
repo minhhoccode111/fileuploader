@@ -1,6 +1,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -196,6 +197,10 @@ func (f *fakeStorage) CopyObject(_ context.Context, _, dstKey, srcKey string) er
 	f.copySrcKey = srcKey
 
 	return f.copyErr
+}
+
+func (f *fakeStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 
 func TestUploadStoresTheBytesAndTheRow(t *testing.T) {

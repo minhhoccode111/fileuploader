@@ -1,6 +1,10 @@
 package templates
 
-import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+import (
+	"strconv"
+
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+)
 
 // filePickerState backs the upload drawer: choosing a file fills the name
 // field with the file name and shows the size and the extension before the
@@ -44,6 +48,7 @@ templ DriveContent(page response.Drive) {
 				<section class="card bg-base-100 shadow">
 					<div class="card-body gap-4">
 						@DriveToolbar(page)
+						<progress id="download-progress" class="progress progress-primary w-full hidden" value="0" max="100"></progress>
 						<div id="drive-entries" class="overflow-x-auto">
 							@DriveEntries(page)
 						</div>
@@ -111,6 +116,13 @@ templ DriveToolbar(page response.Drive) {
 				</svg>
 				New folder
 			</button>
+			<a
+				class="btn btn-sm whitespace-nowrap"
+				href={ "/folders/" + page.FolderID + "/download" }
+				onclick={ templ.JSUnsafeFuncCall("return downloadWithProgress(this.href, " + strconv.Quote(page.FolderName + ".zip") + ")") }
+			>
+				Download folder
+			</a>
 			<button
 				type="button"
 				class="btn btn-sm btn-primary whitespace-nowrap"
@@ -368,12 +380,10 @@ templ FileUploadContent(folderID string) {
 		<form
 			class="flex flex-col gap-3"
 			novalidate
-			hx-post="/htmx/files"
-			hx-encoding="multipart/form-data"
-			hx-target="#drive-entries"
-			hx-swap="innerHTML"
-			hx-status:4xx="target:#upload-error"
-			hx-status:5xx="target:#upload-error"
+			action="/htmx/files"
+			method="post"
+			enctype="multipart/form-data"
+			onsubmit="return uploadFileWithProgress(this)"
 		>
 			<input type="hidden" name="folder" value={ folderID }/>
 			<label class="flex flex-col gap-1">
@@ -402,6 +412,7 @@ templ FileUploadContent(folderID string) {
 				Size: <span x-text="size || '—'"></span>
 				· Extension: <span x-text="extension || '—'"></span>
 			</p>
+			<progress id="upload-progress" class="progress progress-primary w-full hidden" value="0" max="100"></progress>
 			<div id="upload-error" class="text-error text-sm" role="alert"></div>
 			<button type="submit" class="btn btn-primary">Upload file</button>
 			<label for="entry-drawer" class="btn btn-ghost">Cancel</label>
@@ -428,6 +439,7 @@ templ FileDrawerContent(file response.FileInfo) {
 		<a
 			class="btn btn-primary"
 			href={ templ.URL("/files/" + file.ID + "/download") }
+			onclick={ templ.JSUnsafeFuncCall("return downloadWithProgress(this.href, " + strconv.Quote(file.Name) + ")") }
 		>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
 				<path d="M12 3v12"></path>

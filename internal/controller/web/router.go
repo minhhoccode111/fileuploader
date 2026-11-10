@@ -106,6 +106,8 @@ func NewRouter(
 	app.Get("/htmx/files/:file/duplicate", middleware.RequireAuth(u), c.fileDuplicateForm)
 	app.Post("/htmx/files/:file/duplicate", middleware.RequireAuth(u), c.fileDuplicate)
 	app.Get("/files/:file/download", middleware.RequireAuth(u), c.fileDownload)
+	app.Get("/folders/:folder/download", middleware.RequireAuth(u), c.folderDownloadZip)
+	app.Get("/download", middleware.RequireAuth(u), c.folderDownloadZip)
 
 	app.Get("/htmx/admin/users/edit", middleware.RequireAdmin(u), c.adminUsersEdit)
 	app.Post("/htmx/admin/users/edit", middleware.RequireAdmin(u), c.adminUsersEditSubmit)
