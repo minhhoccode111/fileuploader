@@ -423,13 +423,8 @@ func (c *Controller) folderDownloadZip(ctx *fiber.Ctx) error {
 	ctx.Set(fiber.HeaderContentType, "application/zip")
 	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", filename))
 
-	defer func() {
-		closeErr := reader.Close()
-		if closeErr != nil {
-			c.l.Error(fmt.Errorf("web - folderDownloadZip - reader.Close: %w", closeErr))
-		}
-	}()
-
+	// The server closes the stream after it writes the response. Closing it
+	// here would close the pipe before the archive is read.
 	return ctx.SendStream(reader)
 }
 

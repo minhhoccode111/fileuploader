@@ -14,9 +14,12 @@ import (
 )
 
 const (
-	_defaultAddr            = ":80"
-	_defaultReadTimeout     = 5 * time.Second
-	_defaultWriteTimeout    = 5 * time.Second
+	_defaultAddr = ":80"
+	// _defaultReadTimeout bounds how long the server waits for a request body.
+	_defaultReadTimeout = 5 * time.Second
+	// _defaultWriteTimeout is zero so a streamed download can run as long as
+	// the client keeps reading. A fixed deadline cuts large downloads.
+	_defaultWriteTimeout    = 0
 	_defaultShutdownTimeout = 3 * time.Second
 )
 
@@ -61,12 +64,14 @@ func New(l logger.Interface, opts ...Option) *Server {
 	}
 
 	app := fiber.New(fiber.Config{
-		Prefork:      s.prefork,
-		BodyLimit:    s.bodyLimit,
-		ReadTimeout:  s.readTimeout,
-		WriteTimeout: s.writeTimeout,
-		JSONDecoder:  json.Unmarshal,
-		JSONEncoder:  json.Marshal,
+		Prefork:                      s.prefork,
+		BodyLimit:                    s.bodyLimit,
+		ReadTimeout:                  s.readTimeout,
+		WriteTimeout:                 s.writeTimeout,
+		StreamRequestBody:            true,
+		DisablePreParseMultipartForm: true,
+		JSONDecoder:                  json.Unmarshal,
+		JSONEncoder:                  json.Marshal,
 	})
 
 	s.App = app

@@ -105,6 +105,8 @@ func (c *Controller) renderEntries(
 // driveError maps a failed drive action to a status and a message the caller
 // may see. Only the entity sentinels are translated; everything else is a
 // server fault and is logged instead of leaked.
+//
+//nolint:cyclop // one branch per sentinel the drive can return
 func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error {
 	if errors.Is(err, entity.ErrFolderTooDeep) {
 		return c.renderErrors(
@@ -140,6 +142,13 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 			ctx,
 			http.StatusRequestEntityTooLarge,
 			[]string{"That file is larger than this server accepts."},
+		)
+
+	case errors.Is(err, entity.ErrStorageQuotaExceeded):
+		return c.renderErrors(
+			ctx,
+			http.StatusRequestEntityTooLarge,
+			[]string{"That would exceed the storage quota of this account."},
 		)
 
 	case errors.Is(err, entity.ErrRootFolder):

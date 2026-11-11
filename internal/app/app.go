@@ -29,10 +29,6 @@ import (
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 )
 
-// _multipartOverhead is the room the multipart envelope, its headers and the
-// name field need on top of the bytes of the file itself.
-const _multipartOverhead = 1 << 20
-
 type useCases struct {
 	user   usecase.User
 	folder usecase.Folder
@@ -58,8 +54,8 @@ func initUseCases(
 
 	return useCases{
 		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
-		folder: usecaseFolder.New(users, folders, files, storage, pg, cfg.MinIO.Bucket),
-		file:   usecaseFile.New(users, files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes),
+		folder: usecaseFolder.New(users, folders, files, storage, pg, cfg.MinIO.Bucket, usecase.Limits{StorageQuotaBytes: cfg.Limits.StorageQuotaBytes}),
+		file:   usecaseFile.New(users, files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes, usecase.Limits{StorageQuotaBytes: cfg.Limits.StorageQuotaBytes}),
 		share:  usecaseShare.New(shares, folders, files, pg),
 	}
 }
@@ -74,7 +70,7 @@ func initServers(
 		l,
 		httpserver.Port(cfg.HTTP.Port),
 		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
-		httpserver.BodyLimit(int(cfg.Upload.MaxBytes)+_multipartOverhead),
+		httpserver.BodyLimit(int(cfg.Upload.MaxBytes+config.MultipartOverheadBytes)),
 		httpserver.ReadTimeout(cfg.Upload.Timeout),
 	)
 	// Validator

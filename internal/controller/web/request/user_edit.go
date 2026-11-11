@@ -25,17 +25,6 @@ type UserUpdate struct {
 	StorageUsedBytes        int64 `form:"storage_used_bytes"      validate:"min=0"`
 	UploadRateBytesPerSec   int64 `form:"upload_rate_bytes_per_sec" validate:"min=0"`
 	DownloadRateBytesPerSec int64 `form:"download_rate_bytes_per_sec" validate:"min=0"`
-
-	// Aliases accepted from the form, so the field name a caller uses does
-	// not matter.
-	StorageQuota int64 `form:"storage_quota" validate:"min=0"`
-	StorageUsed  int64 `form:"storage_used" validate:"min=0"`
-	Quota        int64 `form:"quota"        validate:"min=0"`
-	Used         int64 `form:"used"         validate:"min=0"`
-	UploadRate   int64 `form:"upload_rate"  validate:"min=0"`
-	Upload       int64 `form:"upload"       validate:"min=0"`
-	DownloadRate int64 `form:"download_rate" validate:"min=0"`
-	Download     int64 `form:"download"     validate:"min=0"`
 }
 
 // Sanitize normalizes the raw form input before validation runs. The name is
@@ -46,36 +35,4 @@ func (r *UserUpdate) Sanitize() {
 	r.Username = strings.TrimSpace(r.Username)
 	r.Email = strings.ToLower(strings.TrimSpace(r.Email))
 	r.Role = strings.ToLower(strings.TrimSpace(r.Role))
-
-	if r.StorageQuota != 0 {
-		r.StorageQuotaBytes = r.StorageQuota
-	}
-
-	if r.Quota != 0 {
-		r.StorageQuotaBytes = r.Quota
-	}
-
-	if r.StorageUsed != 0 {
-		r.StorageUsedBytes = r.StorageUsed
-	}
-
-	if r.Used != 0 {
-		r.StorageUsedBytes = r.Used
-	}
-
-	if r.UploadRate != 0 {
-		r.UploadRateBytesPerSec = r.UploadRate
-	}
-
-	if r.Upload != 0 {
-		r.UploadRateBytesPerSec = r.Upload
-	}
-
-	if r.DownloadRate != 0 {
-		r.DownloadRateBytesPerSec = r.DownloadRate
-	}
-
-	if r.Download != 0 {
-		r.DownloadRateBytesPerSec = r.Download
-	}
 }

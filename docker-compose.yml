@@ -35,6 +35,10 @@ x-backend-app-environment: &x-backend-app-environment
   # Uploads
   UPLOAD_MAX_BYTES: "104857600"
   UPLOAD_TIMEOUT: "5m"
+  # Global limits (zero means unlimited)
+  STORAGE_DEFAULT_QUOTA_BYTES: "0"
+  UPLOAD_DEFAULT_RATE_BYTES_PER_SEC: "0"
+  DOWNLOAD_DEFAULT_RATE_BYTES_PER_SEC: "0"
   # Session
   SESSION_TTL: "24h"
 

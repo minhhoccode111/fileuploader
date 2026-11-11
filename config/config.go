@@ -7,6 +7,10 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
+// MultipartOverheadBytes is the room the multipart envelope, its headers and
+// the name field need on top of the bytes of the file itself.
+const MultipartOverheadBytes int64 = 1 << 20
+
 type (
 	// Config -.
 	Config struct {
@@ -18,6 +22,7 @@ type (
 		MinIO   minio
 		Session session
 		Upload  upload
+		Limits  limits
 	}
 
 	// App -.
@@ -78,6 +83,19 @@ type (
 		// Timeout is how long the server waits for a request body, raised from
 		// the default so a large upload over a slow line can finish.
 		Timeout time.Duration `env:"UPLOAD_TIMEOUT" envDefault:"5m"`
+	}
+
+	// Limits -.
+	limits struct {
+		// StorageQuotaBytes is the default storage quota of an account. A
+		// per-account zero inherits it; a zero default means unlimited.
+		StorageQuotaBytes int64 `env:"STORAGE_DEFAULT_QUOTA_BYTES" envDefault:"0"`
+		// UploadRateBytesPerSec is the default upload speed limit. A
+		// per-account zero inherits it; a zero default means unlimited.
+		UploadRateBytesPerSec int64 `env:"UPLOAD_DEFAULT_RATE_BYTES_PER_SEC" envDefault:"0"`
+		// DownloadRateBytesPerSec is the default download speed limit. A
+		// per-account zero inherits it; a zero default means unlimited.
+		DownloadRateBytesPerSec int64 `env:"DOWNLOAD_DEFAULT_RATE_BYTES_PER_SEC" envDefault:"0"`
 	}
 )
 

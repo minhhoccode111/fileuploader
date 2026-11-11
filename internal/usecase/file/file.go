@@ -39,13 +39,14 @@ const (
 
 // UseCase -.
 type UseCase struct {
-	users    repo.UserRepo
-	files    repo.FileRepo
-	folders  repo.FolderRepo
-	storage  repo.ObjectStorage
-	uow      repo.UnitOfWork
-	bucket   string
-	maxBytes int64
+	users        repo.UserRepo
+	files        repo.FileRepo
+	folders      repo.FolderRepo
+	storage      repo.ObjectStorage
+	uow          repo.UnitOfWork
+	bucket       string
+	maxBytes     int64
+	defaultQuota int64
 }
 
 // New returns a File use case. Its arguments are accepted in any order, so the
@@ -79,6 +80,8 @@ func New(args ...any) usecase.File {
 			if uc.maxBytes == 0 {
 				uc.maxBytes = int64(v)
 			}
+		case usecase.Limits:
+			uc.defaultQuota = v.StorageQuotaBytes
 		}
 	}
 
@@ -122,7 +125,7 @@ func (uc *UseCase) Upload(
 			return entity.File{}, fmt.Errorf("FileUseCase - Upload - uc.users.GetByID: %w", userErr)
 		}
 
-		quota := user.EffectiveStorageQuota(0)
+		quota := user.EffectiveStorageQuota(uc.defaultQuota)
 		if quota > 0 && user.StorageUsedBytes+size > quota {
 			return entity.File{}, entity.ErrStorageQuotaExceeded
 		}
@@ -196,7 +199,7 @@ func (uc *UseCase) storeRow(
 				return fmt.Errorf("uc.users.GetByID: %w", userErr)
 			}
 
-			quota := user.EffectiveStorageQuota(0)
+			quota := user.EffectiveStorageQuota(uc.defaultQuota)
 			if quota > 0 && user.StorageUsedBytes+file.Size > quota {
 				return entity.ErrStorageQuotaExceeded
 			}
@@ -385,7 +388,7 @@ func (uc *UseCase) duplicateInTransaction(
 				return fmt.Errorf("uc.users.GetByID: %w", userErr)
 			}
 
-			quota := user.EffectiveStorageQuota(0)
+			quota := user.EffectiveStorageQuota(uc.defaultQuota)
 			if quota > 0 && user.StorageUsedBytes+source.Size > quota {
 				return entity.ErrStorageQuotaExceeded
 			}

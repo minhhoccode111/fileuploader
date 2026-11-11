@@ -16,6 +16,7 @@ var (
 	ErrFileNotFound          = errors.New("file not found")
 	ErrEntryAlreadyExists    = errors.New("entry already exists")
 	ErrInvalidName           = errors.New("invalid name")
+	ErrInvalidUpload         = errors.New("invalid upload")
 	ErrFileTooLarge          = errors.New("file too large")
 	ErrStorageQuotaExceeded  = errors.New("storage quota exceeded")
 	ErrRootFolder            = errors.New("root folder cannot be changed")

@@ -443,8 +443,6 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 				/>
 				<span class="text-xs text-base-content/60">Zero inherits the default.</span>
 			</label>
-			<input type="hidden" name="storage_quota" value={ strconv.FormatInt(row.StorageQuotaValue(), 10) }/>
-			<input type="hidden" name="quota" value={ strconv.FormatInt(row.StorageQuotaValue(), 10) }/>
 			<label class="flex flex-col gap-1">
 				<span class="text-sm font-medium">Storage used (bytes)</span>
 				<input
@@ -455,8 +453,6 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 					readonly
 				/>
 			</label>
-			<input type="hidden" name="storage_used" value={ strconv.FormatInt(row.StorageUsedValue(), 10) }/>
-			<input type="hidden" name="used" value={ strconv.FormatInt(row.StorageUsedValue(), 10) }/>
 			<label class="flex flex-col gap-1">
 				<span class="text-sm font-medium">Upload rate (bytes/sec)</span>
 				<input
@@ -466,9 +462,8 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 					value={ strconv.FormatInt(row.UploadRateValue(), 10) }
 					min="0"
 				/>
+				<span class="text-xs text-base-content/60">Zero inherits the default.</span>
 			</label>
-			<input type="hidden" name="upload_rate" value={ strconv.FormatInt(row.UploadRateValue(), 10) }/>
-			<input type="hidden" name="upload" value={ strconv.FormatInt(row.UploadRateValue(), 10) }/>
 			<label class="flex flex-col gap-1">
 				<span class="text-sm font-medium">Download rate (bytes/sec)</span>
 				<input
@@ -478,9 +473,8 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 					value={ strconv.FormatInt(row.DownloadRateValue(), 10) }
 					min="0"
 				/>
+				<span class="text-xs text-base-content/60">Zero inherits the default.</span>
 			</label>
-			<input type="hidden" name="download_rate" value={ strconv.FormatInt(row.DownloadRateValue(), 10) }/>
-			<input type="hidden" name="download" value={ strconv.FormatInt(row.DownloadRateValue(), 10) }/>
 			<div id="user-edit-error" class="text-error text-sm" role="alert"></div>
 			<button type="submit" class="btn btn-primary">Save</button>
 			<label for="user-edit-drawer" class="btn btn-ghost">Cancel</label>

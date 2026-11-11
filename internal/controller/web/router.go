@@ -49,6 +49,7 @@ func NewRouter(
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
 	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
+	app.Use(middleware.BodyLimit(cfg.Upload.MaxBytes+config.MultipartOverheadBytes, "/htmx/files"))
 
 	// K8s probe
 	app.Get("/healthz", func(ctx *fiber.Ctx) error {

@@ -35,12 +35,13 @@ type _zipEntry struct {
 }
 
 type UseCase struct {
-	users   repo.UserRepo
-	folders repo.FolderRepo
-	files   repo.FileRepo
-	storage repo.ObjectStorage
-	uow     repo.UnitOfWork
-	bucket  string
+	users        repo.UserRepo
+	folders      repo.FolderRepo
+	files        repo.FileRepo
+	storage      repo.ObjectStorage
+	uow          repo.UnitOfWork
+	bucket       string
+	defaultQuota int64
 }
 
 // New returns a Folder use case. Its arguments are accepted in any order, so the
@@ -64,6 +65,8 @@ func New(args ...any) usecase.Folder {
 			if uc.bucket == "" {
 				uc.bucket = v
 			}
+		case usecase.Limits:
+			uc.defaultQuota = v.StorageQuotaBytes
 		}
 	}
 
@@ -435,7 +438,7 @@ func (uc *UseCase) Duplicate(
 				return fmt.Errorf("FolderUseCase - Duplicate - uc.users.GetByID: %w", userErr)
 			}
 
-			quota := user.EffectiveStorageQuota(0)
+			quota := user.EffectiveStorageQuota(uc.defaultQuota)
 			if quota > 0 && user.StorageUsedBytes+totalSize > quota {
 				return entity.ErrStorageQuotaExceeded
 			}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
 )
 
 // errStorage is the failure the fake bucket reports.
@@ -675,6 +676,38 @@ func TestDuplicateChargesQuotaFolder(t *testing.T) {
 	users := &fakeUserRepoForFolder{user: entity.User{StorageQuotaBytes: 4, StorageUsedBytes: 2}}
 	storage := &fakeStorage{}
 	uc := New(users, folders, files, storage, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.Duplicate(context.Background(), "user", "source", "dest")
+	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
+		t.Fatalf("Duplicate() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
+	}
+}
+
+func TestDuplicateUsesGlobalDefaultQuota(t *testing.T) {
+	t.Parallel()
+
+	rootID := "root"
+
+	folders := &fakeFolderRepo{byID: map[string]entity.Folder{
+		"root":   {ID: rootID, UserID: "user", Name: "/"},
+		"source": {ID: "source", UserID: "user", ParentID: &rootID, Name: "Source"},
+		"dest":   {ID: "dest", UserID: "user", ParentID: &rootID, Name: "Dest"},
+	}}
+	files := &fakeFileRepo{
+		items: []entity.FileItem{{ID: "file1", Name: "note.txt"}},
+		file:  entity.File{ID: "file1", UserID: "user", FolderID: "source", StorageKey: "users/user/files/file1", Size: 4, ContentType: "text/plain", Name: "note.txt"},
+	}
+	users := &fakeUserRepoForFolder{user: entity.User{StorageQuotaBytes: 0, StorageUsedBytes: 2}}
+	storage := &fakeStorage{}
+	uc := New(
+		users,
+		folders,
+		files,
+		storage,
+		&fakeUnitOfWork{},
+		"bucket",
+		usecase.Limits{StorageQuotaBytes: 4},
+	)
 
 	_, err := uc.Duplicate(context.Background(), "user", "source", "dest")
 	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {

@@ -80,3 +80,8 @@ type (
 		Duplicate(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
 	}
 )
+
+// Limits carries the global defaults a per-account zero inherits.
+type Limits struct {
+	StorageQuotaBytes int64
+}

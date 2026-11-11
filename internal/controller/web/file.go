@@ -28,25 +28,7 @@ func (c *Controller) fileNew(ctx *fiber.Ctx) error {
 // the one in the form, not the one the browser sent with the file, so the
 // visitor can name it before it is stored. The body limit of the server and
 // the use case both guard the size.
-//
-//nolint:funlen // upload flow combines parsing, throttling and rendering
 func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
-	var req request.FileUpload
-
-	if err := ctx.BodyParser(&req); err != nil {
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"Choose a file and give it a name."},
-		)
-	}
-
-	req.Sanitize()
-
-	if err := c.v.Struct(req); err != nil {
-		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
-	}
-
 	userID, ok := c.userID(ctx)
 	if !ok {
 		return middleware.Redirect(ctx, _loginPath)
@@ -57,12 +39,25 @@ func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 		return c.driveError(ctx, err, "fileUploadSubmit - c.u.GetUser")
 	}
 
-	header, err := ctx.FormFile("file")
+	form, err := parseUpload(ctx, c.cfg.Upload.MaxBytes, rateLimit)
 	if err != nil {
-		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Choose a file to upload."})
+		return c.uploadParseError(ctx, err)
 	}
 
-	if header.Size > c.cfg.Upload.MaxBytes {
+	defer form.cleanup()
+
+	req := request.FileUpload{
+		FolderID: form.folderID,
+		Name:     form.name,
+	}
+
+	req.Sanitize()
+
+	if err := c.v.Struct(req); err != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
+	}
+
+	if form.size > c.cfg.Upload.MaxBytes {
 		return c.renderErrors(
 			ctx,
 			http.StatusRequestEntityTooLarge,
@@ -70,30 +65,14 @@ func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 		)
 	}
 
-	upload, err := header.Open()
-	if err != nil {
-		c.l.Error(fmt.Errorf("web - fileUploadSubmit - header.Open: %w", err))
-
-		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
-	}
-
-	defer func() {
-		closeErr := upload.Close()
-		if closeErr != nil {
-			c.l.Error(fmt.Errorf("web - fileUploadSubmit - upload.Close: %w", closeErr))
-		}
-	}()
-
-	body := newThrottledReader(ctx.UserContext(), upload, rateLimit)
-
 	_, err = c.files.Upload(
 		ctx.UserContext(),
 		userID,
 		req.FolderID,
 		req.Name,
-		header.Header.Get(fiber.HeaderContentType),
-		header.Size,
-		body,
+		form.contentType,
+		form.size,
+		form.file,
 	)
 	if err != nil {
 		return c.uploadError(ctx, err)
@@ -102,6 +81,31 @@ func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
 	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
 
 	return c.renderEntries(ctx, userID, req.FolderID)
+}
+
+// uploadParseError maps a failed multipart read to the response the drawer
+// shows.
+func (c *Controller) uploadParseError(ctx *fiber.Ctx, err error) error {
+	switch {
+	case errors.Is(err, entity.ErrInvalidUpload):
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"Choose a file and give it a name."},
+		)
+
+	case errors.Is(err, entity.ErrFileTooLarge):
+		return c.renderErrors(
+			ctx,
+			http.StatusRequestEntityTooLarge,
+			[]string{"That file is larger than this server accepts."},
+		)
+
+	default:
+		c.l.Error(fmt.Errorf("web - fileUploadSubmit - parseUpload: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
 }
 
 // uploadError maps a failed upload to the response the drawer shows. A delete
@@ -389,13 +393,8 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 		ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", file.Size))
 	}
 
-	defer func() {
-		closeErr := reader.Close()
-		if closeErr != nil {
-			c.l.Error(fmt.Errorf("web - fileDownload - reader.Close: %w", closeErr))
-		}
-	}()
-
+	// The server closes the stream after it writes the response. Closing it
+	// here would close the object before the body is read.
 	return ctx.SendStream(reader)
 }
 
@@ -406,7 +405,7 @@ func (c *Controller) downloadRate(ctx *fiber.Ctx, userID string) (int64, error) 
 		return 0, err
 	}
 
-	return user.EffectiveDownloadRate(0), nil
+	return user.EffectiveDownloadRate(c.cfg.Limits.DownloadRateBytesPerSec), nil
 }
 
 // uploadRate resolves the effective upload rate for the signed-in account.
@@ -416,8 +415,13 @@ func (c *Controller) uploadRate(ctx *fiber.Ctx, userID string) (int64, error) {
 		return 0, err
 	}
 
-	return user.EffectiveUploadRate(0), nil
+	return user.EffectiveUploadRate(c.cfg.Limits.UploadRateBytesPerSec), nil
 }
+
+// _maxThrottleBurst caps the tokens a limiter may hold. The burst also caps
+// one read, so a rate below the reader's buffer size cannot make WaitN reject
+// the read for exceeding the burst.
+const _maxThrottleBurst = 32 * 1024
 
 // newThrottledReader wraps upload with a rate limiter when rateLimit is
 // positive. A non-positive limit leaves the stream untouched.
@@ -430,10 +434,13 @@ func newThrottledReader(ctx context.Context, upload io.Reader, rateLimit int64) 
 		return io.NopCloser(upload)
 	}
 
+	burst := min(rateLimit, int64(_maxThrottleBurst))
+
 	reader := &throttledReader{
 		r:       upload,
-		limiter: rate.NewLimiter(rate.Limit(rateLimit), int(rateLimit)),
+		limiter: rate.NewLimiter(rate.Limit(rateLimit), int(burst)),
 		ctx:     ctx,
+		maxRead: int(burst),
 	}
 
 	if closer, ok := upload.(io.Closer); ok {
@@ -451,6 +458,7 @@ type throttledReader struct {
 	limiter *rate.Limiter
 	ctx     context.Context
 	closer  io.Closer
+	maxRead int
 }
 
 // Close closes the wrapped reader when it can be closed.
@@ -465,6 +473,10 @@ func (t *throttledReader) Close() error {
 // Read pulls bytes from the wrapped reader and waits for the limiter to admit
 // them before returning.
 func (t *throttledReader) Read(p []byte) (int, error) {
+	if t.maxRead > 0 && len(p) > t.maxRead {
+		p = p[:t.maxRead]
+	}
+
 	n, err := t.r.Read(p)
 	if n > 0 && t.limiter != nil {
 		waitCtx := t.ctx

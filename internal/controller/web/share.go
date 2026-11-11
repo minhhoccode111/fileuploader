@@ -300,7 +300,7 @@ func (c *Controller) sharedFileDownload(ctx *fiber.Ctx) error {
 
 	rateLimit := int64(0)
 	if user, userErr := c.u.GetUser(ctx.UserContext(), share.UserID); userErr == nil {
-		rateLimit = user.EffectiveDownloadRate(0)
+		rateLimit = user.EffectiveDownloadRate(c.cfg.Limits.DownloadRateBytesPerSec)
 	}
 
 	if rateLimit > 0 {
@@ -314,13 +314,8 @@ func (c *Controller) sharedFileDownload(ctx *fiber.Ctx) error {
 		ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", opened.Size))
 	}
 
-	defer func() {
-		closeErr := reader.Close()
-		if closeErr != nil {
-			c.l.Error(fmt.Errorf("web - sharedFileDownload - reader.Close: %w", closeErr))
-		}
-	}()
-
+	// The server closes the stream after it writes the response. Closing it
+	// here would close the object before the body is read.
 	return ctx.SendStream(reader)
 }
 

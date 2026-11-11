@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
 )
 
 // errStore is the failure the fake file repository reports for a write.
@@ -490,6 +491,30 @@ func TestUploadRejectsWhenQuotaExceeded(t *testing.T) {
 
 	if storage.putKey != "" {
 		t.Error("Upload() wrote an object over quota")
+	}
+}
+
+func TestUploadUsesGlobalDefaultQuota(t *testing.T) {
+	t.Parallel()
+
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 0, StorageUsedBytes: 2}}
+	files := &fakeFileRepo{}
+	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder", UserID: "user"}}
+	storage := &fakeStorage{}
+	uc := New(
+		users,
+		files,
+		folders,
+		storage,
+		&fakeUnitOfWork{},
+		"bucket",
+		1024,
+		usecase.Limits{StorageQuotaBytes: 4},
+	)
+
+	_, err := uc.Upload(context.Background(), "user", "folder", "note.txt", "text/plain", 4, strings.NewReader("data"))
+	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
+		t.Fatalf("Upload() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
 	}
 }
 
