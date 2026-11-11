@@ -75,6 +75,12 @@ func (m *MinIO) GetObject(ctx context.Context, bucket, key string) (io.ReadClose
 		return nil, fmt.Errorf("minio - GetObject - m.Client.GetObject: %w", err)
 	}
 
+	if _, err := object.Stat(); err != nil {
+		_ = object.Close()
+
+		return nil, fmt.Errorf("minio - GetObject - Stat: %w", err)
+	}
+
 	return object, nil
 }
 

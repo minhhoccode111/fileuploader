@@ -100,9 +100,19 @@ truncateAllMiddle();
 
 function uploadFileWithProgress(form) {
   const progress = document.getElementById("upload-progress");
+  const entries = document.getElementById("drive-entries");
+  const errorBox = document.getElementById("upload-error");
+  const submit = form.querySelector('[type="submit"]');
+
   if (progress) {
     progress.classList.remove("hidden");
     progress.value = 0;
+  }
+  if (errorBox) {
+    errorBox.textContent = "";
+  }
+  if (submit) {
+    submit.disabled = true;
   }
 
   const xhr = new XMLHttpRequest();
@@ -113,18 +123,34 @@ function uploadFileWithProgress(form) {
     }
   };
   xhr.onload = () => {
-    const entries = document.getElementById("drive-entries");
-    if (entries) {
-      entries.innerHTML = xhr.responseText;
-    }
     if (progress) {
       progress.classList.add("hidden");
     }
-    document.dispatchEvent(new CustomEvent("entrySaved"));
+    if (submit) {
+      submit.disabled = false;
+    }
+    if (xhr.status >= 200 && xhr.status < 300) {
+      if (entries) {
+        entries.innerHTML = xhr.responseText;
+        if (window.htmx) {
+          window.htmx.process(entries);
+        }
+        truncateAllMiddle(entries);
+      }
+      document.dispatchEvent(new CustomEvent("entrySaved"));
+    } else if (errorBox) {
+      errorBox.textContent = xhr.responseText || "Upload failed.";
+    }
   };
   xhr.onerror = () => {
     if (progress) {
       progress.classList.add("hidden");
+    }
+    if (submit) {
+      submit.disabled = false;
+    }
+    if (errorBox) {
+      errorBox.textContent = "Upload failed.";
     }
   };
   xhr.send(new FormData(form));
@@ -141,12 +167,22 @@ async function downloadWithProgress(url, filename) {
 
   try {
     const response = await fetch(url);
-    if (!response.ok || !response.body) {
+    const contentType = response.headers.get("Content-Type") || "";
+    if (
+      !response.ok ||
+      !response.body ||
+      response.redirected ||
+      contentType.includes("text/html")
+    ) {
       window.location.href = url;
       return false;
     }
 
     const total = Number(response.headers.get("Content-Length")) || 0;
+    if (progress && !total) {
+      progress.removeAttribute("value");
+    }
+
     const reader = response.body.getReader();
     const chunks = [];
     let loaded = 0;
@@ -161,7 +197,9 @@ async function downloadWithProgress(url, filename) {
       }
     }
 
-    const blob = new Blob(chunks);
+    const blob = new Blob(chunks, {
+      type: contentType || "application/octet-stream",
+    });
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
@@ -169,12 +207,13 @@ async function downloadWithProgress(url, filename) {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    URL.revokeObjectURL(objectUrl);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
   } catch (error) {
     window.location.href = url;
   } finally {
     if (progress) {
       progress.classList.add("hidden");
+      progress.setAttribute("value", "0");
     }
   }
 

@@ -1,10 +1,6 @@
 package templates
 
-import (
-	"strconv"
-
-	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
-)
+import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 
 // filePickerState backs the upload drawer: choosing a file fills the name
 // field with the file name and shows the size and the extension before the
@@ -119,7 +115,12 @@ templ DriveToolbar(page response.Drive) {
 			<a
 				class="btn btn-sm whitespace-nowrap"
 				href={ "/folders/" + page.FolderID + "/download" }
-				onclick={ templ.JSUnsafeFuncCall("return downloadWithProgress(this.href, " + strconv.Quote(page.FolderName + ".zip") + ")") }
+				if page.IsRoot {
+					data-download-name="drive.zip"
+				} else {
+					data-download-name={ page.FolderName + ".zip" }
+				}
+				onclick="downloadWithProgress(this.href, this.dataset.downloadName); return false;"
 			>
 				Download folder
 			</a>
@@ -439,7 +440,8 @@ templ FileDrawerContent(file response.FileInfo) {
 		<a
 			class="btn btn-primary"
 			href={ templ.URL("/files/" + file.ID + "/download") }
-			onclick={ templ.JSUnsafeFuncCall("return downloadWithProgress(this.href, " + strconv.Quote(file.Name) + ")") }
+			data-download-name={ file.Name }
+			onclick="downloadWithProgress(this.href, this.dataset.downloadName); return false;"
 		>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
 				<path d="M12 3v12"></path>

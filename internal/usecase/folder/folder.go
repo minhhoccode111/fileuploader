@@ -725,27 +725,51 @@ func (uc *UseCase) collectZipEntries(
 	entries := make([]_zipEntry, 0)
 
 	for _, id := range subtree {
-		items, listErr := uc.files.List(ctx, userID, id)
-		if listErr != nil {
-			return nil, entity.Folder{}, fmt.Errorf("FolderUseCase - DownloadZip - uc.files.List: %w", listErr)
+		collected, err := uc.collectFolderEntries(ctx, userID, id, relative[id])
+		if err != nil {
+			return nil, entity.Folder{}, err
 		}
 
-		for i := range items {
-			file, getErr := uc.files.Get(ctx, userID, items[i].ID)
-			if getErr != nil {
-				return nil, entity.Folder{}, fmt.Errorf("FolderUseCase - DownloadZip - uc.files.Get: %w", getErr)
-			}
-
-			path := items[i].Name
-			if relative[id] != "" {
-				path = relative[id] + "/" + items[i].Name
-			}
-
-			entries = append(entries, _zipEntry{path: path, file: file})
-		}
+		entries = append(entries, collected...)
 	}
 
 	return entries, root, nil
+}
+
+// collectFolderEntries gathers the files of one folder for the archive.
+func (uc *UseCase) collectFolderEntries(
+	ctx context.Context,
+	userID, folderID, prefix string,
+) ([]_zipEntry, error) {
+	items, err := uc.files.List(ctx, userID, folderID)
+	if err != nil {
+		return nil, fmt.Errorf("FolderUseCase - DownloadZip - uc.files.List: %w", err)
+	}
+
+	entries := make([]_zipEntry, 0, len(items))
+
+	for i := range items {
+		file, getErr := uc.files.Get(ctx, userID, items[i].ID)
+		if getErr != nil {
+			return nil, fmt.Errorf("FolderUseCase - DownloadZip - uc.files.Get: %w", getErr)
+		}
+
+		probe, probeErr := uc.storage.GetObject(ctx, uc.bucket, file.StorageKey)
+		if probeErr != nil {
+			return nil, fmt.Errorf("FolderUseCase - DownloadZip - probe: %w", probeErr)
+		}
+
+		_ = probe.Close()
+
+		path := items[i].Name
+		if prefix != "" {
+			path = prefix + "/" + items[i].Name
+		}
+
+		entries = append(entries, _zipEntry{path: path, file: file})
+	}
+
+	return entries, nil
 }
 
 // relativePaths maps each folder in the subtree to its path inside the archive.
