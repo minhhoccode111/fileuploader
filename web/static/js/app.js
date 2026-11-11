@@ -158,6 +158,40 @@ function uploadFileWithProgress(form) {
   return false;
 }
 
+// Copy a share link to the clipboard. The link in the markup is relative, so
+// the absolute URL is built from the page's origin — that is what a recipient
+// needs. The button confirms the copy for a moment, then returns to its label.
+async function copyShareLink(button) {
+  const link = button.dataset.shareLink;
+  if (!link) return;
+
+  const url = window.location.origin + link;
+
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (error) {
+    const textarea = document.createElement("textarea");
+    textarea.value = url;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+
+  const label = button.querySelector("[data-share-label]");
+  if (!label) return;
+
+  label.textContent = "Copied!";
+  button.disabled = true;
+
+  setTimeout(() => {
+    label.textContent = "Copy link";
+    button.disabled = false;
+  }, 1500);
+}
+
 async function downloadWithProgress(url, filename) {
   const progress = document.getElementById("download-progress");
   if (progress) {

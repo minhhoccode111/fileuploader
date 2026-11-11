@@ -1,8 +1,6 @@
 package templates
 
-import (
-	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
-)
+import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 
 // ShareIndex is the page where an account manages the folders it has shared.
 templ ShareIndex(view View, shares []response.ShareRow) {
@@ -11,74 +9,148 @@ templ ShareIndex(view View, shares []response.ShareRow) {
 	}
 }
 
-// ShareIndexContent is the fragment htmx swaps into <main>.
+// ShareIndexContent is the fragment htmx swaps into <main>. The drawer is part
+// of the page, so every action opens in the same panel on the right.
 templ ShareIndexContent(shares []response.ShareRow) {
 	@PageColumnWide() {
-		<section class="card bg-base-100 shadow">
-			<div class="card-body gap-4">
-				<h1 class="text-3xl font-bold tracking-tight">Shared folders</h1>
-				if len(shares) == 0 {
-					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
-						<p class="text-base-content/70 text-sm">You have not shared any folder yet.</p>
+		<div class="drawer drawer-end">
+			<input
+				id="entry-drawer"
+				type="checkbox"
+				class="drawer-toggle"
+				autocomplete="off"
+			/>
+			<div class="drawer-content flex flex-col gap-4">
+				<section class="card bg-base-100 shadow">
+					<div class="card-body gap-4">
+						<h1 class="text-3xl font-bold tracking-tight">Shared folders</h1>
+						<div id="share-rows" class="overflow-x-auto">
+							@ShareRows(shares)
+						</div>
 					</div>
-				} else {
-					<div class="overflow-x-auto">
-						<table class="table table-zebra table-fixed w-full">
-							<thead>
-								<tr>
-									<th>Folder</th>
-									<th>Link</th>
-									<th>Expires</th>
-									<th class="w-72">Update expiry</th>
-									<th class="w-24"></th>
-								</tr>
-							</thead>
-							<tbody>
-								for _, share := range shares {
-									<tr>
-										<td class="font-medium">
-											<a href={ templ.URL(share.Link) } class="link link-primary">{ share.FolderName }</a>
-										</td>
-										<td class="text-xs break-all">{ share.Link }</td>
-										<td class="whitespace-nowrap">{ share.Expires }</td>
-										<td>
-											<form
-												class="flex flex-wrap items-center gap-2"
-												hx-post={ "/htmx/shares/" + share.ID + "/time" }
-												hx-target="#page-content"
-												hx-swap="innerHTML"
-											>
-												<input
-													class="input input-sm min-w-0"
-													type="datetime-local"
-													name="expires_at"
-												/>
-												<label class="flex items-center gap-1 text-xs">
-													<input type="checkbox" name="unlimited" value="true" class="checkbox checkbox-sm" />
-													Unlimited
-												</label>
-												<button type="submit" class="btn btn-sm">Save</button>
-											</form>
-										</td>
-										<td class="text-right">
-											<form
-												hx-post={ "/htmx/shares/" + share.ID + "/delete" }
-												hx-target="#page-content"
-												hx-swap="innerHTML"
-												hx-confirm="Stop sharing this folder?"
-											>
-												<button type="submit" class="btn btn-sm btn-error btn-outline">Delete</button>
-											</form>
-										</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
-				}
+				</section>
 			</div>
-		</section>
+			<div class="drawer-side z-30">
+				<label for="entry-drawer" aria-label="Close the panel" class="drawer-overlay"></label>
+				<aside id="entry-panel" class="bg-base-100 min-h-full w-1/2"></aside>
+			</div>
+		</div>
 	}
+}
+
+// ShareRows is the table of shares, and the target every share action refreshes.
+templ ShareRows(shares []response.ShareRow) {
+	if len(shares) == 0 {
+		<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
+			<p class="text-base-content/70 text-sm">You have not shared any folder yet.</p>
+		</div>
+	} else {
+		<table class="table table-zebra table-fixed w-full">
+			<thead>
+				<tr>
+					<th>Folder</th>
+					<th>Link</th>
+					<th>Expires</th>
+					<th class="w-12 pe-0"><span class="sr-only">Actions</span></th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, share := range shares {
+					<tr>
+						<td class="font-medium">
+							<a href={ templ.URL(share.Link) } class="link link-primary">{ share.FolderName }</a>
+						</td>
+						<td class="text-xs break-all">{ share.Link }</td>
+						<td class="whitespace-nowrap">{ share.Expires }</td>
+						<td class="pe-0 text-right">
+							<button
+								type="button"
+								class="btn btn-square btn-ghost btn-sm"
+								aria-label={ "Actions for share of " + share.FolderName }
+								hx-get={ "/htmx/shares/" + share.ID }
+								hx-target="#entry-panel"
+								hx-swap="innerHTML"
+								hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+									<circle cx="12" cy="5" r="1.7"></circle>
+									<circle cx="12" cy="12" r="1.7"></circle>
+									<circle cx="12" cy="19" r="1.7"></circle>
+								</svg>
+							</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+// ShareDrawerContent is the drawer one share opens from the actions button: the
+// link, the expiry form and the delete form.
+templ ShareDrawerContent(share response.ShareRow) {
+	<div class="flex flex-col gap-4 p-4">
+		<div class="flex items-start justify-between gap-2">
+			<h3 class="text-lg font-bold break-all">{ share.FolderName }</h3>
+			<label for="entry-drawer" aria-label="Close the panel" class="btn btn-circle btn-ghost btn-sm">✕</label>
+		</div>
+		<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+			<dt class="text-base-content/60">Link</dt>
+			<dd class="break-all">{ share.Link }</dd>
+			<dt class="text-base-content/60">Expires</dt>
+			<dd class="whitespace-nowrap">{ share.Expires }</dd>
+		</dl>
+		<button
+			type="button"
+			class="btn btn-primary"
+			data-share-link={ share.Link }
+			onclick="copyShareLink(this)"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
+				<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+				<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+			</svg>
+			<span data-share-label>Copy link</span>
+		</button>
+		<form
+			class="flex flex-col gap-3"
+			novalidate
+			hx-post={ "/htmx/shares/" + share.ID + "/time" }
+			hx-target="#share-rows"
+			hx-swap="innerHTML"
+			hx-status:4xx="target:#share-expiry-error"
+			hx-status:5xx="target:#share-expiry-error"
+		>
+			<label class="flex flex-col gap-1">
+				<span class="text-sm font-medium">Valid until</span>
+				<input
+					class="input w-full"
+					type="datetime-local"
+					name="expires_at"
+					if share.ExpiresAt != nil {
+						value={ share.ExpiresAt.Format("2006-01-02T15:04") }
+					}
+				/>
+			</label>
+			<label class="flex items-center gap-2 text-sm">
+				<input type="checkbox" name="unlimited" value="true" class="checkbox"/>
+				No expiry (unlimited)
+			</label>
+			<div id="share-expiry-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-sm">Save expiry</button>
+		</form>
+		<form
+			hx-post={ "/htmx/shares/" + share.ID + "/delete" }
+			hx-target="#share-rows"
+			hx-swap="innerHTML"
+			hx-confirm="Stop sharing this folder?"
+			hx-status:4xx="target:#share-delete-error"
+			hx-status:5xx="target:#share-delete-error"
+		>
+			<div id="share-delete-error" class="text-error text-sm" role="alert"></div>
+			<button type="submit" class="btn btn-sm btn-error btn-outline">Delete share</button>
+		</form>
+	</div>
 }
 
 // SharedDrive is the read-only view of a shared folder.
@@ -156,6 +228,7 @@ templ SharedDriveContent(page response.SharedDrive) {
 		</section>
 	}
 }
+
 // ShareCreateContent is the drawer form that creates a public link to a folder.
 templ ShareCreateContent(folderID, name string) {
 	<div class="flex flex-col gap-4 p-4">
@@ -182,7 +255,7 @@ templ ShareCreateContent(folderID, name string) {
 				/>
 			</label>
 			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" name="unlimited" value="true" class="checkbox" />
+				<input type="checkbox" name="unlimited" value="true" class="checkbox"/>
 				No expiry (unlimited)
 			</label>
 			<div id="share-error" class="text-error text-sm" role="alert"></div>

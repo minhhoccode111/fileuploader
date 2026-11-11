@@ -30,6 +30,10 @@ const (
 	// exist or belongs to another account.
 	_folderNotFoundMessage = "That folder is not here any more."
 
+	// _shareNotFoundMessage is shown when a share the request names does not
+	// exist, has expired or belongs to another account.
+	_shareNotFoundMessage = "That share is no longer here."
+
 	// _sessionLocal is where the auth guard parks the session it resolved, which
 	// is how a handler learns who the visitor is and what role they hold.
 	_sessionLocal = "session"

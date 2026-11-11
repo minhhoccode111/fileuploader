@@ -23,11 +23,22 @@ func (c *Controller) shareIndex(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _loginPath)
 	}
 
-	shares, err := c.shares.List(ctx.UserContext(), userID)
+	rows, err := c.shareRows(ctx, userID)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - shareIndex - uc.shares.List: %w", err))
+		c.l.Error(fmt.Errorf("web - shareIndex - %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	return c.render(ctx, templates.ShareIndex(c.view(ctx), rows), templates.ShareIndexContent(rows), templates.ShareTitle)
+}
+
+// shareRows lists the active shares of the account and maps them to the rows
+// the index renders.
+func (c *Controller) shareRows(ctx *fiber.Ctx, userID string) ([]response.ShareRow, error) {
+	shares, err := c.shares.List(ctx.UserContext(), userID)
+	if err != nil {
+		return nil, fmt.Errorf("uc.shares.List: %w", err)
 	}
 
 	rows := make([]response.ShareRow, 0, len(shares))
@@ -38,13 +49,26 @@ func (c *Controller) shareIndex(ctx *fiber.Ctx) error {
 		if err == nil {
 			name = folder.Name
 		} else if !errors.Is(err, entity.ErrFolderNotFound) {
-			c.l.Error(fmt.Errorf("web - shareIndex - uc.folders.Get: %w", err))
+			c.l.Error(fmt.Errorf("web - shareRows - uc.folders.Get: %w", err))
 		}
 
 		rows = append(rows, response.NewShareRow(&shares[i], name))
 	}
 
-	return c.render(ctx, templates.ShareIndex(c.view(ctx), rows), templates.ShareIndexContent(rows), templates.ShareTitle)
+	return rows, nil
+}
+
+// renderShareRows answers a share action with the table of shares it changed,
+// so htmx swaps the rows in place.
+func (c *Controller) renderShareRows(ctx *fiber.Ctx, userID string) error {
+	rows, err := c.shareRows(ctx, userID)
+	if err != nil {
+		c.l.Error(fmt.Errorf("web - renderShareRows - %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	return c.renderPage(ctx, templates.ShareRows(rows))
 }
 
 // shareForm fills the drawer with the form that creates a share for a folder.
@@ -65,6 +89,46 @@ func (c *Controller) shareForm(ctx *fiber.Ctx) error {
 	}
 
 	return c.renderPage(ctx, templates.ShareCreateContent(folder.ID, folder.Name))
+}
+
+// shareDrawer fills the drawer with the actions of one share: the link, the
+// expiry form and the delete form.
+func (c *Controller) shareDrawer(ctx *fiber.Ctx) error {
+	shareID := ctx.Params("share")
+	if !c.validID(shareID) {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	share, err := c.shares.Get(ctx.UserContext(), shareID)
+	if err != nil {
+		if errors.Is(err, entity.ErrShareNotFound) || errors.Is(err, entity.ErrShareExpired) {
+			return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
+		}
+
+		c.l.Error(fmt.Errorf("web - shareDrawer - uc.shares.Get: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	if share.UserID != userID {
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
+	}
+
+	name := share.FolderID
+
+	folder, err := c.folders.Get(ctx.UserContext(), userID, share.FolderID)
+	if err == nil {
+		name = folder.Name
+	} else if !errors.Is(err, entity.ErrFolderNotFound) {
+		c.l.Error(fmt.Errorf("web - shareDrawer - uc.folders.Get: %w", err))
+	}
+
+	return c.renderPage(ctx, templates.ShareDrawerContent(response.NewShareRow(&share, name)))
 }
 
 // shareCreate makes a share for the folder the drawer names and sends the
@@ -99,11 +163,12 @@ func (c *Controller) shareCreate(ctx *fiber.Ctx) error {
 	return middleware.Redirect(ctx, "/share")
 }
 
-// shareUpdateTime changes the expiry of a share owned by the account.
+// shareUpdateTime changes the expiry of a share owned by the account and
+// refreshes the table the share sits in.
 func (c *Controller) shareUpdateTime(ctx *fiber.Ctx) error {
 	shareID := ctx.Params("share")
 	if !c.validID(shareID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That share is no longer here."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 	}
 
 	var req request.ShareUpdateExpiry
@@ -126,7 +191,7 @@ func (c *Controller) shareUpdateTime(ctx *fiber.Ctx) error {
 
 	if _, err := c.shares.UpdateExpiry(ctx.UserContext(), userID, shareID, expiresAt); err != nil {
 		if errors.Is(err, entity.ErrShareNotFound) {
-			return c.renderErrors(ctx, http.StatusNotFound, []string{"That share is no longer here."})
+			return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 		}
 
 		c.l.Error(fmt.Errorf("web - shareUpdateTime - uc.shares.UpdateExpiry: %w", err))
@@ -134,14 +199,17 @@ func (c *Controller) shareUpdateTime(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	return middleware.Redirect(ctx, "/share")
+	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
+
+	return c.renderShareRows(ctx, userID)
 }
 
-// shareDelete removes a share owned by the account.
+// shareDelete removes a share owned by the account and refreshes the table it
+// sat in.
 func (c *Controller) shareDelete(ctx *fiber.Ctx) error {
 	shareID := ctx.Params("share")
 	if !c.validID(shareID) {
-		return c.renderErrors(ctx, http.StatusNotFound, []string{"That share is no longer here."})
+		return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 	}
 
 	userID, ok := c.userID(ctx)
@@ -151,7 +219,7 @@ func (c *Controller) shareDelete(ctx *fiber.Ctx) error {
 
 	if err := c.shares.Delete(ctx.UserContext(), userID, shareID); err != nil {
 		if errors.Is(err, entity.ErrShareNotFound) {
-			return c.renderErrors(ctx, http.StatusNotFound, []string{"That share is no longer here."})
+			return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 		}
 
 		c.l.Error(fmt.Errorf("web - shareDelete - uc.shares.Delete: %w", err))
@@ -159,7 +227,9 @@ func (c *Controller) shareDelete(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	return middleware.Redirect(ctx, "/share")
+	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
+
+	return c.renderShareRows(ctx, userID)
 }
 
 // sharedRoot opens the root of a shared folder. An owner who opens her own

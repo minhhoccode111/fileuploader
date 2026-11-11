@@ -81,6 +81,7 @@ func NewRouter(
 
 	// Shares
 	app.Get("/htmx/folders/:folder/share", middleware.RequireAuth(u), c.shareForm)
+	app.Get("/htmx/shares/:share", middleware.RequireAuth(u), c.shareDrawer)
 	app.Post("/htmx/shares", middleware.RequireAuth(u), c.shareCreate)
 	app.Post("/htmx/shares/:share/time", middleware.RequireAuth(u), c.shareUpdateTime)
 	app.Post("/htmx/shares/:share/delete", middleware.RequireAuth(u), c.shareDelete)
