@@ -94,6 +94,13 @@ type (
 		LockQuota(ctx context.Context, userID string) (func(), error)
 	}
 
+	// TransferLimiter paces the bytes one account sends. Pace reserves bytes
+	// at rate bytes per second and returns once the reservation may transmit,
+	// so a slow account is delayed at the sender and never at the socket.
+	TransferLimiter interface {
+		Pace(ctx context.Context, userID string, bytes, rate int64) error
+	}
+
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the
 	// only thing the repository layer knows about it, so the storage can be
 	// swapped without touching the domain.
