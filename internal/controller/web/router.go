@@ -49,7 +49,11 @@ func NewRouter(
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
 	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
-	app.Use(middleware.BodyLimit(cfg.Upload.MaxBytes+config.MultipartOverheadBytes, "/htmx/files"))
+	app.Use(middleware.BodyLimit(
+		_generalBodyLimitBytes,
+		cfg.Upload.PartBytes+config.MultipartOverheadBytes,
+		"/htmx/uploads/",
+	))
 
 	// K8s probe
 	app.Get("/healthz", func(ctx *fiber.Ctx) error {
@@ -99,7 +103,6 @@ func NewRouter(
 	app.Post("/htmx/folders/:folder/duplicate", middleware.RequireAuth(u), c.folderDuplicate)
 	app.Post("/htmx/folders/:folder/delete", middleware.RequireAuth(u), c.folderDelete)
 	app.Get("/htmx/files/new", middleware.RequireAuth(u), c.fileNew)
-	app.Post("/htmx/files", middleware.RequireAuth(u), c.fileUploadSubmit)
 	app.Get("/htmx/files/:file", middleware.RequireAuth(u), c.fileDrawer)
 	app.Get("/htmx/files/:file/move", middleware.RequireAuth(u), c.fileMoveForm)
 	app.Post("/htmx/files/:file/rename", middleware.RequireAuth(u), c.fileRename)
@@ -107,6 +110,13 @@ func NewRouter(
 	app.Post("/htmx/files/:file/move", middleware.RequireAuth(u), c.fileMove)
 	app.Get("/htmx/files/:file/duplicate", middleware.RequireAuth(u), c.fileDuplicateForm)
 	app.Post("/htmx/files/:file/duplicate", middleware.RequireAuth(u), c.fileDuplicate)
+
+	// Uploads
+	app.Post("/htmx/uploads", middleware.RequireAuth(u), c.uploadStart)
+	app.Put("/htmx/uploads/:upload/parts/:part", middleware.RequireAuth(u), c.uploadPart)
+	app.Post("/htmx/uploads/:upload/complete", middleware.RequireAuth(u), c.uploadComplete)
+	app.Post("/htmx/uploads/:upload/abort", middleware.RequireAuth(u), c.uploadAbort)
+
 	app.Get("/files/:file/download", middleware.RequireAuth(u), c.fileDownload)
 	app.Get("/folders/:folder/download", middleware.RequireAuth(u), c.folderDownloadZip)
 	app.Get("/download", middleware.RequireAuth(u), c.folderDownloadZip)

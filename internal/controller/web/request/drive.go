@@ -15,18 +15,6 @@ func (r *FolderCreate) Sanitize() {
 	r.Name = strings.TrimSpace(r.Name)
 }
 
-// FileUpload is the drawer form that stores one file. The file itself is read
-// from the multipart request; this type carries the fields next to it.
-type FileUpload struct {
-	FolderID string `form:"folder" validate:"required,uuid4"`
-	Name     string `form:"name"   validate:"required,max=255"`
-}
-
-// Sanitize trims the name before validation runs.
-func (r *FileUpload) Sanitize() {
-	r.Name = strings.TrimSpace(r.Name)
-}
-
 // FileRename is the form the file drawer submits to change the name a file is
 // listed under.
 type FileRename struct {

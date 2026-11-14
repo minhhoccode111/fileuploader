@@ -24,101 +24,6 @@ func (c *Controller) fileNew(ctx *fiber.Ctx) error {
 	return c.renderPage(ctx, templates.FileUploadContent(ctx.Query("folder")))
 }
 
-// fileUploadSubmit stores the one file the drawer form carried. The name is
-// the one in the form, not the one the browser sent with the file, so the
-// visitor can name it before it is stored. The body limit of the server and
-// the use case both guard the size.
-func (c *Controller) fileUploadSubmit(ctx *fiber.Ctx) error {
-	userID, ok := c.userID(ctx)
-	if !ok {
-		return middleware.Redirect(ctx, _loginPath)
-	}
-
-	rateLimit, err := c.uploadRate(ctx, userID)
-	if err != nil {
-		return c.driveError(ctx, err, "fileUploadSubmit - c.u.GetUser")
-	}
-
-	form, err := parseUpload(ctx, c.cfg.Upload.MaxBytes, rateLimit)
-	if err != nil {
-		return c.uploadParseError(ctx, err)
-	}
-
-	defer form.cleanup()
-
-	req := request.FileUpload{
-		FolderID: form.folderID,
-		Name:     form.name,
-	}
-
-	req.Sanitize()
-
-	if err := c.v.Struct(req); err != nil {
-		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
-	}
-
-	if form.size > c.cfg.Upload.MaxBytes {
-		return c.renderErrors(
-			ctx,
-			http.StatusRequestEntityTooLarge,
-			[]string{"That file is larger than this server accepts."},
-		)
-	}
-
-	_, err = c.files.Upload(
-		ctx.UserContext(),
-		userID,
-		req.FolderID,
-		req.Name,
-		form.contentType,
-		form.size,
-		form.file,
-	)
-	if err != nil {
-		return c.uploadError(ctx, err)
-	}
-
-	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
-
-	return c.renderEntries(ctx, userID, req.FolderID)
-}
-
-// uploadParseError maps a failed multipart read to the response the drawer
-// shows.
-func (c *Controller) uploadParseError(ctx *fiber.Ctx, err error) error {
-	switch {
-	case errors.Is(err, entity.ErrInvalidUpload):
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"Choose a file and give it a name."},
-		)
-
-	case errors.Is(err, entity.ErrFileTooLarge):
-		return c.renderErrors(
-			ctx,
-			http.StatusRequestEntityTooLarge,
-			[]string{"That file is larger than this server accepts."},
-		)
-
-	default:
-		c.l.Error(fmt.Errorf("web - fileUploadSubmit - parseUpload: %w", err))
-
-		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
-	}
-}
-
-// uploadError maps a failed upload to the response the drawer shows. A delete
-// that could not remove the object is logged, because the row is gone and the
-// visitor cannot act on the leftover.
-func (c *Controller) uploadError(ctx *fiber.Ctx, err error) error {
-	if errors.Is(err, entity.ErrStorageCleanup) {
-		c.l.Error(fmt.Errorf("web - fileUploadSubmit - uc.files.Upload cleanup: %w", err))
-	}
-
-	return c.driveError(ctx, err, "fileUploadSubmit - uc.files.Upload")
-}
-
 // fileDrawer fills the drawer with the actions of one file: the download
 // link, the rename form and the delete form.
 func (c *Controller) fileDrawer(ctx *fiber.Ctx) error {
@@ -406,16 +311,6 @@ func (c *Controller) downloadRate(ctx *fiber.Ctx, userID string) (int64, error) 
 	}
 
 	return user.EffectiveDownloadRate(c.cfg.Limits.DownloadRateBytesPerSec), nil
-}
-
-// uploadRate resolves the effective upload rate for the signed-in account.
-func (c *Controller) uploadRate(ctx *fiber.Ctx, userID string) (int64, error) {
-	user, err := c.u.GetUser(ctx.UserContext(), userID)
-	if err != nil {
-		return 0, err
-	}
-
-	return user.EffectiveUploadRate(c.cfg.Limits.UploadRateBytesPerSec), nil
 }
 
 // _maxThrottleBurst caps the tokens a limiter may hold. The burst also caps

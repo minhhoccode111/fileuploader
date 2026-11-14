@@ -1,178 +1,516 @@
 package web
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
+	"context"
+	"encoding/json"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
+	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 )
 
-// uploadBody builds the multipart body the upload drawer sends: the folder
-// first, the file second, the name last.
-func uploadBody(t *testing.T, folderID, name, filename, content string) (body *bytes.Buffer, contentType string) {
-	t.Helper()
+const (
+	// _uploadTestFolder is the folder every upload test starts in.
+	_uploadTestFolder = "550e8400-e29b-41d4-a716-446655440000"
 
-	var buf bytes.Buffer
+	// _uploadTestID is the upload session the fake use case hands back.
+	_uploadTestID = "7d444840-9dc0-41d1-b245-5ffdce74fad2"
 
-	writer := multipart.NewWriter(&buf)
+	// _uploadTestPartBytes is the part size the controller is configured with,
+	// small enough to cross with one short body.
+	_uploadTestPartBytes = int64(8)
+)
 
-	if err := writer.WriteField("folder", folderID); err != nil {
-		t.Fatalf("WriteField(folder) error = %v, want nil", err)
-	}
+// fakeUploadFile is a file use case that records the calls of the upload
+// handlers and answers with the canned session, file or error of the test.
+type fakeUploadFile struct {
+	usecase.File
 
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		t.Fatalf("CreateFormFile() error = %v, want nil", err)
-	}
+	session  entity.UploadSession
+	startErr error
 
-	if _, err := part.Write([]byte(content)); err != nil {
-		t.Fatalf("part.Write() error = %v, want nil", err)
-	}
+	startedFolder      string
+	startedName        string
+	startedContentType string
+	startedSize        int64
 
-	if err := writer.WriteField("name", name); err != nil {
-		t.Fatalf("WriteField(name) error = %v, want nil", err)
-	}
+	partNumber int
+	partSize   int64
+	partBody   string
+	partCalls  int
+	partErr    error
 
-	if err := writer.Close(); err != nil {
-		t.Fatalf("writer.Close() error = %v, want nil", err)
-	}
+	file          entity.File
+	completeID    string
+	completeCalls int
+	completeErr   error
 
-	return &buf, writer.FormDataContentType()
+	abortedID  string
+	abortCalls int
+	abortErr   error
 }
 
-func uploadApp(t *testing.T, maxBytes int64) *fiber.App {
-	t.Helper()
+func (f *fakeUploadFile) StartUpload(
+	_ context.Context,
+	_, folderID, name, contentType string,
+	size int64,
+) (entity.UploadSession, error) {
+	f.startedFolder = folderID
+	f.startedName = name
+	f.startedContentType = contentType
+	f.startedSize = size
 
-	app := fiber.New(fiber.Config{
-		StreamRequestBody:            true,
-		DisablePreParseMultipartForm: true,
+	return f.session, f.startErr
+}
+
+func (f *fakeUploadFile) UploadPart(
+	_ context.Context,
+	_, _ string,
+	partNumber int,
+	body io.Reader,
+	size int64,
+) error {
+	f.partCalls++
+	f.partNumber = partNumber
+	f.partSize = size
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+
+	f.partBody = string(data)
+
+	return f.partErr
+}
+
+func (f *fakeUploadFile) CompleteUpload(_ context.Context, _, uploadID string) (entity.File, error) {
+	f.completeCalls++
+	f.completeID = uploadID
+
+	return f.file, f.completeErr
+}
+
+func (f *fakeUploadFile) AbortUpload(_ context.Context, _, uploadID string) error {
+	f.abortCalls++
+	f.abortedID = uploadID
+
+	return f.abortErr
+}
+
+// fakeUploadFolder answers the folder listing the entries fragment needs.
+type fakeUploadFolder struct {
+	usecase.Folder
+
+	view entity.FolderView
+	err  error
+}
+
+func (f *fakeUploadFolder) List(_ context.Context, _, _ string) (entity.FolderView, error) {
+	return f.view, f.err
+}
+
+// uploadApp wires the four upload handlers behind a middleware that parks the
+// session the auth guard would park.
+func uploadApp(files usecase.File, folders usecase.Folder) *fiber.App {
+	c := &Controller{
+		files:   files,
+		folders: folders,
+		l:       logger.New("error"),
+		v:       validatorx.New(),
+		cfg:     &config.Config{},
+	}
+	c.cfg.Upload.PartBytes = _uploadTestPartBytes
+
+	app := fiber.New()
+
+	app.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals(_sessionLocal, entity.Session{UserID: "user"})
+
+		return ctx.Next()
 	})
 
-	app.Post("/", func(ctx *fiber.Ctx) error {
-		form, err := parseUpload(ctx, maxBytes, 0)
-		if err != nil {
-			switch {
-			case errors.Is(err, entity.ErrFileTooLarge):
-				return ctx.Status(http.StatusRequestEntityTooLarge).SendString(err.Error())
-			case errors.Is(err, entity.ErrInvalidUpload):
-				return ctx.Status(http.StatusUnprocessableEntity).SendString(err.Error())
-			default:
-				return ctx.Status(http.StatusInternalServerError).SendString(err.Error())
-			}
-		}
-		defer form.cleanup()
-
-		return ctx.SendString(fmt.Sprintf(
-			"%s|%s|%d|%s",
-			form.folderID,
-			form.name,
-			form.size,
-			form.contentType,
-		))
-	})
+	app.Post("/htmx/uploads", c.uploadStart)
+	app.Put("/htmx/uploads/:upload/parts/:part", c.uploadPart)
+	app.Post("/htmx/uploads/:upload/complete", c.uploadComplete)
+	app.Post("/htmx/uploads/:upload/abort", c.uploadAbort)
 
 	return app
 }
 
-func TestParseUploadReadsFieldsAndFile(t *testing.T) {
+func TestUploadStartReturnsPartPlan(t *testing.T) {
 	t.Parallel()
 
-	body, contentType := uploadBody(
-		t,
-		"550e8400-e29b-41d4-a716-446655440000",
-		"greeting.txt",
-		"ignored-name.txt",
-		"hello",
-	)
+	files := &fakeUploadFile{
+		session: entity.UploadSession{
+			ID:        _uploadTestID,
+			PartSize:  50 << 20,
+			PartCount: 2,
+		},
+	}
 
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
-	req.Header.Set(fiber.HeaderContentType, contentType)
+	app := uploadApp(files, &fakeUploadFolder{})
 
-	res, err := uploadApp(t, 1<<20).Test(req)
+	body := `{"folder":"` + _uploadTestFolder + `","name":" note.txt ",` +
+		`"size":104857600,"content_type":"text/plain"}`
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/htmx/uploads", strings.NewReader(body))
+	req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+
+	res, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("app.Test() error = %v, want nil", err)
 	}
 
 	defer res.Body.Close()
 
-	raw := new(bytes.Buffer)
-	if _, err := raw.ReadFrom(res.Body); err != nil {
-		t.Fatalf("ReadFrom() error = %v, want nil", err)
+	var got response.UploadStart
+	if decodeErr := json.NewDecoder(res.Body).Decode(&got); decodeErr != nil {
+		t.Fatalf("Decode() error = %v, want nil", decodeErr)
 	}
 
-	want := "550e8400-e29b-41d4-a716-446655440000|greeting.txt|5|application/octet-stream"
-	if res.StatusCode != http.StatusOK || raw.String() != want {
-		t.Fatalf("status = %d, body = %q, want 200 %q", res.StatusCode, raw.String(), want)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusOK)
+	}
+
+	want := response.UploadStart{UploadID: _uploadTestID, PartSize: 50 << 20, PartCount: 2}
+	if got != want {
+		t.Errorf("body = %+v, want %+v", got, want)
+	}
+
+	if files.startedFolder != _uploadTestFolder {
+		t.Errorf("StartUpload folder = %q, want %q", files.startedFolder, _uploadTestFolder)
+	}
+
+	if files.startedName != "note.txt" {
+		t.Errorf("StartUpload name = %q, want %q", files.startedName, "note.txt")
+	}
+
+	if files.startedContentType != "text/plain" {
+		t.Errorf("StartUpload content type = %q, want %q", files.startedContentType, "text/plain")
+	}
+
+	if files.startedSize != 104857600 {
+		t.Errorf("StartUpload size = %d, want %d", files.startedSize, 104857600)
 	}
 }
 
-func TestParseUploadRejectsAnOversizedFile(t *testing.T) {
+func TestUploadStartRejectsAnInvalidBody(t *testing.T) {
 	t.Parallel()
 
-	body, contentType := uploadBody(t, "550e8400-e29b-41d4-a716-446655440000", "greeting.txt", "greeting.txt", "hello")
+	files := &fakeUploadFile{}
+	app := uploadApp(files, &fakeUploadFolder{})
 
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body)
-	req.Header.Set(fiber.HeaderContentType, contentType)
+	body := `{"folder":"` + _uploadTestFolder + `","size":5,"content_type":"text/plain"}`
 
-	res, err := uploadApp(t, 4).Test(req)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/htmx/uploads", strings.NewReader(body))
+	req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+
+	res, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("app.Test() error = %v, want nil", err)
 	}
 
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusRequestEntityTooLarge)
-	}
-}
-
-func TestUploadBodyLimitRejectsOverLimit(t *testing.T) {
-	t.Parallel()
-
-	body := &_uploadBodyLimit{reader: strings.NewReader("hello"), left: 4}
-
-	if _, err := io.ReadAll(body); !errors.Is(err, entity.ErrFileTooLarge) {
-		t.Fatalf("ReadAll() error = %v, want %v", err, entity.ErrFileTooLarge)
-	}
-}
-
-func TestParseUploadRejectsAMissingFile(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-
-	writer := multipart.NewWriter(&buf)
-	if err := writer.WriteField("folder", "550e8400-e29b-41d4-a716-446655440000"); err != nil {
-		t.Fatalf("WriteField(folder) error = %v, want nil", err)
-	}
-
-	if err := writer.WriteField("name", "greeting.txt"); err != nil {
-		t.Fatalf("WriteField(name) error = %v, want nil", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("writer.Close() error = %v, want nil", err)
-	}
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", &buf)
-	req.Header.Set(fiber.HeaderContentType, writer.FormDataContentType())
-
-	res, err := uploadApp(t, 1<<20).Test(req)
+	raw, err := io.ReadAll(res.Body)
 	if err != nil {
-		t.Fatalf("app.Test() error = %v, want nil", err)
+		t.Fatalf("io.ReadAll() error = %v, want nil", err)
 	}
-
-	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusUnprocessableEntity)
 	}
+
+	if len(raw) == 0 {
+		t.Error("body is empty, want the validation message")
+	}
+
+	if strings.Contains(string(raw), "<") {
+		t.Errorf("body = %q, want plain text", raw)
+	}
+
+	if files.startedName != "" {
+		t.Errorf("StartUpload ran for an invalid body, name = %q", files.startedName)
+	}
+}
+
+// A part request must carry a body and a length. A request without one, or
+// with more bytes than one part may carry, is refused before the use case is
+// asked to store anything.
+func TestUploadPartRejectsAWrongContentLength(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty body", func(t *testing.T) {
+		t.Parallel()
+
+		files := &fakeUploadFile{}
+		app := uploadApp(files, &fakeUploadFolder{})
+
+		req := httptest.NewRequestWithContext(
+			t.Context(),
+			http.MethodPut,
+			"/htmx/uploads/"+_uploadTestID+"/parts/1",
+			http.NoBody,
+		)
+
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("app.Test() error = %v, want nil", err)
+		}
+
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusLengthRequired {
+			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusLengthRequired)
+		}
+
+		if files.partCalls != 0 {
+			t.Errorf("UploadPart calls = %d, want 0", files.partCalls)
+		}
+	})
+
+	t.Run("oversized part", func(t *testing.T) {
+		t.Parallel()
+
+		files := &fakeUploadFile{}
+		app := uploadApp(files, &fakeUploadFolder{})
+
+		req := httptest.NewRequestWithContext(
+			t.Context(),
+			http.MethodPut,
+			"/htmx/uploads/"+_uploadTestID+"/parts/1",
+			strings.NewReader(strings.Repeat("x", int(_uploadTestPartBytes)+1)),
+		)
+
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("app.Test() error = %v, want nil", err)
+		}
+
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusRequestEntityTooLarge)
+		}
+
+		if files.partCalls != 0 {
+			t.Errorf("UploadPart calls = %d, want 0", files.partCalls)
+		}
+	})
+}
+
+func TestUploadPartPassesTheExactSize(t *testing.T) {
+	t.Parallel()
+
+	files := &fakeUploadFile{}
+	app := uploadApp(files, &fakeUploadFolder{})
+
+	payload := strings.Repeat("x", int(_uploadTestPartBytes))
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPut,
+		"/htmx/uploads/"+_uploadTestID+"/parts/2",
+		strings.NewReader(payload),
+	)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusNoContent)
+	}
+
+	if files.partCalls != 1 {
+		t.Fatalf("UploadPart calls = %d, want 1", files.partCalls)
+	}
+
+	if files.partNumber != 2 {
+		t.Errorf("UploadPart part number = %d, want 2", files.partNumber)
+	}
+
+	if files.partSize != _uploadTestPartBytes {
+		t.Errorf("UploadPart size = %d, want %d", files.partSize, _uploadTestPartBytes)
+	}
+
+	if files.partBody != payload {
+		t.Errorf("UploadPart body = %q, want %q", files.partBody, payload)
+	}
+}
+
+func TestUploadCompleteSetsTheFolderHeader(t *testing.T) {
+	t.Parallel()
+
+	const fileID = "9f5d0a3e-4c22-4bb3-9a49-41b2c3d4e5f6"
+
+	files := &fakeUploadFile{
+		file: entity.File{
+			ID:          fileID,
+			Name:        "note.txt",
+			FolderID:    _uploadTestFolder,
+			ContentType: "text/plain",
+			Size:        104857600,
+		},
+	}
+	folders := &fakeUploadFolder{
+		view: entity.FolderView{
+			Folder: entity.Folder{ID: _uploadTestFolder, Name: "documents"},
+			Files: []entity.FileItem{{
+				ID:          fileID,
+				Name:        "note.txt",
+				ContentType: "text/plain",
+				Size:        104857600,
+			}},
+		},
+	}
+
+	app := uploadApp(files, folders)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/htmx/uploads/"+_uploadTestID+"/complete",
+		http.NoBody,
+	)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v, want nil", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusOK)
+	}
+
+	if got := res.Header.Get("X-Upload-Folder"); got != _uploadTestFolder {
+		t.Errorf("X-Upload-Folder = %q, want %q", got, _uploadTestFolder)
+	}
+
+	if got := res.Header.Get(_hxTriggerHeader); got != _entrySavedEvent {
+		t.Errorf("HX-Trigger = %q, want %q", got, _entrySavedEvent)
+	}
+
+	if files.completeCalls != 1 || files.completeID != _uploadTestID {
+		t.Errorf("CompleteUpload calls = %d, id = %q, want 1, %q", files.completeCalls, files.completeID, _uploadTestID)
+	}
+
+	if !strings.Contains(string(body), "note.txt") {
+		t.Errorf("body = %q, want the entries fragment", body)
+	}
+}
+
+func TestUploadAbortReturnsNoContent(t *testing.T) {
+	t.Parallel()
+
+	files := &fakeUploadFile{}
+	app := uploadApp(files, &fakeUploadFolder{})
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/htmx/uploads/"+_uploadTestID+"/abort",
+		http.NoBody,
+	)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusNoContent)
+	}
+
+	if files.abortCalls != 1 || files.abortedID != _uploadTestID {
+		t.Errorf("AbortUpload calls = %d, id = %q, want 1, %q", files.abortCalls, files.abortedID, _uploadTestID)
+	}
+}
+
+func TestUploadErrorMapsQuotaAndMissingUpload(t *testing.T) {
+	t.Parallel()
+
+	t.Run("quota exceeded", func(t *testing.T) {
+		t.Parallel()
+
+		files := &fakeUploadFile{startErr: entity.ErrStorageQuotaExceeded}
+		app := uploadApp(files, &fakeUploadFolder{})
+
+		body := `{"folder":"` + _uploadTestFolder + `","name":"note.txt",` +
+			`"size":104857600,"content_type":"text/plain"}`
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/htmx/uploads", strings.NewReader(body))
+		req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("app.Test() error = %v, want nil", err)
+		}
+
+		defer res.Body.Close()
+
+		raw, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatalf("io.ReadAll() error = %v, want nil", err)
+		}
+
+		if res.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusRequestEntityTooLarge)
+		}
+
+		if len(raw) == 0 {
+			t.Error("body is empty, want the quota message")
+		}
+
+		if strings.Contains(string(raw), "<") {
+			t.Errorf("body = %q, want plain text", raw)
+		}
+	})
+
+	t.Run("missing upload", func(t *testing.T) {
+		t.Parallel()
+
+		files := &fakeUploadFile{completeErr: entity.ErrUploadNotFound}
+		app := uploadApp(files, &fakeUploadFolder{})
+
+		req := httptest.NewRequestWithContext(
+			t.Context(),
+			http.MethodPost,
+			"/htmx/uploads/"+_uploadTestID+"/complete",
+			http.NoBody,
+		)
+
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("app.Test() error = %v, want nil", err)
+		}
+
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusNotFound)
+		}
+	})
 }
