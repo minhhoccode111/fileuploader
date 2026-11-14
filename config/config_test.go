@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // setRequiredEnv fills the environment the config parser requires.
 func setRequiredEnv(t *testing.T) {
@@ -44,6 +47,28 @@ func TestLimitsDefaultToUnlimited(t *testing.T) {
 
 	if cfg.Limits.DownloadRateBytesPerSec != 0 {
 		t.Errorf("download rate = %d, want 0", cfg.Limits.DownloadRateBytesPerSec)
+	}
+}
+
+//nolint:paralleltest // t.Setenv cannot run in a parallel test
+func TestUploadDefaults(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := NewConfig()
+	if err != nil {
+		t.Fatalf("NewConfig() error = %v, want nil", err)
+	}
+
+	if cfg.Upload.MaxBytes != 10737418240 {
+		t.Errorf("upload max = %d, want 10737418240", cfg.Upload.MaxBytes)
+	}
+
+	if cfg.Upload.PartBytes != 52428800 {
+		t.Errorf("upload part = %d, want 52428800", cfg.Upload.PartBytes)
+	}
+
+	if cfg.Upload.SessionIdleTTL != time.Hour {
+		t.Errorf("upload session idle TTL = %v, want 1h", cfg.Upload.SessionIdleTTL)
 	}
 }
 

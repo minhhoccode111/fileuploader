@@ -33,7 +33,9 @@ x-backend-app-environment: &x-backend-app-environment
   # The browser runs on the host, where the container name does not resolve.
   MINIO_PUBLIC_ENDPOINT: "localhost:9000"
   # Uploads
-  UPLOAD_MAX_BYTES: "104857600"
+  UPLOAD_MAX_BYTES: "10737418240"
+  UPLOAD_PART_BYTES: "52428800"
+  UPLOAD_SESSION_IDLE_TTL: "1h"
   UPLOAD_TIMEOUT: "5m"
   # Global limits (zero means unlimited)
   STORAGE_DEFAULT_QUOTA_BYTES: "0"

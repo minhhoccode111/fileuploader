@@ -76,10 +76,16 @@ type (
 
 	// Upload -.
 	upload struct {
-		// MaxBytes is the largest body the server accepts. It bounds one
-		// multipart upload, so a single request cannot exceed the configured
-		// size.
-		MaxBytes int64 `env:"UPLOAD_MAX_BYTES" envDefault:"104857600"`
+		// MaxBytes is the largest file an account may upload. It bounds the
+		// whole file now that it arrives in parts, not just one request.
+		MaxBytes int64 `env:"UPLOAD_MAX_BYTES" envDefault:"10737418240"`
+		// PartBytes is the size of one part of a multipart upload. The last
+		// part may be shorter; the store needs every other part at least as
+		// large as its own minimum.
+		PartBytes int64 `env:"UPLOAD_PART_BYTES" envDefault:"52428800"`
+		// SessionIdleTTL is how long an upload session survives without a new
+		// part. Every accepted part pushes the expiry back by this much.
+		SessionIdleTTL time.Duration `env:"UPLOAD_SESSION_IDLE_TTL" envDefault:"1h"`
 		// Timeout is how long the server waits for a request body, raised from
 		// the default so a large upload over a slow line can finish.
 		Timeout time.Duration `env:"UPLOAD_TIMEOUT" envDefault:"5m"`
