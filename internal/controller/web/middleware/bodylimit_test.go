@@ -45,6 +45,7 @@ func bodyLimitApp(called *bool) *fiber.App {
 
 	app.Post("/", handler)
 	app.Post("/other", handler)
+	app.Get("/bodiless", handler)
 	app.Put("/htmx/uploads/:upload/parts/:part", handler)
 
 	return app
@@ -158,6 +159,23 @@ func TestBodyLimitAcceptsAChunkedBodyUnderTheUploadPrefix(t *testing.T) {
 	}
 }
 
+// A bodiless request carries neither Content-Length nor Transfer-Encoding. It
+// is how a browser loads a page, so it must reach the router instead of being
+// answered with 411 like a chunked body.
+func TestBodyLimitLetsABodilessRequestThrough(t *testing.T) {
+	t.Parallel()
+
+	status, called := bodilessRequest(t, "/bodiless")
+
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	if !called {
+		t.Error("handler did not run for a bodiless request")
+	}
+}
+
 // chunkedRequest sends one chunked body to path over a real connection, which
 // is how a client that cannot announce a length reaches the server.
 func chunkedRequest(t *testing.T, method, path string) (int, bool) {
@@ -165,28 +183,12 @@ func chunkedRequest(t *testing.T, method, path string) (int, bool) {
 
 	called := false
 	app := bodyLimitApp(&called)
-
-	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Listen() error = %v, want nil", err)
-	}
-
-	go func() {
-		if listenErr := app.Listener(ln); listenErr != nil {
-			t.Errorf("Listener() error = %v, want nil", listenErr)
-		}
-	}()
-
-	t.Cleanup(func() {
-		if shutdownErr := app.Shutdown(); shutdownErr != nil {
-			t.Errorf("Shutdown() error = %v, want nil", shutdownErr)
-		}
-	})
+	base := startServer(t, app)
 
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		method,
-		"http://"+ln.Addr().String()+path,
+		base+path,
 		io.NopCloser(strings.NewReader("hello")),
 	)
 	if err != nil {
@@ -208,4 +210,57 @@ func chunkedRequest(t *testing.T, method, path string) (int, bool) {
 	}
 
 	return res.StatusCode, called
+}
+
+// bodilessRequest sends one GET without a body over a real connection, the way
+// a browser asks for a page.
+func bodilessRequest(t *testing.T, path string) (int, bool) {
+	t.Helper()
+
+	called := false
+	app := bodyLimitApp(&called)
+	base := startServer(t, app)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v, want nil", err)
+	}
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	if _, err := io.Copy(io.Discard, res.Body); err != nil {
+		t.Fatalf("io.Copy() error = %v, want nil", err)
+	}
+
+	return res.StatusCode, called
+}
+
+// startServer serves app on a loopback listener and returns the base URL the
+// test client reaches it at.
+func startServer(t *testing.T, app *fiber.App) string {
+	t.Helper()
+
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v, want nil", err)
+	}
+
+	go func() {
+		if listenErr := app.Listener(ln); listenErr != nil {
+			t.Errorf("Listener() error = %v, want nil", listenErr)
+		}
+	}()
+
+	t.Cleanup(func() {
+		if shutdownErr := app.Shutdown(); shutdownErr != nil {
+			t.Errorf("Shutdown() error = %v, want nil", shutdownErr)
+		}
+	})
+
+	return "http://" + ln.Addr().String()
 }
