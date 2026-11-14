@@ -19,7 +19,7 @@ func BodyLimit(general, upload int64, uploadPrefix string) fiber.Handler {
 		limit := general
 		allowUnknown := false
 
-		if strings.HasPrefix(ctx.Path(), uploadPrefix) {
+		if isUploadPartPath(ctx.Path(), uploadPrefix) {
 			limit = upload
 			allowUnknown = true
 		}
@@ -36,6 +36,20 @@ func BodyLimit(general, upload int64, uploadPrefix string) fiber.Handler {
 
 		return ctx.Next()
 	}
+}
+
+// isUploadPartPath reports whether path names one part under the upload
+// prefix. Only that route carries a large body; start, complete and abort keep
+// the general limit.
+func isUploadPartPath(path, prefix string) bool {
+	rest, ok := strings.CutPrefix(path, prefix)
+	if !ok {
+		return false
+	}
+
+	segments := strings.Split(rest, "/")
+
+	return len(segments) == 3 && segments[0] != "" && segments[1] == "parts" && segments[2] != ""
 }
 
 // announceUnknownLength reports whether the request announces a body whose

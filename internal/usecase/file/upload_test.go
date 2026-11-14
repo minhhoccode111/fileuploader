@@ -48,6 +48,7 @@ type fakeUploadRepo struct {
 	expiredCalls int
 	releases     int
 	deleted      []string
+	onLock       func()
 }
 
 func (f *fakeUploadRepo) Create(
@@ -135,6 +136,10 @@ func (f *fakeUploadRepo) LockQuota(_ context.Context, _ string) (func(), error) 
 
 	if f.lockErr != nil {
 		return nil, f.lockErr
+	}
+
+	if f.onLock != nil {
+		f.onLock()
 	}
 
 	return func() { f.releases++ }, nil
@@ -977,6 +982,44 @@ func TestCompleteUploadAssemblesPartsAndStoresRow(t *testing.T) {
 
 	checkCompletedFile(t, &file, &session)
 	checkCompletedRow(t, files, uploads, users, &session)
+}
+
+func TestCompleteUploadRechecksTheSessionAfterWinningTheQuotaLock(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: _testGiB}}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+
+	// A concurrent completion won the race while this request was waiting for
+	// the quota lock and already deleted the session.
+	uploads.onLock = func() { uploads.sessions = nil }
+
+	uc := completeUseCase(users, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if storage.completeCalls != 0 {
+		t.Errorf("CompleteMultipartUpload calls = %d, want 0", storage.completeCalls)
+	}
+
+	if files.stored != nil {
+		t.Error("CompleteUpload() stored a row after losing the session race")
+	}
+
+	if storage.removeKey != "" {
+		t.Errorf("removed object %q after losing the race, want no removal", storage.removeKey)
+	}
 }
 
 // checkCompletedRow asserts a finished upload left the row, the account usage

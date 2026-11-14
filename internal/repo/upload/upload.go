@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,8 +35,12 @@ const (
 	_sessionGrace = 24 * time.Hour
 
 	// _lockTTL is how long the quota lock survives without a release, so a
-	// process that dies mid-upload does not block the account forever.
+	// process that dies mid-upload does not block the account forever. A live
+	// holder renews it every _lockRenew.
 	_lockTTL = 30 * time.Second
+
+	// _lockRenew is how often the holder extends the lock while it works.
+	_lockRenew = 10 * time.Second
 
 	// _lockRetry is the pause between attempts to take the quota lock.
 	_lockRetry = 25 * time.Millisecond
@@ -47,6 +52,16 @@ const (
 const _releaseScript = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
 	return redis.call("del", KEYS[1])
+end
+return 0
+`
+
+// _renewScript extends the quota lock only when it still holds the token of
+// the caller. A renewal that races a release or a new holder leaves the other
+// caller's lock alone.
+const _renewScript = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+	return redis.call("pexpire", KEYS[1], ARGV[2])
 end
 return 0
 `
@@ -138,11 +153,6 @@ func (r *Repo) SetPart(
 	etag string,
 	expiresAt time.Time,
 ) error {
-	_, err := r.Get(ctx, uploadID)
-	if err != nil {
-		return fmt.Errorf("upload - SetPart - r.Get: %w", err)
-	}
-
 	ttl := time.Until(expiresAt)
 	if ttl <= 0 {
 		return entity.ErrUploadNotFound
@@ -150,19 +160,43 @@ func (r *Repo) SetPart(
 
 	ttl += _sessionGrace
 
-	pipe := r.rdb.Client.TxPipeline()
-	pipe.HSet(ctx, partsKey(uploadID), strconv.Itoa(partNumber), etag)
-	pipe.HSet(ctx, sessionKey(uploadID), "expires_at", strconv.FormatInt(expiresAt.Unix(), 10))
-	pipe.ZAdd(ctx, _expiryKey, goredis.Z{Score: float64(expiresAt.Unix()), Member: uploadID})
-	pipe.Expire(ctx, partsKey(uploadID), ttl)
-	pipe.Expire(ctx, sessionKey(uploadID), ttl)
+	for {
+		err := r.rdb.Client.Watch(ctx, func(tx *goredis.Tx) error {
+			exists, existsErr := tx.Exists(ctx, sessionKey(uploadID)).Result()
+			if existsErr != nil {
+				return existsErr
+			}
 
-	_, err = pipe.Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("upload - SetPart - pipe.Exec: %w", err)
+			if exists == 0 {
+				return entity.ErrUploadNotFound
+			}
+
+			_, pipeErr := tx.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+				pipe.HSet(ctx, partsKey(uploadID), strconv.Itoa(partNumber), etag)
+				pipe.HSet(ctx, sessionKey(uploadID), "expires_at", strconv.FormatInt(expiresAt.Unix(), 10))
+				pipe.ZAdd(ctx, _expiryKey, goredis.Z{Score: float64(expiresAt.Unix()), Member: uploadID})
+				pipe.Expire(ctx, partsKey(uploadID), ttl)
+				pipe.Expire(ctx, sessionKey(uploadID), ttl)
+
+				return nil
+			})
+
+			return pipeErr
+		}, sessionKey(uploadID))
+		if errors.Is(err, goredis.TxFailedErr) {
+			continue
+		}
+
+		if err != nil {
+			if errors.Is(err, entity.ErrUploadNotFound) {
+				return err
+			}
+
+			return fmt.Errorf("upload - SetPart - watch: %w", err)
+		}
+
+		return nil
 	}
-
-	return nil
 }
 
 // Parts returns the ETags of the parts received so far, keyed by part number.
@@ -300,33 +334,72 @@ func (r *Repo) LockQuota(ctx context.Context, userID string) (func(), error) {
 		taken, err := r.rdb.Client.SetNX(ctx, key, token, _lockTTL).Result()
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, entity.ErrUploadQuotaBusy
+				return nil, fmt.Errorf("upload - LockQuota - wait: %w", ctx.Err())
 			}
 
 			return nil, fmt.Errorf("upload - LockQuota - r.rdb.Client.SetNX: %w", err)
 		}
 
 		if taken {
-			return r.releaseFunc(key, token), nil
+			stop := make(chan struct{})
+			go r.renewLoop(key, token, stop)
+
+			return r.releaseFunc(key, token, stop), nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return nil, entity.ErrUploadQuotaBusy
+			return nil, fmt.Errorf("upload - LockQuota - wait: %w", ctx.Err())
 		case <-ticker.C:
 		}
+	}
+}
+
+// renewLoop extends the lock until the release closes stop, so a slow
+// completion or abort does not let the lock expire under the operation.
+func (r *Repo) renewLoop(key, token string, stop <-chan struct{}) {
+	ticker := time.NewTicker(_lockRenew)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			r.renewLock(key, token)
+		}
+	}
+}
+
+// renewLock extends the lease only while this caller still holds the lock.
+func (r *Repo) renewLock(key, token string) {
+	err := r.rdb.Client.Eval(
+		context.Background(),
+		_renewScript,
+		[]string{key},
+		token,
+		_lockTTL.Milliseconds(),
+	).Err()
+	if err != nil {
+		log.Printf("upload - LockQuota - renew: %v", err)
 	}
 }
 
 // releaseFunc builds the function that gives a quota lock back. The caller
 // releases without a request context, because a release that must finish
 // cannot depend on the request that took the lock.
-func (r *Repo) releaseFunc(key, token string) func() {
+func (r *Repo) releaseFunc(key, token string, stop chan struct{}) func() {
+	var once sync.Once
+
 	return func() {
-		err := r.rdb.Client.Eval(context.Background(), _releaseScript, []string{key}, token).Err()
-		if err != nil {
-			log.Printf("upload - LockQuota - release: %v", err)
-		}
+		once.Do(func() {
+			close(stop)
+
+			err := r.rdb.Client.Eval(context.Background(), _releaseScript, []string{key}, token).Err()
+			if err != nil {
+				log.Printf("upload - LockQuota - release: %v", err)
+			}
+		})
 	}
 }
 

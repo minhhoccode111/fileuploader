@@ -118,7 +118,7 @@ func (c *Controller) uploadPart(ctx *fiber.Ctx) error {
 	length := int64(ctx.Request().Header.ContentLength())
 
 	switch {
-	case length <= 0:
+	case length < 0:
 		return ctx.Status(http.StatusLengthRequired).SendString(http.StatusText(http.StatusLengthRequired))
 
 	case length > c.cfg.Upload.PartBytes:

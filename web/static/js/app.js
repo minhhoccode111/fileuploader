@@ -109,6 +109,9 @@ let uploadRun = 0;
 // 524 is the edge giving up on the whole request, so repeating it only repeats
 // the wait.
 const uploadPartRetries = 3;
+const uploadPartTimeout = 120000;
+const uploadPartRetryBaseDelay = 1000;
+const uploadPartRetryMaxDelay = 30000;
 
 // A toast stays up long enough to read one sentence.
 const uploadToastMs = 4000;
@@ -227,11 +230,27 @@ async function startUpload(file, folder, name) {
   }
 
   const plan = await response.json();
+  const partSize = Number(plan.part_size);
+  const partCount = Number(plan.part_count);
+  const expectedCount =
+    file.size === 0 ? 0 : Math.ceil(file.size / partSize);
+
+  if (
+    typeof plan.upload_id !== "string" ||
+    plan.upload_id === "" ||
+    !Number.isFinite(partSize) ||
+    partSize <= 0 ||
+    !Number.isInteger(partCount) ||
+    partCount < 0 ||
+    partCount !== expectedCount
+  ) {
+    throw new Error("The upload plan is invalid. Sign in again and retry.");
+  }
 
   return {
     uploadID: plan.upload_id,
-    partSize: plan.part_size,
-    partCount: plan.part_count,
+    partSize: partSize,
+    partCount: partCount,
   };
 }
 
@@ -242,6 +261,11 @@ function uploadPart(url, blob, onProgress) {
   return new Promise((resolve, reject) => {
     let attempt = 0;
 
+    const retryLater = () => {
+      attempt += 1;
+      window.setTimeout(send, retryDelay(attempt));
+    };
+
     const send = () => {
       onProgress(0);
 
@@ -249,6 +273,7 @@ function uploadPart(url, blob, onProgress) {
 
       part.open("PUT", url);
       part.setRequestHeader("Content-Type", "application/octet-stream");
+      part.timeout = uploadPartTimeout;
 
       part.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
@@ -263,8 +288,7 @@ function uploadPart(url, blob, onProgress) {
         }
 
         if (retryPart(part.status) && attempt < uploadPartRetries) {
-          attempt += 1;
-          send();
+          retryLater();
           return;
         }
 
@@ -273,12 +297,20 @@ function uploadPart(url, blob, onProgress) {
 
       part.addEventListener("error", () => {
         if (attempt < uploadPartRetries) {
-          attempt += 1;
-          send();
+          retryLater();
           return;
         }
 
         reject(new Error("The connection dropped during the upload."));
+      });
+
+      part.addEventListener("timeout", () => {
+        if (attempt < uploadPartRetries) {
+          retryLater();
+          return;
+        }
+
+        reject(new Error("The connection stalled during the upload."));
       });
 
       part.send(blob);
@@ -286,6 +318,17 @@ function uploadPart(url, blob, onProgress) {
 
     send();
   });
+}
+
+// retryDelay spaces retries out and adds jitter, so a struggling edge is not
+// hit by every client at the same moment.
+function retryDelay(attempt) {
+  const delay = Math.min(
+    uploadPartRetryMaxDelay,
+    uploadPartRetryBaseDelay * 2 ** (attempt - 1),
+  );
+
+  return delay + Math.random() * 500;
 }
 
 // completeUpload joins the parts. The answer carries the folder the file
@@ -390,9 +433,10 @@ function abortUpload(id) {
 }
 
 // retryPart reports whether a part is worth sending again. A 4xx names a
-// request the server will refuse again, and 524 is the edge timing out.
+// request the server will refuse again, except 429 which asks the client to
+// slow down; 524 is the edge timing out.
 function retryPart(status) {
-  return status >= 500 && status !== 524;
+  return status === 429 || (status >= 500 && status !== 524);
 }
 
 function partMessage(part) {

@@ -25,8 +25,12 @@ const (
 // apart: a general page form, another general route, and one path under the
 // upload prefix.
 func bodyLimitApp(called *bool) *fiber.App {
+	return bodyLimitAppWithLimits(called, _testGeneralLimit, _testUploadLimit)
+}
+
+func bodyLimitAppWithLimits(called *bool, general, upload int64) *fiber.App {
 	app := fiber.New()
-	app.Use(BodyLimit(_testGeneralLimit, _testUploadLimit, "/htmx/uploads/"))
+	app.Use(BodyLimit(general, upload, "/htmx/uploads/"))
 
 	handler := func(ctx *fiber.Ctx) error {
 		*called = true
@@ -46,6 +50,8 @@ func bodyLimitApp(called *bool) *fiber.App {
 	app.Post("/", handler)
 	app.Post("/other", handler)
 	app.Get("/bodiless", handler)
+	app.Post("/htmx/uploads", handler)
+	app.Post("/htmx/uploads/:upload/complete", handler)
 	app.Put("/htmx/uploads/:upload/parts/:part", handler)
 
 	return app
@@ -156,6 +162,68 @@ func TestBodyLimitAcceptsAChunkedBodyUnderTheUploadPrefix(t *testing.T) {
 
 	if !called {
 		t.Error("handler did not run for a chunked part under the upload prefix")
+	}
+}
+
+func TestBodyLimitKeepsTheGeneralLimitOnTheUploadStartRoute(t *testing.T) {
+	t.Parallel()
+
+	status, called := postBody(
+		t,
+		http.MethodPost,
+		"/htmx/uploads",
+		make([]byte, _testGeneralLimit+1),
+	)
+
+	if status != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want %d", status, http.StatusRequestEntityTooLarge)
+	}
+
+	if called {
+		t.Error("handler ran for an oversized start body")
+	}
+}
+
+func TestBodyLimitKeepsTheGeneralLimitOnUploadComplete(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	app := bodyLimitAppWithLimits(&called, 8, _testGeneralLimit)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/htmx/uploads/upload/complete",
+		bytes.NewReader(make([]byte, 9)),
+	)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusRequestEntityTooLarge)
+	}
+
+	if called {
+		t.Error("handler ran for an oversized complete body")
+	}
+}
+
+func TestBodyLimitRejectsAChunkedBodyOnUploadComplete(t *testing.T) {
+	t.Parallel()
+
+	status, called := chunkedRequest(t, http.MethodPost, "/htmx/uploads/upload/complete")
+
+	if status != http.StatusLengthRequired {
+		t.Errorf("status = %d, want %d", status, http.StatusLengthRequired)
+	}
+
+	if called {
+		t.Error("handler ran for a chunked complete body")
 	}
 }
 

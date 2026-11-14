@@ -394,8 +394,7 @@ func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) 
 		return entity.File{}, err
 	}
 
-	parts, err := uc.sessionParts(ctx, &session)
-	if err != nil {
+	if _, err := uc.sessionParts(ctx, &session); err != nil {
 		return entity.File{}, err
 	}
 
@@ -405,6 +404,19 @@ func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) 
 	}
 
 	defer release()
+
+	// Re-read under the lock: a concurrent completion or abort can delete the
+	// session while this request waits, and using the stale copy would let the
+	// loser remove the object the winner already stored.
+	session, err = uc.ownedSession(ctx, userID, uploadID, "CompleteUpload")
+	if err != nil {
+		return entity.File{}, err
+	}
+
+	parts, err := uc.sessionParts(ctx, &session)
+	if err != nil {
+		return entity.File{}, err
+	}
 
 	err = uc.joinParts(ctx, &session, parts)
 	if err != nil {

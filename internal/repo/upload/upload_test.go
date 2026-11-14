@@ -3,6 +3,7 @@ package upload
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -164,6 +165,80 @@ func TestSetPartStoresETagAndSlidesExpiry(t *testing.T) {
 // A part cannot push a session into the past. A caller that does so is told the
 // upload is gone, and the session it named stays exactly as it was, so the
 // sweep can still release it.
+// deleteSessionAfterCommand removes the session key after the first matching
+// read command, which is the interleaving a concurrent abort or completion
+// produces between SetPart's existence check and its write.
+type deleteSessionAfterCommand struct {
+	mr    *miniredis.Miniredis
+	key   string
+	armed bool
+}
+
+func (h *deleteSessionAfterCommand) DialHook(next goredis.DialHook) goredis.DialHook {
+	return next
+}
+
+func (h *deleteSessionAfterCommand) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
+	return func(ctx context.Context, cmd goredis.Cmder) error {
+		err := next(ctx, cmd)
+
+		if h.armed && (cmd.Name() == "hgetall" || cmd.Name() == "exists") &&
+			len(cmd.Args()) > 1 && fmt.Sprint(cmd.Args()[1]) == h.key {
+			h.armed = false
+
+			h.mr.Del(h.key)
+		}
+
+		return err
+	}
+}
+
+func (h *deleteSessionAfterCommand) ProcessPipelineHook(
+	next goredis.ProcessPipelineHook,
+) goredis.ProcessPipelineHook {
+	return next
+}
+
+func TestSetPartDoesNotResurrectASessionDeletedMidWrite(t *testing.T) {
+	t.Parallel()
+
+	mr := miniredis.RunT(t)
+
+	rdb, err := redis.New(mr.Addr())
+	if err != nil {
+		t.Fatalf("redis.New() error = %v, want nil", err)
+	}
+
+	t.Cleanup(rdb.Close)
+
+	sessions := New(rdb)
+	ctx := context.Background()
+	session := testSession()
+
+	if err := sessions.Create(ctx, session, _testIdleTTL); err != nil {
+		t.Fatalf("Create() error = %v, want nil", err)
+	}
+
+	rdb.Client.AddHook(&deleteSessionAfterCommand{
+		mr:    mr,
+		key:   sessionKey(session.ID),
+		armed: true,
+	})
+
+	err = sessions.SetPart(ctx, session.ID, 1, "etag-one", time.Now().Add(_testIdleTTL))
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("SetPart() error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if mr.Exists(sessionKey(session.ID)) {
+		t.Error("SetPart() resurrected the deleted session hash")
+	}
+
+	if mr.Exists(partsKey(session.ID)) {
+		t.Error("SetPart() wrote a parts hash for a deleted session")
+	}
+}
+
 func TestSetPartRejectsAPastExpiry(t *testing.T) {
 	t.Parallel()
 
@@ -483,8 +558,8 @@ func TestLockQuotaSerializes(t *testing.T) {
 	defer cancel()
 
 	_, err = sessions.LockQuota(blocked, "user")
-	if !errors.Is(err, entity.ErrUploadQuotaBusy) {
-		t.Errorf("LockQuota() while held error = %v, want %v", err, entity.ErrUploadQuotaBusy)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("LockQuota() while held error = %v, want %v", err, context.DeadlineExceeded)
 	}
 
 	release()
@@ -500,6 +575,48 @@ func TestLockQuotaSerializes(t *testing.T) {
 	again()
 
 	again()
+}
+
+// A renewal extends only the lease of the caller whose token still owns the
+// lock; a new holder is left alone.
+func TestRenewLockExtendsOnlyTheOwnersLease(t *testing.T) {
+	t.Parallel()
+
+	sessions, rdb := newTestRepo(t)
+
+	uploadRepo, ok := sessions.(*Repo)
+	if !ok {
+		t.Fatalf("New() returned %T, want *Repo", sessions)
+	}
+
+	ctx := context.Background()
+	key := quotaLockKey("user")
+
+	if err := rdb.Client.Set(ctx, key, "owner-token", 5*time.Second).Err(); err != nil {
+		t.Fatalf("Set() error = %v, want nil", err)
+	}
+
+	uploadRepo.renewLock(key, "owner-token")
+
+	ttl, err := rdb.Client.PTTL(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("PTTL() error = %v, want nil", err)
+	}
+
+	if ttl <= 5*time.Second {
+		t.Errorf("lock TTL = %v, want more than the original 5s", ttl)
+	}
+
+	uploadRepo.renewLock(key, "someone-else")
+
+	ttl, err = rdb.Client.PTTL(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("PTTL() error = %v, want nil", err)
+	}
+
+	if ttl > _lockTTL {
+		t.Errorf("foreign token extended the lock to %v, want <= %v", ttl, _lockTTL)
+	}
 }
 
 // A release that arrives after the lock expired and another caller took it

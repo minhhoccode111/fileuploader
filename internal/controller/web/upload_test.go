@@ -253,7 +253,7 @@ func TestUploadPartRejectsAWrongContentLength(t *testing.T) {
 	t.Run("empty body", func(t *testing.T) {
 		t.Parallel()
 
-		files := &fakeUploadFile{}
+		files := &fakeUploadFile{partErr: entity.ErrUploadPartMismatch}
 		app := uploadApp(files, &fakeUploadFolder{})
 
 		req := httptest.NewRequestWithContext(
@@ -270,12 +270,12 @@ func TestUploadPartRejectsAWrongContentLength(t *testing.T) {
 
 		defer res.Body.Close()
 
-		if res.StatusCode != http.StatusLengthRequired {
-			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusLengthRequired)
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusUnprocessableEntity)
 		}
 
-		if files.partCalls != 0 {
-			t.Errorf("UploadPart calls = %d, want 0", files.partCalls)
+		if files.partCalls != 1 {
+			t.Errorf("UploadPart calls = %d, want 1", files.partCalls)
 		}
 	})
 
