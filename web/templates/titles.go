@@ -9,7 +9,6 @@ const (
 	RegisterTitle      = "Register"
 	ShareTitle         = "Share"
 	SharedTitle        = "Shared folder"
-	PublicTitle        = "Public"
 	LogoutTitle        = "Logout"
 	AdminUsersTitle    = "Admin · Users"
 	AdminSettingsTitle = "Admin · Settings"

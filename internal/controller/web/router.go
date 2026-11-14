@@ -70,7 +70,6 @@ func NewRouter(
 	app.Get("/share/:share", c.sharedRoot)
 	app.Get("/share/:share/folders/:folder", c.sharedFolderRoute)
 	app.Get("/share/:share/files/:file/download", c.sharedFileDownload)
-	app.Get("/public", c.public)
 	app.Get("/admin", middleware.RequireAdmin(u), c.admin)
 	app.Get("/admin/users", middleware.RequireAdmin(u), c.adminUsers)
 	app.Get("/admin/settings", middleware.RequireAdmin(u), c.adminSettings)

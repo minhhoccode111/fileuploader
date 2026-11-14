@@ -114,12 +114,6 @@ func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent(), templates.AdminSettingsTitle)
 }
 
-// public renders a placeholder page for the Public section. It is auth-only,
-// so the guard has already resolved a user before it runs.
-func (c *Controller) public(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Public(c.view(ctx)), templates.PublicContent(), templates.PublicTitle)
-}
-
 // logout renders the confirmation screen. It is a GET because it changes nothing:
 // the session is ended only by the POST to /htmx/logout that the screen triggers.
 func (c *Controller) logout(ctx *fiber.Ctx) error {
