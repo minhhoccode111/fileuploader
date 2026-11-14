@@ -386,8 +386,6 @@ templ FileUploadContent(folderID string) {
 		<form
 			class="flex flex-col gap-3"
 			novalidate
-			action="/htmx/files"
-			method="post"
 			onsubmit="return uploadFileWithProgress(this)"
 		>
 			<input type="hidden" name="folder" value={ folderID }/>

@@ -152,6 +152,37 @@ neighbouring handler.
    Anything with a wrapper, a projection or a different field set gets a type in
    `restapi/v1/response/` (`response.Token`, `response.Error`).
 
+## Uploads
+
+A file arrives in parts, not in one request. The browser asks for a session, sends each part, then
+completes or aborts it:
+
+| Step     | Endpoint                                |
+| -------- | --------------------------------------- |
+| start    | `POST /htmx/uploads`                    |
+| part     | `PUT /htmx/uploads/:upload/parts/:part` |
+| complete | `POST /htmx/uploads/:upload/complete`   |
+| abort    | `POST /htmx/uploads/:upload/abort`      |
+
+The defaults live in `config.Upload`: 10 GiB per file (`UPLOAD_MAX_BYTES`), 50 MiB parts
+(`UPLOAD_PART_BYTES`), and a one-hour idle session (`UPLOAD_SESSION_IDLE_TTL`). The part size falls
+back to the 5 MiB S3 floor and shrinks for a rate-limited account so each part still finishes well
+inside the proxy and server timeouts. The body limit middleware lets the upload paths carry one part
+plus `config.UploadOverheadBytes`; every other route stays on the general limit.
+
+`StartUpload` creates the MinIO multipart upload and reserves the whole declared size against the
+account quota in Redis, so two sessions cannot both claim the last headroom. Completion, abort and
+the sweeper release that reservation. The session itself sits in Redis with the idle TTL, which each
+accepted part slides forward. `UploadPart` paces the bytes through `repo.TransferLimiter` before they
+reach the bucket and stores the returned ETag. `CompleteUpload` assembles the parts, writes the row
+through `storeRow` (folder lock, name check, quota check, usage update) and removes the object again
+if the row fails.
+
+A background sweeper (`internal/app/sweeper.go`) runs one sweep at startup and then every five
+minutes: it aborts multipart uploads whose session expired and never finished, which is the backstop
+for a browser that never sends the abort beacon. There is no single-request upload path — the
+`/htmx/files` route and `usecase.File.Upload` are gone.
+
 ## Conventions that will bite you
 
 **Error style.** Domain failures are sentinel errors in `internal/entity/errors.go`

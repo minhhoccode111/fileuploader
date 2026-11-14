@@ -59,16 +59,10 @@ type (
 		ResolveFile(ctx context.Context, shareID, fileID string) (entity.Share, entity.File, error)
 	}
 
-	// File is the drive's file logic: one upload at a time, a rename, a
-	// delete, and the link a browser downloads through.
+	// File is the drive's file logic: a chunked upload split over several
+	// requests, a rename, a delete, and the link a browser downloads through.
 	File interface {
 		Get(ctx context.Context, userID, fileID string) (entity.File, error)
-		Upload(
-			ctx context.Context,
-			userID, folderID, name, contentType string,
-			size int64,
-			body io.Reader,
-		) (entity.File, error)
 		Rename(ctx context.Context, userID, fileID, name string) (entity.File, error)
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)
 		Download(ctx context.Context, userID, fileID string) (string, error)

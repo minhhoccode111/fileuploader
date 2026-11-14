@@ -5,17 +5,12 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
-	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
-
-// errStore is the failure the fake file repository reports for a write.
-var errStore = errors.New("store failed")
 
 // fakeFileRepo answers from the file the test set up and records the writes
 // the use case asked for.
@@ -226,145 +221,6 @@ func (f *fakeStorage) AbortMultipartUpload(_ context.Context, _, _, _ string) er
 	return nil
 }
 
-func TestUploadStoresTheBytesAndTheRow(t *testing.T) {
-	t.Parallel()
-
-	files := &fakeFileRepo{}
-	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder", UserID: "user"}}
-	storage := &fakeStorage{}
-	uc := New(files, folders, storage, &fakeUnitOfWork{}, "bucket", 1024)
-
-	file, err := uc.Upload(
-		context.Background(),
-		"user",
-		"folder",
-		"  note.txt  ",
-		"text/plain; charset=utf-8",
-		4,
-		strings.NewReader("data"),
-	)
-	if err != nil {
-		t.Fatalf("Upload() error = %v, want nil", err)
-	}
-
-	if files.stored == nil {
-		t.Fatal("Upload() did not store the row")
-	}
-
-	if file.Name != "note.txt" {
-		t.Errorf("file name = %q, want %q", file.Name, "note.txt")
-	}
-
-	if storage.putSize != 4 || storage.putType != "text/plain" {
-		t.Errorf("stored %d bytes as %q, want 4 as text/plain", storage.putSize, storage.putType)
-	}
-
-	if storage.putKey != "users/user/files/"+file.ID {
-		t.Errorf("object key = %q, want it built from the identifiers", storage.putKey)
-	}
-}
-
-func TestUploadRejectsAFileOverTheLimit(t *testing.T) {
-	t.Parallel()
-
-	storage := &fakeStorage{}
-	uc := New(&fakeFileRepo{}, &fakeFolderRepo{}, storage, &fakeUnitOfWork{}, "bucket", 4)
-
-	_, err := uc.Upload(
-		context.Background(),
-		"user",
-		"folder",
-		"note.txt",
-		"text/plain",
-		5,
-		strings.NewReader("data!"),
-	)
-	if !errors.Is(err, entity.ErrFileTooLarge) {
-		t.Fatalf("Upload() error = %v, want %v", err, entity.ErrFileTooLarge)
-	}
-
-	if storage.putKey != "" {
-		t.Error("Upload() wrote an object over the limit")
-	}
-}
-
-func TestUploadRejectsANameAnotherEntryHolds(t *testing.T) {
-	t.Parallel()
-
-	storage := &fakeStorage{}
-	uc := New(
-		&fakeFileRepo{},
-		&fakeFolderRepo{folder: entity.Folder{ID: "folder"}, nameTaken: true},
-		storage,
-		&fakeUnitOfWork{},
-		"bucket",
-		1024,
-	)
-
-	_, err := uc.Upload(
-		context.Background(),
-		"user",
-		"folder",
-		"note.txt",
-		"text/plain",
-		4,
-		strings.NewReader("data"),
-	)
-	if !errors.Is(err, entity.ErrEntryAlreadyExists) {
-		t.Fatalf("Upload() error = %v, want %v", err, entity.ErrEntryAlreadyExists)
-	}
-
-	if storage.putKey != "" {
-		t.Error("Upload() wrote an object for a taken name")
-	}
-}
-
-func TestUploadRemovesTheObjectWhenTheRowFails(t *testing.T) {
-	t.Parallel()
-
-	files := &fakeFileRepo{storeErr: errStore}
-	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder"}}
-	storage := &fakeStorage{}
-	uc := New(files, folders, storage, &fakeUnitOfWork{}, "bucket", 1024)
-
-	_, err := uc.Upload(
-		context.Background(),
-		"user",
-		"folder",
-		"note.txt",
-		"text/plain",
-		4,
-		strings.NewReader("data"),
-	)
-	if !errors.Is(err, errStore) {
-		t.Fatalf("Upload() error = %v, want %v", err, errStore)
-	}
-
-	if storage.removeKey != storage.putKey || storage.removeKey == "" {
-		t.Errorf("removed key = %q, want the key just written %q", storage.removeKey, storage.putKey)
-	}
-}
-
-func TestUploadReportsAnUnknownFolder(t *testing.T) {
-	t.Parallel()
-
-	folders := &fakeFolderRepo{getErr: entity.ErrFolderNotFound}
-	uc := New(&fakeFileRepo{}, folders, &fakeStorage{}, &fakeUnitOfWork{}, "bucket", 1024)
-
-	_, err := uc.Upload(
-		context.Background(),
-		"user",
-		"missing",
-		"note.txt",
-		"text/plain",
-		4,
-		strings.NewReader("data"),
-	)
-	if !errors.Is(err, entity.ErrFolderNotFound) {
-		t.Errorf("Upload() error = %v, want %v", err, entity.ErrFolderNotFound)
-	}
-}
-
 func TestRenameChecksTheFolderSideOfTheName(t *testing.T) {
 	t.Parallel()
 
@@ -495,68 +351,6 @@ func (f *fakeUserRepoForFile) AdjustStorageUsed(_ context.Context, _ string, del
 	f.updated = &updated
 
 	return nil
-}
-
-func TestUploadRejectsWhenQuotaExceeded(t *testing.T) {
-	t.Parallel()
-
-	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 4, StorageUsedBytes: 2}}
-	files := &fakeFileRepo{}
-	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder", UserID: "user"}}
-	storage := &fakeStorage{}
-	uc := New(users, files, folders, storage, &fakeUnitOfWork{}, "bucket", 1024)
-
-	_, err := uc.Upload(context.Background(), "user", "folder", "note.txt", "text/plain", 4, strings.NewReader("data"))
-	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
-		t.Fatalf("Upload() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
-	}
-
-	if storage.putKey != "" {
-		t.Error("Upload() wrote an object over quota")
-	}
-}
-
-func TestUploadUsesGlobalDefaultQuota(t *testing.T) {
-	t.Parallel()
-
-	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 0, StorageUsedBytes: 2}}
-	files := &fakeFileRepo{}
-	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder", UserID: "user"}}
-	storage := &fakeStorage{}
-	uc := New(
-		users,
-		files,
-		folders,
-		storage,
-		&fakeUnitOfWork{},
-		"bucket",
-		1024,
-		usecase.Limits{StorageQuotaBytes: 4},
-	)
-
-	_, err := uc.Upload(context.Background(), "user", "folder", "note.txt", "text/plain", 4, strings.NewReader("data"))
-	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
-		t.Fatalf("Upload() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
-	}
-}
-
-func TestUploadIncrementsUsage(t *testing.T) {
-	t.Parallel()
-
-	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 10, StorageUsedBytes: 0}}
-	files := &fakeFileRepo{}
-	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder", UserID: "user"}}
-	storage := &fakeStorage{}
-	uc := New(users, files, folders, storage, &fakeUnitOfWork{}, "bucket", 1024)
-
-	_, err := uc.Upload(context.Background(), "user", "folder", "note.txt", "text/plain", 4, strings.NewReader("data"))
-	if err != nil {
-		t.Fatalf("Upload() error = %v, want nil", err)
-	}
-
-	if users.updated == nil || users.updated.StorageUsedBytes != 4 {
-		t.Errorf("usage = %v, want 4", users.updated)
-	}
 }
 
 func TestDeleteFreesQuota(t *testing.T) {

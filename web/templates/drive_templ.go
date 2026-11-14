@@ -808,14 +808,14 @@ func FileUploadContent(folderID string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\"><div class=\"flex items-center justify-between\"><h3 class=\"text-lg font-bold\">Upload file</h3><label for=\"entry-drawer\" aria-label=\"Close the panel\" class=\"btn btn-circle btn-ghost btn-sm\">✕</label></div><form class=\"flex flex-col gap-3\" novalidate action=\"/htmx/files\" method=\"post\" onsubmit=\"return uploadFileWithProgress(this)\"><input type=\"hidden\" name=\"folder\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\"><div class=\"flex items-center justify-between\"><h3 class=\"text-lg font-bold\">Upload file</h3><label for=\"entry-drawer\" aria-label=\"Close the panel\" class=\"btn btn-circle btn-ghost btn-sm\">✕</label></div><form class=\"flex flex-col gap-3\" novalidate onsubmit=\"return uploadFileWithProgress(this)\"><input type=\"hidden\" name=\"folder\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templruntime.NewAttributeExpression(folderID).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 393, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 391, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 		if templ_7745c5c3_Err != nil {
@@ -855,7 +855,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(file.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 433, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 431, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -868,7 +868,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(file.Size)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 438, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 436, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 		if templ_7745c5c3_Err != nil {
@@ -881,7 +881,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(file.Type)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 440, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 438, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -894,7 +894,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(file.Updated)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 442, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 440, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
@@ -907,7 +907,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.URL("/files/" + file.ID + "/download")).ResolveURL(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 446, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 444, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 		if templ_7745c5c3_Err != nil {
@@ -920,7 +920,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templruntime.NewAttributeExpression(file.Name).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 447, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 445, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 		if templ_7745c5c3_Err != nil {
@@ -933,7 +933,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var54 string
 		templ_7745c5c3_Var54, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/files/" + file.ID + "/move").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 460, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 458, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 		if templ_7745c5c3_Err != nil {
@@ -946,7 +946,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/files/" + file.ID + "/duplicate").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 474, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 472, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 		if templ_7745c5c3_Err != nil {
@@ -959,7 +959,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/files/" + file.ID + "/rename").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 488, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 486, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 		if templ_7745c5c3_Err != nil {
@@ -972,7 +972,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templruntime.NewAttributeExpression(file.Name).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 500, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 498, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 		if templ_7745c5c3_Err != nil {
@@ -985,7 +985,7 @@ func FileDrawerContent(file response.FileInfo) templ.Component {
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/files/" + file.ID + "/delete").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 510, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 508, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var58)
 		if templ_7745c5c3_Err != nil {
@@ -1027,7 +1027,7 @@ func FolderMoveContent(folderID string, currentFolderID string, folders []respon
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/folders/" + folderID + "/move").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 535, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 533, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 		if templ_7745c5c3_Err != nil {
@@ -1045,7 +1045,7 @@ func FolderMoveContent(folderID string, currentFolderID string, folders []respon
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templruntime.NewAttributeExpression(f.ID).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 550, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 548, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
 			if templ_7745c5c3_Err != nil {
@@ -1068,7 +1068,7 @@ func FolderMoveContent(folderID string, currentFolderID string, folders []respon
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(f.Style)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 550, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 548, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 			if templ_7745c5c3_Err != nil {
@@ -1081,7 +1081,7 @@ func FolderMoveContent(folderID string, currentFolderID string, folders []respon
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 550, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 548, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1128,7 +1128,7 @@ func FolderDuplicateContent(folderID string, currentFolderID string, folders []r
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/folders/" + folderID + "/duplicate").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 574, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 572, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
 		if templ_7745c5c3_Err != nil {
@@ -1146,7 +1146,7 @@ func FolderDuplicateContent(folderID string, currentFolderID string, folders []r
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templruntime.NewAttributeExpression(f.ID).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 589, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 587, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 			if templ_7745c5c3_Err != nil {
@@ -1169,7 +1169,7 @@ func FolderDuplicateContent(folderID string, currentFolderID string, folders []r
 			var templ_7745c5c3_Var67 string
 			templ_7745c5c3_Var67, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(f.Style)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 589, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 587, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 			if templ_7745c5c3_Err != nil {
@@ -1182,7 +1182,7 @@ func FolderDuplicateContent(folderID string, currentFolderID string, folders []r
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 589, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 587, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
@@ -1229,7 +1229,7 @@ func FileMoveContent(fileID string, currentFolderID string, folders []response.F
 		var templ_7745c5c3_Var70 string
 		templ_7745c5c3_Var70, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/files/" + fileID + "/move").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 613, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 611, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 		if templ_7745c5c3_Err != nil {
@@ -1247,7 +1247,7 @@ func FileMoveContent(fileID string, currentFolderID string, folders []response.F
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templruntime.NewAttributeExpression(f.ID).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 628, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 626, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 			if templ_7745c5c3_Err != nil {
@@ -1270,7 +1270,7 @@ func FileMoveContent(fileID string, currentFolderID string, folders []response.F
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(f.Style)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 628, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 626, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1283,7 +1283,7 @@ func FileMoveContent(fileID string, currentFolderID string, folders []response.F
 			var templ_7745c5c3_Var73 string
 			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 628, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 626, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 			if templ_7745c5c3_Err != nil {
@@ -1330,7 +1330,7 @@ func FileDuplicateContent(fileID string, currentFolderID string, folders []respo
 		var templ_7745c5c3_Var75 string
 		templ_7745c5c3_Var75, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/htmx/files/" + fileID + "/duplicate").Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 652, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 650, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
 		if templ_7745c5c3_Err != nil {
@@ -1348,7 +1348,7 @@ func FileDuplicateContent(fileID string, currentFolderID string, folders []respo
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templruntime.NewAttributeExpression(f.ID).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 667, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 665, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var76)
 			if templ_7745c5c3_Err != nil {
@@ -1371,7 +1371,7 @@ func FileDuplicateContent(fileID string, currentFolderID string, folders []respo
 			var templ_7745c5c3_Var77 string
 			templ_7745c5c3_Var77, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(f.Style)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 667, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 665, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 			if templ_7745c5c3_Err != nil {
@@ -1384,7 +1384,7 @@ func FileDuplicateContent(fileID string, currentFolderID string, folders []respo
 			var templ_7745c5c3_Var78 string
 			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 667, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 665, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 			if templ_7745c5c3_Err != nil {
@@ -1483,7 +1483,7 @@ func folderTreeNodes(nodes []response.FolderNode) templ.Component {
 			var templ_7745c5c3_Var81 string
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(node.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 720, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 718, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 			if templ_7745c5c3_Err != nil {
@@ -1496,7 +1496,7 @@ func folderTreeNodes(nodes []response.FolderNode) templ.Component {
 			var templ_7745c5c3_Var82 string
 			templ_7745c5c3_Var82, templ_7745c5c3_Err = templruntime.NewAttributeExpression("Open " + node.Name).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 723, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 721, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
 			if templ_7745c5c3_Err != nil {
@@ -1509,7 +1509,7 @@ func folderTreeNodes(nodes []response.FolderNode) templ.Component {
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.URL("/folders/" + node.ID)).ResolveURL(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 724, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 722, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var83)
 			if templ_7745c5c3_Err != nil {
@@ -1522,7 +1522,7 @@ func folderTreeNodes(nodes []response.FolderNode) templ.Component {
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templruntime.NewAttributeExpression("/folders/" + node.ID).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 725, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/drive.templ`, Line: 723, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
 			if templ_7745c5c3_Err != nil {
