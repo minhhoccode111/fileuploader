@@ -1,13 +1,16 @@
 package minio
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"mime"
 	"net/url"
+	"slices"
 	"time"
 
+	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 	miniogo "github.com/minio/minio-go/v7"
 )
 
@@ -99,4 +102,106 @@ func (m *MinIO) CopyObject(ctx context.Context, bucket, dstKey, srcKey string) e
 	}
 
 	return nil
+}
+
+// CreateMultipartUpload opens a multipart upload and returns the id the
+// following part calls carry. Nothing is visible in the bucket until the
+// upload completes.
+func (m *MinIO) CreateMultipartUpload(
+	ctx context.Context,
+	bucket, key, contentType string,
+) (string, error) {
+	uploadID, err := m.core().NewMultipartUpload(ctx, bucket, key, miniogo.PutObjectOptions{
+		ContentType: contentType,
+	})
+	if err != nil {
+		return "", fmt.Errorf("minio - CreateMultipartUpload - core.NewMultipartUpload: %w", err)
+	}
+
+	return uploadID, nil
+}
+
+// UploadPart writes one numbered part of an open upload and returns the ETag
+// the bucket assigned to it. The caller keeps the ETag for the completion.
+func (m *MinIO) UploadPart(
+	ctx context.Context,
+	bucket, key, uploadID string,
+	partNumber int,
+	reader io.Reader,
+	size int64,
+) (string, error) {
+	part, err := m.core().PutObjectPart(
+		ctx,
+		bucket,
+		key,
+		uploadID,
+		partNumber,
+		reader,
+		size,
+		miniogo.PutObjectPartOptions{},
+	)
+	if err != nil {
+		return "", fmt.Errorf("minio - UploadPart - core.PutObjectPart: %w", err)
+	}
+
+	return part.ETag, nil
+}
+
+// CompleteMultipartUpload joins the uploaded parts into one object. The parts
+// are sent in number order, whatever order the caller collected them in.
+func (m *MinIO) CompleteMultipartUpload(
+	ctx context.Context,
+	bucket, key, uploadID string,
+	parts []multipart.Part,
+) error {
+	_, err := m.core().CompleteMultipartUpload(
+		ctx,
+		bucket,
+		key,
+		uploadID,
+		completeParts(parts),
+		miniogo.PutObjectOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("minio - CompleteMultipartUpload - core.CompleteMultipartUpload: %w", err)
+	}
+
+	return nil
+}
+
+// AbortMultipartUpload discards an open upload and the parts already sent. An
+// upload that is already gone counts as aborted, so a sweep can run twice.
+func (m *MinIO) AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error {
+	err := m.core().AbortMultipartUpload(ctx, bucket, key, uploadID)
+	if err == nil {
+		return nil
+	}
+
+	if miniogo.ToErrorResponse(err).Code == miniogo.NoSuchUpload {
+		return nil
+	}
+
+	return fmt.Errorf("minio - AbortMultipartUpload - core.AbortMultipartUpload: %w", err)
+}
+
+// core exposes the low level multipart calls of the SDK client.
+func (m *MinIO) core() miniogo.Core {
+	return miniogo.Core{Client: m.Client}
+}
+
+// completeParts converts the neutral parts into the SDK shape in ascending
+// part-number order, which is the order the bucket expects.
+func completeParts(parts []multipart.Part) []miniogo.CompletePart {
+	ordered := slices.Clone(parts)
+
+	slices.SortFunc(ordered, func(a, b multipart.Part) int {
+		return cmp.Compare(a.Number, b.Number)
+	})
+
+	converted := make([]miniogo.CompletePart, len(ordered))
+	for i, part := range ordered {
+		converted[i] = miniogo.CompletePart{PartNumber: part.Number, ETag: part.ETag}
+	}
+
+	return converted
 }

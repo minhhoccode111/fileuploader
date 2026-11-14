@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
 type (
@@ -99,5 +100,15 @@ type (
 		RemoveObject(ctx context.Context, bucket, key string) error
 		CopyObject(ctx context.Context, bucket, dstKey, srcKey string) error
 		GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
+		CreateMultipartUpload(ctx context.Context, bucket, key, contentType string) (string, error)
+		UploadPart(
+			ctx context.Context,
+			bucket, key, uploadID string,
+			partNumber int,
+			reader io.Reader,
+			size int64,
+		) (string, error)
+		CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []multipart.Part) error
+		AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	}
 )

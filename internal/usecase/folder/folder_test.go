@@ -10,6 +10,7 @@ import (
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
 // errStorage is the failure the fake bucket reports.
@@ -237,6 +238,22 @@ func (f *fakeStorage) CopyObject(_ context.Context, _, _, _ string) error {
 
 func (f *fakeStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func (f *fakeStorage) CreateMultipartUpload(_ context.Context, _, _, _ string) (string, error) {
+	return "multipart-id", nil
+}
+
+func (f *fakeStorage) UploadPart(_ context.Context, _, _, _ string, _ int, _ io.Reader, _ int64) (string, error) {
+	return "etag", nil
+}
+
+func (f *fakeStorage) CompleteMultipartUpload(_ context.Context, _, _, _ string, _ []multipart.Part) error {
+	return nil
+}
+
+func (f *fakeStorage) AbortMultipartUpload(_ context.Context, _, _, _ string) error {
+	return nil
 }
 
 func TestCreateStoresTheFolder(t *testing.T) {

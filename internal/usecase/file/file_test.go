@@ -11,6 +11,7 @@ import (
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
 // errStore is the failure the fake file repository reports for a write.
@@ -151,17 +152,19 @@ func (f *fakeUnitOfWork) Do(ctx context.Context, fn func(context.Context) error)
 
 // fakeStorage records the object the use case wrote, removed or signed.
 type fakeStorage struct {
-	putKey     string
-	putSize    int64
-	putType    string
-	putErr     error
-	copyKey    string
-	copySrcKey string
-	copyErr    error
-	removeKey  string
-	removeErr  error
-	presign    string
-	presignErr error
+	putKey           string
+	putSize          int64
+	putType          string
+	putErr           error
+	copyKey          string
+	copySrcKey       string
+	copyErr          error
+	removeKey        string
+	removeErr        error
+	presign          string
+	presignErr       error
+	uploadPartNumber int
+	uploadPartSize   int64
 }
 
 func (f *fakeStorage) PutObject(
@@ -202,6 +205,25 @@ func (f *fakeStorage) CopyObject(_ context.Context, _, dstKey, srcKey string) er
 
 func (f *fakeStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func (f *fakeStorage) CreateMultipartUpload(_ context.Context, _, _, _ string) (string, error) {
+	return "multipart-id", nil
+}
+
+func (f *fakeStorage) UploadPart(_ context.Context, _, _, _ string, partNumber int, _ io.Reader, size int64) (string, error) {
+	f.uploadPartNumber = partNumber
+	f.uploadPartSize = size
+
+	return "etag", nil
+}
+
+func (f *fakeStorage) CompleteMultipartUpload(_ context.Context, _, _, _ string, _ []multipart.Part) error {
+	return nil
+}
+
+func (f *fakeStorage) AbortMultipartUpload(_ context.Context, _, _, _ string) error {
+	return nil
 }
 
 func TestUploadStoresTheBytesAndTheRow(t *testing.T) {
