@@ -16,6 +16,8 @@ import (
 	shareRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/share"
 	userRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
 	"github.com/minhhoccode111/fileuploader/internal/repo/session"
+	transferRepo "github.com/minhhoccode111/fileuploader/internal/repo/transfer"
+	uploadRepo "github.com/minhhoccode111/fileuploader/internal/repo/upload"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	usecaseFile "github.com/minhhoccode111/fileuploader/internal/usecase/file"
 	usecaseFolder "github.com/minhhoccode111/fileuploader/internal/usecase/folder"
@@ -51,12 +53,24 @@ func initUseCases(
 	folders := folderRepo.New(pg)
 	files := fileRepo.New(pg)
 	shares := shareRepo.New(pg)
+	uploads := uploadRepo.New(rdb)
+	pacer := transferRepo.New(rdb)
 
 	return useCases{
 		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
 		folder: usecaseFolder.New(users, folders, files, storage, pg, cfg.MinIO.Bucket, usecase.Limits{StorageQuotaBytes: cfg.Limits.StorageQuotaBytes}),
-		file:   usecaseFile.New(users, files, folders, storage, pg, cfg.MinIO.Bucket, cfg.Upload.MaxBytes, usecase.Limits{StorageQuotaBytes: cfg.Limits.StorageQuotaBytes}),
-		share:  usecaseShare.New(shares, folders, files, pg),
+		file: usecaseFile.New(
+			users, files, folders, storage, pg, cfg.MinIO.Bucket,
+			uploads, pacer,
+			usecase.UploadSettings{
+				MaxBytes:                     cfg.Upload.MaxBytes,
+				PartBytes:                    cfg.Upload.PartBytes,
+				SessionIdleTTL:               cfg.Upload.SessionIdleTTL,
+				DefaultQuotaBytes:            cfg.Limits.StorageQuotaBytes,
+				DefaultUploadRateBytesPerSec: cfg.Limits.UploadRateBytesPerSec,
+			},
+		),
+		share: usecaseShare.New(shares, folders, files, pg),
 	}
 }
 
@@ -70,7 +84,7 @@ func initServers(
 		l,
 		httpserver.Port(cfg.HTTP.Port),
 		httpserver.Prefork(cfg.HTTP.UsePreforkMode),
-		httpserver.BodyLimit(int(cfg.Upload.MaxBytes+config.MultipartOverheadBytes)),
+		httpserver.BodyLimit(int(cfg.Upload.PartBytes+config.UploadOverheadBytes)),
 		httpserver.ReadTimeout(cfg.Upload.Timeout),
 	)
 	// Validator
@@ -145,6 +159,12 @@ func Run(cfg *config.Config) {
 	}
 
 	uc := initUseCases(pg, redisConn, minioClient, cfg)
+
+	sweepCtx, stopSweep := context.WithCancel(context.Background())
+	defer stopSweep()
+
+	startUploadSweeper(sweepCtx, uc.file, l)
+
 	s := initServers(cfg, uc, l)
 	s.startServers()
 	s.waitForShutdown(l)

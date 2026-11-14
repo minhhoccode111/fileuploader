@@ -7,9 +7,9 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-// MultipartOverheadBytes is the room the multipart envelope, its headers and
-// the name field need on top of the bytes of the file itself.
-const MultipartOverheadBytes int64 = 1 << 20
+// UploadOverheadBytes is the room the multipart envelope, its headers and
+// the name field need on top of the bytes of one part.
+const UploadOverheadBytes int64 = 1 << 20
 
 type (
 	// Config -.

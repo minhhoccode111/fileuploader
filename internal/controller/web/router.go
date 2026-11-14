@@ -51,7 +51,7 @@ func NewRouter(
 	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
 	app.Use(middleware.BodyLimit(
 		_generalBodyLimitBytes,
-		cfg.Upload.PartBytes+config.MultipartOverheadBytes,
+		cfg.Upload.PartBytes+config.UploadOverheadBytes,
 		"/htmx/uploads/",
 	))
 
