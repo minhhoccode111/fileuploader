@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,21 @@ import (
 // UploadOverheadBytes is the room the multipart envelope, its headers and
 // the name field need on top of the bytes of one part.
 const UploadOverheadBytes int64 = 1 << 20
+
+// ErrInvalidPartBytes is returned when UPLOAD_PART_BYTES names a part size the
+// store cannot accept.
+var ErrInvalidPartBytes = errors.New("invalid upload part size")
+
+const (
+	// MinUploadPartBytes is the smallest part an S3-compatible store accepts,
+	// apart from the last part of an upload. A configured part below it would
+	// let the handler accept a body the store then refuses.
+	MinUploadPartBytes int64 = 5 << 20
+
+	// MaxUploadPartBytes is the largest part one upload asks for. It keeps a
+	// part inside the upload timeout and the proxy cap.
+	MaxUploadPartBytes int64 = 50 << 20
+)
 
 type (
 	// Config -.
@@ -105,10 +121,31 @@ type (
 	}
 )
 
+// validate rejects a part size the store cannot honor. The handler sizes its
+// body limit from the same value, so an out-of-range part would otherwise let a
+// request through that every upload is doomed to fail.
+func (u upload) validate() error {
+	if u.PartBytes < MinUploadPartBytes || u.PartBytes > MaxUploadPartBytes {
+		return fmt.Errorf(
+			"%w: UPLOAD_PART_BYTES = %d, want between %d and %d bytes",
+			ErrInvalidPartBytes,
+			u.PartBytes,
+			MinUploadPartBytes,
+			MaxUploadPartBytes,
+		)
+	}
+
+	return nil
+}
+
 // NewConfig returns app config.
 func NewConfig() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
+		return nil, fmt.Errorf("config error: %w", err)
+	}
+
+	if err := cfg.Upload.validate(); err != nil {
 		return nil, fmt.Errorf("config error: %w", err)
 	}
 

@@ -86,6 +86,7 @@ func (r *Repo) Create(ctx context.Context, session entity.UploadSession, idleTTL
 		"storage_key", session.StorageKey,
 		"multipart_id", session.MultipartID,
 		"created_at", strconv.FormatInt(session.CreatedAt.Unix(), 10),
+		"expires_at", strconv.FormatInt(expiresAt.Unix(), 10),
 	)
 	pipe.SAdd(ctx, userKey(session.UserID), session.ID)
 	pipe.ZAdd(ctx, _expiryKey, goredis.Z{Score: float64(expiresAt.Unix()), Member: session.ID})
@@ -123,7 +124,13 @@ func (r *Repo) Get(ctx context.Context, uploadID string) (entity.UploadSession, 
 
 // SetPart records the ETag of an accepted part and pushes the expiry of the
 // upload forward, so an upload the account keeps feeding is not swept. A part
-// for a session that is gone is refused instead of creating one.
+// for a session that is gone is refused instead of creating one, and so is a
+// part whose new expiry has already passed: the sweep must be able to load the
+// session after its expiry score falls due, which it cannot do once the hash is
+// gone.
+//
+// The hashes outlive the expiry by _sessionGrace for that reason. The expiry
+// score falls due first and the sweep then reads a session that is still there.
 func (r *Repo) SetPart(
 	ctx context.Context,
 	uploadID string,
@@ -137,9 +144,15 @@ func (r *Repo) SetPart(
 	}
 
 	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		return entity.ErrUploadNotFound
+	}
+
+	ttl += _sessionGrace
 
 	pipe := r.rdb.Client.TxPipeline()
 	pipe.HSet(ctx, partsKey(uploadID), strconv.Itoa(partNumber), etag)
+	pipe.HSet(ctx, sessionKey(uploadID), "expires_at", strconv.FormatInt(expiresAt.Unix(), 10))
 	pipe.ZAdd(ctx, _expiryKey, goredis.Z{Score: float64(expiresAt.Unix()), Member: uploadID})
 	pipe.Expire(ctx, partsKey(uploadID), ttl)
 	pipe.Expire(ctx, sessionKey(uploadID), ttl)
@@ -208,7 +221,11 @@ func (r *Repo) ListByUser(ctx context.Context, userID string) ([]entity.UploadSe
 }
 
 // Expired returns the sessions due for a sweep by now, oldest first, at most
-// limit of them. A score whose session is already gone is dropped.
+// limit of them. The session hash outlives its expiry by _sessionGrace, so a
+// due session is still readable by the sweep. A score whose session is already
+// gone is dropped; its entry in the account index cannot be removed here,
+// because the identifier alone does not say which account indexed it, so
+// ListByUser drops that stale member on the next attempt.
 func (r *Repo) Expired(ctx context.Context, now time.Time, limit int) ([]entity.UploadSession, error) {
 	ids, err := r.rdb.Client.ZRangeArgs(ctx, goredis.ZRangeArgs{
 		Key:     _expiryKey,
@@ -314,8 +331,10 @@ func (r *Repo) releaseFunc(key, token string) func() {
 }
 
 // sessionFromFields builds a session from the hash fields Create wrote. The
-// expiry is not among them: it is a score in the expiry set, which the sweep
-// reads and the rest of the code does not need.
+// expiry score of the session lives in the expiry set, which the sweep reads;
+// the hash carries the same instant as expires_at so a loaded session can say
+// whether it is already due. A session written before that field existed comes
+// back with a zero ExpiresAt, which callers treat as "no expiry recorded".
 func sessionFromFields(uploadID string, fields map[string]string) (entity.UploadSession, error) {
 	size, err := strconv.ParseInt(fields["size"], 10, 64)
 	if err != nil {
@@ -337,6 +356,11 @@ func sessionFromFields(uploadID string, fields map[string]string) (entity.Upload
 		return entity.UploadSession{}, fmt.Errorf("strconv.ParseInt(created_at): %w", err)
 	}
 
+	expiresAt, err := parseExpiresAt(fields["expires_at"])
+	if err != nil {
+		return entity.UploadSession{}, err
+	}
+
 	return entity.UploadSession{
 		ID:          uploadID,
 		UserID:      fields["user_id"],
@@ -350,7 +374,24 @@ func sessionFromFields(uploadID string, fields map[string]string) (entity.Upload
 		PartSize:    partSize,
 		PartCount:   int(partCount),
 		CreatedAt:   time.Unix(createdAt, 0).UTC(),
+		ExpiresAt:   expiresAt,
 	}, nil
+}
+
+// parseExpiresAt reads the stored expiry of a session. An absent field is a
+// zero instant rather than an error, so a session written by an older build is
+// still readable.
+func parseExpiresAt(value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("strconv.ParseInt(expires_at): %w", err)
+	}
+
+	return time.Unix(seconds, 0).UTC(), nil
 }
 
 // sessionKey builds the Redis key for a session.

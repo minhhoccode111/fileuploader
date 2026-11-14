@@ -646,12 +646,12 @@ func (uc *UseCase) finalizeError(ctx context.Context, file *entity.File, storeEr
 	removeErr := uc.storage.RemoveObject(context.WithoutCancel(ctx), uc.bucket, file.StorageKey)
 	if removeErr != nil {
 		return fmt.Errorf(
-			"FileUseCase - Upload - uc.uow.Do: %w",
+			"FileUseCase - finalizeError - uc.uow.Do: %w",
 			errors.Join(storeErr, removeErr, entity.ErrStorageCleanup),
 		)
 	}
 
-	return fmt.Errorf("FileUseCase - Upload - uc.uow.Do: %w", storeErr)
+	return fmt.Errorf("FileUseCase - finalizeError - uc.uow.Do: %w", storeErr)
 }
 
 // normalizeContentType keeps a media type the browser sent when it is one, and

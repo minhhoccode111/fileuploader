@@ -166,6 +166,7 @@ type fakeUploadStorage struct {
 	createKey     string
 	createType    string
 	createErr     error
+	createCalls   int
 	abortID       string
 	abortKey      string
 	abortErr      error
@@ -189,6 +190,7 @@ func (f *fakeUploadStorage) CreateMultipartUpload(
 	_ context.Context,
 	_, key, contentType string,
 ) (string, error) {
+	f.createCalls++
 	f.createKey = key
 	f.createType = contentType
 
@@ -512,6 +514,51 @@ func TestStartUploadAbortsMultipartWhenSessionStoreFails(t *testing.T) {
 	}
 }
 
+// An empty file needs no multipart upload: it is written in one request at
+// completion, so a start opens nothing to abort or sweep.
+func TestStartUploadSkipsMultipartForAnEmptyFile(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{
+			MaxBytes:       _testMaxBytes,
+			PartBytes:      _testPartBytes,
+			SessionIdleTTL: _testUploadTTL,
+		},
+	)
+
+	session, err := uc.StartUpload(context.Background(), "user", "folder", "empty.txt", "text/plain", 0)
+	if err != nil {
+		t.Fatalf("StartUpload() error = %v, want nil", err)
+	}
+
+	if storage.createCalls != 0 {
+		t.Errorf("multipart creates = %d, want 0 for an empty file", storage.createCalls)
+	}
+
+	if session.MultipartID != "" {
+		t.Errorf("multipart id = %q, want empty", session.MultipartID)
+	}
+
+	if session.PartCount != 0 {
+		t.Errorf("part count = %d, want 0", session.PartCount)
+	}
+
+	if len(uploads.created) != 1 {
+		t.Fatalf("created sessions = %d, want 1", len(uploads.created))
+	}
+
+	if uploads.created[0].MultipartID != "" {
+		t.Errorf("stored multipart id = %q, want empty", uploads.created[0].MultipartID)
+	}
+}
+
 // partSession is the two-part session the upload part tests send into.
 func partSession() entity.UploadSession {
 	return entity.UploadSession{
@@ -662,6 +709,46 @@ func TestUploadPartRejectsAnotherUsersSession(t *testing.T) {
 	}
 }
 
+// A session whose idle window has passed is gone as far as a part is concerned,
+// even when its hash is still readable, so the bytes never reach the bucket and
+// the expiry does not slide.
+func TestUploadPartRejectsAnExpiredSession(t *testing.T) {
+	t.Parallel()
+
+	session := partSession()
+	session.ExpiresAt = time.Now().Add(-time.Minute)
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.UploadPart(
+		context.Background(),
+		"user",
+		"upload",
+		1,
+		strings.NewReader(strings.Repeat("a", int(_testFiveMiB))),
+		_testFiveMiB,
+	)
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("UploadPart() error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if storage.partCalls != 0 {
+		t.Errorf("storage calls = %d, want 0 for an expired session", storage.partCalls)
+	}
+
+	if uploads.setPartCalls != 0 {
+		t.Errorf("SetPart calls = %d, want 0 for an expired session", uploads.setPartCalls)
+	}
+}
+
 func TestUploadPartPacesTheBody(t *testing.T) {
 	t.Parallel()
 
@@ -739,6 +826,36 @@ func checkPartPaces(t *testing.T, calls []fakePace, rate, bodyLen, batch int64) 
 
 	if paced != bodyLen {
 		t.Errorf("paced bytes = %d, want %d", paced, bodyLen)
+	}
+}
+
+// stuckReader hands over nothing and reports no error, which a paced read must
+// not pass on as if it had made progress.
+type stuckReader struct{}
+
+func (stuckReader) Read([]byte) (int, error) { return 0, nil }
+
+func TestPacedReaderReportsNoProgress(t *testing.T) {
+	t.Parallel()
+
+	pacer := &fakePacer{}
+
+	reader := &pacedReader{
+		r:       stuckReader{},
+		limiter: pacer,
+		ctx:     context.Background(),
+		userID:  "user",
+		rate:    1 << 20,
+		batch:   1 << 20,
+	}
+
+	n, err := reader.Read(make([]byte, 16))
+	if n != 0 || !errors.Is(err, io.ErrNoProgress) {
+		t.Fatalf("Read() = %d, %v; want 0, %v", n, err, io.ErrNoProgress)
+	}
+
+	if len(pacer.calls) != 0 {
+		t.Errorf("pacer calls = %d, want none without bytes", len(pacer.calls))
 	}
 }
 
@@ -963,13 +1080,53 @@ func TestCompleteUploadRejectsMissingParts(t *testing.T) {
 	}
 }
 
+// A session past its idle window is gone for completion too, so the join never
+// runs and no row is stored.
+func TestCompleteUploadRejectsAnExpiredSession(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	session.ExpiresAt = time.Now().Add(-time.Minute)
+
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(&fakeUserRepoForFile{}, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if storage.completeCalls != 0 {
+		t.Errorf("completion calls = %d, want 0 for an expired session", storage.completeCalls)
+	}
+
+	if files.stored != nil {
+		t.Error("CompleteUpload() stored a row for an expired session")
+	}
+
+	if len(uploads.deleted) != 0 {
+		t.Errorf("deleted sessions = %v, want none for an expired session", uploads.deleted)
+	}
+}
+
+// A join that fails must not leave the parts of the multipart upload in the
+// bucket: the session is ended and the upload is aborted once, so the bucket
+// holds nothing for a file that never became a row.
 func TestCompleteUploadReleasesReservationOnStorageFailure(t *testing.T) {
 	t.Parallel()
 
+	session := completeSession()
 	files := &fakeFileRepo{}
 	storage := &fakeUploadStorage{completeErr: errUploadStore}
 	uploads := &fakeUploadRepo{
-		sessions: []entity.UploadSession{completeSession()},
+		sessions: []entity.UploadSession{session},
 		parts: map[string]map[int]string{
 			"upload": {1: "one", 2: "two"},
 		},
@@ -989,12 +1146,59 @@ func TestCompleteUploadReleasesReservationOnStorageFailure(t *testing.T) {
 		t.Error("CompleteUpload() stored a row for an object it never joined")
 	}
 
+	if storage.abortCalls != 1 {
+		t.Fatalf("abort calls = %d, want 1 so no parts are orphaned", storage.abortCalls)
+	}
+
+	if storage.abortID != session.MultipartID || storage.abortKey != session.StorageKey {
+		t.Errorf(
+			"aborted %q/%q, want %q/%q",
+			storage.abortID,
+			storage.abortKey,
+			session.MultipartID,
+			session.StorageKey,
+		)
+	}
+
 	if !slices.Equal(uploads.deleted, []string{"upload"}) {
 		t.Errorf("deleted sessions = %v, want the reservation released", uploads.deleted)
 	}
 
 	if uploads.releases != 1 {
 		t.Errorf("quota releases = %d, want 1", uploads.releases)
+	}
+}
+
+// A failed abort on top of a failed join is reported with the cleanup sentinel,
+// so a caller can tell the bucket may still hold the parts.
+func TestCompleteUploadJoinsCleanupErrorWhenAbortFails(t *testing.T) {
+	t.Parallel()
+
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{completeErr: errUploadStore, abortErr: errUploadStore}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{completeSession()},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(&fakeUserRepoForFile{}, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, errUploadStore)
+	}
+
+	if !errors.Is(err, entity.ErrStorageCleanup) {
+		t.Errorf("CompleteUpload() error = %v, want %v", err, entity.ErrStorageCleanup)
+	}
+
+	if storage.abortCalls != 1 {
+		t.Errorf("abort calls = %d, want 1", storage.abortCalls)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want the reservation released", uploads.deleted)
 	}
 }
 
@@ -1036,6 +1240,7 @@ func TestCompleteUploadUsesPutObjectForAnEmptyFile(t *testing.T) {
 	session := completeSession()
 	session.Size = 0
 	session.PartCount = 0
+	session.MultipartID = ""
 
 	users := &fakeUserRepoForFile{}
 	files := &fakeFileRepo{}
@@ -1052,6 +1257,10 @@ func TestCompleteUploadUsesPutObjectForAnEmptyFile(t *testing.T) {
 		t.Errorf("completion calls = %d, want 0 for an empty file", storage.completeCalls)
 	}
 
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0 for an empty file that never opened a multipart", storage.abortCalls)
+	}
+
 	if storage.putKey != session.StorageKey || storage.putSize != 0 {
 		t.Errorf("put %q of %d bytes, want %q of 0 bytes", storage.putKey, storage.putSize, session.StorageKey)
 	}
@@ -1066,6 +1275,36 @@ func TestCompleteUploadUsesPutObjectForAnEmptyFile(t *testing.T) {
 
 	if !slices.Equal(uploads.deleted, []string{"upload"}) {
 		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+}
+
+// An empty file whose write fails leaves no multipart upload to abort, so the
+// cleanup only ends the session and reports the write failure.
+func TestCompleteUploadOfAnEmptyFileSkipsAbortOnWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	session.Size = 0
+	session.PartCount = 0
+	session.MultipartID = ""
+
+	storage := &fakeUploadStorage{}
+	storage.putErr = errUploadStore
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	uc := completeUseCase(&fakeUserRepoForFile{}, &fakeFileRepo{}, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, errUploadStore)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0 for a session without a multipart", storage.abortCalls)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want the reservation released", uploads.deleted)
 	}
 }
 
@@ -1233,6 +1472,40 @@ func TestAbortUploadRejectsAnotherUser(t *testing.T) {
 
 	if len(uploads.deleted) != 0 {
 		t.Errorf("deleted sessions = %v, want none for another account", uploads.deleted)
+	}
+}
+
+// Aborting an empty file ends its session without touching storage, because the
+// start of an empty file never opened a multipart upload.
+func TestAbortUploadOfAnEmptyFileSkipsStorage(t *testing.T) {
+	t.Parallel()
+
+	session := expiredSession("upload", "user")
+	session.Size = 0
+	session.PartCount = 0
+	session.MultipartID = ""
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.AbortUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("AbortUpload() error = %v, want nil", err)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0 for a session without a multipart", storage.abortCalls)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
 	}
 }
 

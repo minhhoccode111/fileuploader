@@ -108,12 +108,9 @@ func (uc *UseCase) StartUpload(
 	key := storageKey(userID, fileID)
 	mediaType := normalizeContentType(contentType)
 
-	multipartID, err := uc.storage.CreateMultipartUpload(ctx, uc.bucket, key, mediaType)
+	multipartID, err := uc.openMultipart(ctx, size, key, mediaType)
 	if err != nil {
-		return entity.UploadSession{}, fmt.Errorf(
-			"FileUseCase - StartUpload - uc.storage.CreateMultipartUpload: %w",
-			err,
-		)
+		return entity.UploadSession{}, err
 	}
 
 	now := time.Now().UTC()
@@ -140,6 +137,29 @@ func (uc *UseCase) StartUpload(
 	}
 
 	return session, nil
+}
+
+// openMultipart opens the multipart upload one file needs. An empty file has no
+// parts to join, so it is written in one request at completion and needs no
+// multipart upload to abort or sweep.
+func (uc *UseCase) openMultipart(
+	ctx context.Context,
+	size int64,
+	key, contentType string,
+) (string, error) {
+	if size == 0 {
+		return "", nil
+	}
+
+	multipartID, err := uc.storage.CreateMultipartUpload(ctx, uc.bucket, key, contentType)
+	if err != nil {
+		return "", fmt.Errorf(
+			"FileUseCase - StartUpload - uc.storage.CreateMultipartUpload: %w",
+			err,
+		)
+	}
+
+	return multipartID, nil
 }
 
 // uploadAllowance resolves the quota and upload rate the account is held to.
@@ -169,13 +189,9 @@ func (uc *UseCase) UploadPart(
 	body io.Reader,
 	size int64,
 ) error {
-	session, err := uc.uploads.Get(ctx, uploadID)
+	session, err := uc.ownedSession(ctx, userID, uploadID, "UploadPart")
 	if err != nil {
-		return fmt.Errorf("FileUseCase - UploadPart - uc.uploads.Get: %w", err)
-	}
-
-	if session.UserID != userID {
-		return entity.ErrUploadNotFound
+		return err
 	}
 
 	expected, err := session.ExpectedPartSize(partNumber)
@@ -327,19 +343,22 @@ func (uc *UseCase) sweepSession(ctx context.Context, session *entity.UploadSessi
 }
 
 // discardSession aborts the multipart upload of a session and deletes the
-// session itself. A failed abort keeps the session, so a later abort or sweep
-// still finds the bucket object and can finish the job.
+// session itself. A session that never opened a multipart upload, an empty file
+// for example, has nothing to abort. A failed abort keeps the session, so a
+// later abort or sweep still finds the bucket object and can finish the job.
 func (uc *UseCase) discardSession(
 	ctx context.Context,
 	session *entity.UploadSession,
 	op string,
 ) error {
-	err := uc.storage.AbortMultipartUpload(ctx, uc.bucket, session.StorageKey, session.MultipartID)
-	if err != nil {
-		return fmt.Errorf("FileUseCase - %s - uc.storage.AbortMultipartUpload: %w", op, err)
+	if session.MultipartID != "" {
+		err := uc.storage.AbortMultipartUpload(ctx, uc.bucket, session.StorageKey, session.MultipartID)
+		if err != nil {
+			return fmt.Errorf("FileUseCase - %s - uc.storage.AbortMultipartUpload: %w", op, err)
+		}
 	}
 
-	err = uc.uploads.Delete(ctx, session.ID)
+	err := uc.uploads.Delete(ctx, session.ID)
 	if err != nil {
 		return fmt.Errorf("FileUseCase - %s - uc.uploads.Delete: %w", op, err)
 	}
@@ -370,13 +389,9 @@ func (uc *UseCase) slideSession(ctx context.Context, uploadID string, partNumber
 // written. A completion that cannot record the row removes the joined object
 // and ends the session, so no phantom reservation is left behind.
 func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) (entity.File, error) {
-	session, err := uc.uploads.Get(ctx, uploadID)
+	session, err := uc.ownedSession(ctx, userID, uploadID, "CompleteUpload")
 	if err != nil {
-		return entity.File{}, fmt.Errorf("FileUseCase - CompleteUpload - uc.uploads.Get: %w", err)
-	}
-
-	if session.UserID != userID {
-		return entity.File{}, entity.ErrUploadNotFound
+		return entity.File{}, err
 	}
 
 	parts, err := uc.sessionParts(ctx, &session)
@@ -393,6 +408,7 @@ func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) 
 
 	err = uc.joinParts(ctx, &session, parts)
 	if err != nil {
+		err = uc.joinError(ctx, &session, err)
 		uc.endSession(ctx, session.ID)
 
 		return entity.File{}, err
@@ -483,12 +499,68 @@ func (uc *UseCase) joinParts(
 	return nil
 }
 
+// joinError aborts the multipart upload a failed join leaves behind, so the
+// parts already in the bucket do not outlive the session that could have
+// completed them. A failed abort is joined with the cleanup sentinel, so the
+// caller can tell the bucket may still hold the parts.
+func (uc *UseCase) joinError(
+	ctx context.Context,
+	session *entity.UploadSession,
+	joinErr error,
+) error {
+	if session.MultipartID == "" {
+		return joinErr
+	}
+
+	abortErr := uc.storage.AbortMultipartUpload(
+		context.WithoutCancel(ctx),
+		uc.bucket,
+		session.StorageKey,
+		session.MultipartID,
+	)
+	if abortErr != nil {
+		return fmt.Errorf(
+			"FileUseCase - CompleteUpload - uc.storage.AbortMultipartUpload: %w",
+			errors.Join(joinErr, abortErr, entity.ErrStorageCleanup),
+		)
+	}
+
+	return joinErr
+}
+
 // endSession removes the session a finished upload leaves behind, which is what
 // releases its quota reservation. A failed delete is ignored: the sweeper finds
 // the expired session and releases it later.
 func (uc *UseCase) endSession(ctx context.Context, uploadID string) {
 	//nolint:errcheck // the sweeper releases a session that outlives its upload
 	uc.uploads.Delete(context.WithoutCancel(ctx), uploadID)
+}
+
+// ownedSession loads a session for one account and refuses a missing one, one
+// of another account, and one whose idle window has passed. The three refusals
+// share one sentinel, so a caller cannot tell an expired upload from one it
+// never owned.
+func (uc *UseCase) ownedSession(
+	ctx context.Context,
+	userID, uploadID, op string,
+) (entity.UploadSession, error) {
+	session, err := uc.uploads.Get(ctx, uploadID)
+	if err != nil {
+		return entity.UploadSession{}, fmt.Errorf("FileUseCase - %s - uc.uploads.Get: %w", op, err)
+	}
+
+	if session.UserID != userID || sessionExpired(&session) {
+		return entity.UploadSession{}, entity.ErrUploadNotFound
+	}
+
+	return session, nil
+}
+
+// sessionExpired reports whether the idle window of a session has passed. A
+// session that carries no expiry is never treated as expired, so a session
+// written before the store recorded one can still finish.
+func sessionExpired(session *entity.UploadSession) bool {
+	return !session.ExpiresAt.IsZero() && !session.ExpiresAt.After(time.Now())
 }
 
 // fileFromSession builds the row of a completed upload. The identifiers and the
@@ -546,6 +618,12 @@ func (p *pacedReader) Read(buf []byte) (int, error) {
 
 	n, err := p.r.Read(buf)
 	if n == 0 {
+		if err == nil {
+			// A reader that makes no progress and reports no error would
+			// spin the caller forever.
+			return 0, io.ErrNoProgress
+		}
+
 		return n, err
 	}
 
@@ -638,19 +716,28 @@ func (uc *UseCase) uploadReserved(ctx context.Context, userID string) (int64, er
 }
 
 // startError aborts the multipart upload a failed start opened, so no orphan
-// parts stay in the bucket for a session that does not exist. A failed abort is
-// joined into the error, so the caller still sees the failure that mattered.
+// parts stay in the bucket for a session that does not exist. A start that
+// opened no multipart upload, an empty file for example, has nothing to abort.
+// A failed abort is joined into the error, so the caller still sees the failure
+// that mattered.
 func (uc *UseCase) startError(
 	ctx context.Context,
 	key, multipartID string,
 	createErr error,
 ) error {
-	abortErr := uc.storage.AbortMultipartUpload(context.WithoutCancel(ctx), uc.bucket, key, multipartID)
-	if abortErr != nil {
-		return fmt.Errorf(
-			"FileUseCase - StartUpload - uc.uploads.Create: %w",
-			errors.Join(createErr, abortErr, entity.ErrStorageCleanup),
+	if multipartID != "" {
+		abortErr := uc.storage.AbortMultipartUpload(
+			context.WithoutCancel(ctx),
+			uc.bucket,
+			key,
+			multipartID,
 		)
+		if abortErr != nil {
+			return fmt.Errorf(
+				"FileUseCase - StartUpload - uc.uploads.Create: %w",
+				errors.Join(createErr, abortErr, entity.ErrStorageCleanup),
+			)
+		}
 	}
 
 	return fmt.Errorf("FileUseCase - StartUpload - uc.uploads.Create: %w", createErr)

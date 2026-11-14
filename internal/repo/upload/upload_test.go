@@ -52,8 +52,9 @@ func testSession() entity.UploadSession {
 	}
 }
 
-// A session written by Create must come back field for field. The expiry is
-// not part of the hash: it lives in the expiry index as a score.
+// A session written by Create must come back field for field. The expiry rides
+// in both the expiry index, as a score, and the session hash, so a loaded
+// session can say whether it is already due.
 func TestCreateAndGetRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -75,10 +76,6 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 		t.Fatalf("Get() error = %v, want nil", err)
 	}
 
-	if got != session {
-		t.Errorf("Get() = %+v, want %+v", got, session)
-	}
-
 	score, err := rdb.Client.ZScore(ctx, _expiryKey, session.ID).Result()
 	if err != nil {
 		t.Fatalf("ZScore() error = %v, want nil", err)
@@ -88,6 +85,16 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 		t.Errorf("expiry score = %d, want between %d and %d", int64(score), before, after)
 	}
 
+	if got.ExpiresAt.Unix() != int64(score) {
+		t.Errorf("Get() expiry = %v, want the expiry score %d", got.ExpiresAt, int64(score))
+	}
+
+	got.ExpiresAt = time.Time{}
+
+	if got != session {
+		t.Errorf("Get() = %+v, want %+v", got, session)
+	}
+
 	_, err = sessions.Get(ctx, "missing")
 	if !errors.Is(err, entity.ErrUploadNotFound) {
 		t.Errorf("Get(missing) error = %v, want %v", err, entity.ErrUploadNotFound)
@@ -95,7 +102,9 @@ func TestCreateAndGetRoundTrip(t *testing.T) {
 }
 
 // A part lands in the parts hash and pushes the expiry of the upload forward,
-// so an upload that keeps receiving parts is not swept.
+// so an upload that keeps receiving parts is not swept. Both hashes outlive the
+// expiry by the grace window, so the sweep still finds the session after its
+// score falls due and can abort the multipart upload.
 func TestSetPartStoresETagAndSlidesExpiry(t *testing.T) {
 	t.Parallel()
 
@@ -133,9 +142,70 @@ func TestSetPartStoresETagAndSlidesExpiry(t *testing.T) {
 		t.Errorf("expiry score = %d, want %d", int64(score), expiresAt.Unix())
 	}
 
+	got, err := sessions.Get(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v, want nil", err)
+	}
+
+	if !got.ExpiresAt.Equal(expiresAt) {
+		t.Errorf("Get() expiry = %v, want %v", got.ExpiresAt, expiresAt)
+	}
+
+	wantTTL := time.Until(expiresAt) + _sessionGrace
+	assertTTL(t, rdb, sessionKey(session.ID), wantTTL)
+	assertTTL(t, rdb, partsKey(session.ID), wantTTL)
+
 	err = sessions.SetPart(ctx, "missing", 1, "etag", expiresAt)
 	if !errors.Is(err, entity.ErrUploadNotFound) {
 		t.Errorf("SetPart(missing) error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+}
+
+// A part cannot push a session into the past. A caller that does so is told the
+// upload is gone, and the session it named stays exactly as it was, so the
+// sweep can still release it.
+func TestSetPartRejectsAPastExpiry(t *testing.T) {
+	t.Parallel()
+
+	sessions, rdb := newTestRepo(t)
+	ctx := context.Background()
+	session := testSession()
+
+	err := sessions.Create(ctx, session, _testIdleTTL)
+	if err != nil {
+		t.Fatalf("Create() error = %v, want nil", err)
+	}
+
+	err = sessions.SetPart(ctx, session.ID, 1, "etag-one", time.Now().Add(-time.Minute))
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("SetPart() past expiry error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	got, err := sessions.Get(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("Get() after rejected part error = %v, want the session kept", err)
+	}
+
+	if !got.ExpiresAt.After(time.Now()) {
+		t.Errorf("session expiry = %v, want the original future expiry", got.ExpiresAt)
+	}
+
+	parts, err := sessions.Parts(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("Parts() error = %v, want nil", err)
+	}
+
+	if len(parts) != 0 {
+		t.Errorf("stored parts = %v, want none for a rejected part", parts)
+	}
+
+	score, err := rdb.Client.ZScore(ctx, _expiryKey, session.ID).Result()
+	if err != nil {
+		t.Fatalf("ZScore() error = %v, want the score kept", err)
+	}
+
+	if time.Unix(int64(score), 0).Before(time.Now().Add(-time.Second)) {
+		t.Errorf("expiry score = %v, want the original future score", score)
 	}
 }
 
@@ -222,6 +292,51 @@ func TestExpiredReturnsDueSessions(t *testing.T) {
 	ghost, err := rdb.Client.ZScore(ctx, _expiryKey, "upload-ghost").Result()
 	if !errors.Is(err, goredis.Nil) {
 		t.Errorf("ZScore(ghost) = %v, %v; want the ghost removed", ghost, err)
+	}
+}
+
+// A session that received a part is due by its score, and its hash is still
+// readable a second past that moment because it outlives the score by the grace
+// window. That is what lets the sweep abort the multipart upload it left open.
+func TestExpiredReturnsSessionsWhoseHashOutlivedTheScore(t *testing.T) {
+	t.Parallel()
+
+	sessions, rdb := newTestRepo(t)
+	ctx := context.Background()
+	session := testSession()
+
+	err := sessions.Create(ctx, session, _testIdleTTL)
+	if err != nil {
+		t.Fatalf("Create() error = %v, want nil", err)
+	}
+
+	expiresAt := time.Now().Add(_testIdleTTL).Truncate(time.Second)
+
+	err = sessions.SetPart(ctx, session.ID, 1, "etag-one", expiresAt)
+	if err != nil {
+		t.Fatalf("SetPart() error = %v, want nil", err)
+	}
+
+	got, err := sessions.Expired(ctx, expiresAt.Add(time.Second), 100)
+	if err != nil {
+		t.Fatalf("Expired() error = %v, want nil", err)
+	}
+
+	if len(got) != 1 || got[0].ID != session.ID {
+		t.Fatalf("Expired() = %+v, want only %s", got, session.ID)
+	}
+
+	if !got[0].ExpiresAt.Equal(expiresAt) {
+		t.Errorf("Expired() expiry = %v, want %v", got[0].ExpiresAt, expiresAt)
+	}
+
+	exists, err := rdb.Client.Exists(ctx, sessionKey(session.ID)).Result()
+	if err != nil {
+		t.Fatalf("Exists() error = %v, want nil", err)
+	}
+
+	if exists != 1 {
+		t.Error("Expired() found a session whose hash is gone, want the grace window to keep it")
 	}
 }
 
@@ -329,6 +444,21 @@ func assertDeleted(t *testing.T, rdb *redis.Redis, session *entity.UploadSession
 
 	if member {
 		t.Error("Delete() kept the user set member")
+	}
+}
+
+// assertTTL checks that a key lives about as long as the wanted duration. A
+// second of slack covers the walk from the expected value to the query.
+func assertTTL(t *testing.T, rdb *redis.Redis, key string, want time.Duration) {
+	t.Helper()
+
+	ttl, err := rdb.Client.PTTL(context.Background(), key).Result()
+	if err != nil {
+		t.Fatalf("PTTL(%s) error = %v, want nil", key, err)
+	}
+
+	if ttl < want-time.Second || ttl > want+time.Second {
+		t.Errorf("TTL(%s) = %v, want about %v", key, ttl, want)
 	}
 }
 

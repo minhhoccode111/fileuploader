@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -69,6 +70,36 @@ func TestUploadDefaults(t *testing.T) {
 
 	if cfg.Upload.SessionIdleTTL != time.Hour {
 		t.Errorf("upload session idle TTL = %v, want 1h", cfg.Upload.SessionIdleTTL)
+	}
+}
+
+func TestUploadPartBytesRejectsAPartBelowTheFloor(t *testing.T) {
+	setRequiredEnv(t)
+
+	t.Setenv("UPLOAD_PART_BYTES", "5242879")
+
+	_, err := NewConfig()
+	if err == nil {
+		t.Fatal("NewConfig() error = nil, want a rejection below the 5 MiB floor")
+	}
+
+	if !strings.Contains(err.Error(), "UPLOAD_PART_BYTES") {
+		t.Errorf("NewConfig() error = %v, want the setting named", err)
+	}
+}
+
+func TestUploadPartBytesRejectsAPartAboveTheCeiling(t *testing.T) {
+	setRequiredEnv(t)
+
+	t.Setenv("UPLOAD_PART_BYTES", "52428801")
+
+	_, err := NewConfig()
+	if err == nil {
+		t.Fatal("NewConfig() error = nil, want a rejection above the 50 MiB ceiling")
+	}
+
+	if !strings.Contains(err.Error(), "UPLOAD_PART_BYTES") {
+		t.Errorf("NewConfig() error = %v, want the setting named", err)
 	}
 }
 
