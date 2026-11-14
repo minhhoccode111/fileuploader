@@ -39,6 +39,11 @@ const (
 
 	// _uploadPartCeiling is the largest part one upload asks for.
 	_uploadPartCeiling = int64(50 << 20)
+
+	// _sweepBatch is how many expired sessions one sweep query returns. The
+	// sweep asks again until the store has none left, so the batch only caps
+	// how much it holds at once.
+	_sweepBatch = 100
 )
 
 // StartUpload opens the multipart upload of one file, reserves its declared
@@ -215,6 +220,128 @@ func (uc *UseCase) UploadPart(
 	err = uc.slideSession(ctx, uploadID, partNumber, etag)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// AbortUpload ends one open upload on behalf of its owner: the multipart upload
+// is aborted so no orphan parts stay in the bucket, and the session is deleted
+// so its quota reservation is released. A session that is already gone is not an
+// error, because the abort path and the sweeper both call it.
+func (uc *UseCase) AbortUpload(ctx context.Context, userID, uploadID string) error {
+	session, err := uc.uploads.Get(ctx, uploadID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUploadNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf("FileUseCase - AbortUpload - uc.uploads.Get: %w", err)
+	}
+
+	if session.UserID != userID {
+		return entity.ErrUploadNotFound
+	}
+
+	release, err := uc.uploads.LockQuota(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - AbortUpload - uc.uploads.LockQuota: %w", err)
+	}
+
+	defer release()
+
+	return uc.discardSession(ctx, &session, "AbortUpload")
+}
+
+// SweepUploads releases the sessions an idle account left behind. Each pass
+// takes one page of expired sessions, aborts the multipart upload of each and
+// deletes the session, which releases the reservation it held. A pass that
+// deletes nothing stops the sweep: the same expired session would otherwise be
+// fetched forever. A session that survives a failed abort or delete is left for
+// the next sweep, and its error is joined into the result.
+func (uc *UseCase) SweepUploads(ctx context.Context) (int, error) {
+	swept := 0
+
+	var errs []error
+
+	for {
+		sessions, err := uc.uploads.Expired(ctx, time.Now().UTC(), _sweepBatch)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("FileUseCase - SweepUploads - uc.uploads.Expired: %w", err))
+
+			break
+		}
+
+		if len(sessions) == 0 {
+			break
+		}
+
+		deleted, batchErrs := uc.sweepBatch(ctx, sessions)
+		swept += deleted
+
+		errs = append(errs, batchErrs...)
+
+		if deleted == 0 {
+			break
+		}
+	}
+
+	return swept, errors.Join(errs...)
+}
+
+// sweepBatch aborts and deletes one page of expired sessions and reports how
+// many it removed, together with the failures of the ones it kept.
+func (uc *UseCase) sweepBatch(
+	ctx context.Context,
+	sessions []entity.UploadSession,
+) (int, []error) {
+	deleted := 0
+
+	var errs []error
+
+	for i := range sessions {
+		err := uc.sweepSession(ctx, &sessions[i])
+		if err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+
+		deleted++
+	}
+
+	return deleted, errs
+}
+
+// sweepSession releases one expired session while holding the quota lock of its
+// owner, so a concurrent start cannot measure the quota mid-release.
+func (uc *UseCase) sweepSession(ctx context.Context, session *entity.UploadSession) error {
+	release, err := uc.uploads.LockQuota(ctx, session.UserID)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - SweepUploads - uc.uploads.LockQuota: %w", err)
+	}
+
+	defer release()
+
+	return uc.discardSession(ctx, session, "SweepUploads")
+}
+
+// discardSession aborts the multipart upload of a session and deletes the
+// session itself. A failed abort keeps the session, so a later abort or sweep
+// still finds the bucket object and can finish the job.
+func (uc *UseCase) discardSession(
+	ctx context.Context,
+	session *entity.UploadSession,
+	op string,
+) error {
+	err := uc.storage.AbortMultipartUpload(ctx, uc.bucket, session.StorageKey, session.MultipartID)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - %s - uc.storage.AbortMultipartUpload: %w", op, err)
+	}
+
+	err = uc.uploads.Delete(ctx, session.ID)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - %s - uc.uploads.Delete: %w", op, err)
 	}
 
 	return nil

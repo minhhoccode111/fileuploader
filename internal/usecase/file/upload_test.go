@@ -39,11 +39,13 @@ type fakeUploadRepo struct {
 	getErr       error
 	listErr      error
 	lockErr      error
+	deleteErr    error
 	created      []entity.UploadSession
 	lastTTL      time.Duration
 	partExpiry   time.Time
 	setPartCalls int
 	lockCalls    int
+	expiredCalls int
 	releases     int
 	deleted      []string
 }
@@ -105,14 +107,27 @@ func (f *fakeUploadRepo) ListByUser(_ context.Context, _ string) ([]entity.Uploa
 	return f.reserved, f.listErr
 }
 
+// Expired hands back the sessions the sweep tests expired, minus the ones the
+// use case already deleted, so a sweep sees the list shrink the way the store
+// does.
 func (f *fakeUploadRepo) Expired(_ context.Context, _ time.Time, _ int) ([]entity.UploadSession, error) {
-	return f.expired, nil
+	f.expiredCalls++
+
+	live := make([]entity.UploadSession, 0, len(f.expired))
+
+	for i := range f.expired {
+		if !slices.Contains(f.deleted, f.expired[i].ID) {
+			live = append(live, f.expired[i])
+		}
+	}
+
+	return live, nil
 }
 
 func (f *fakeUploadRepo) Delete(_ context.Context, uploadID string) error {
 	f.deleted = append(f.deleted, uploadID)
 
-	return nil
+	return f.deleteErr
 }
 
 func (f *fakeUploadRepo) LockQuota(_ context.Context, _ string) (func(), error) {
@@ -154,6 +169,7 @@ type fakeUploadStorage struct {
 	abortID       string
 	abortKey      string
 	abortErr      error
+	abortCalls    int
 	partID        string
 	partKey       string
 	partNumber    int
@@ -189,6 +205,7 @@ func (f *fakeUploadStorage) CreateMultipartUpload(
 
 func (f *fakeUploadStorage) AbortMultipartUpload(_ context.Context, _, key, uploadID string) error {
 	f.aborted = true
+	f.abortCalls++
 	f.abortKey = key
 	f.abortID = uploadID
 
@@ -1092,6 +1109,263 @@ func TestCompleteUploadReleasesTheReservation(t *testing.T) {
 			"quota lock calls/releases = %d/%d, want 1/1",
 			uploads.lockCalls,
 			uploads.releases,
+		)
+	}
+}
+
+// expiredSession is one session the sweep tests let the store hand back. A
+// swept session carries every field the abort needs, because it is built the
+// way a live session is.
+func expiredSession(id, userID string) entity.UploadSession {
+	return entity.UploadSession{
+		ID:          id,
+		UserID:      userID,
+		FolderID:    "folder",
+		FileID:      "file-" + id,
+		Name:        id + ".iso",
+		StorageKey:  "users/" + userID + "/files/file-" + id,
+		MultipartID: "multipart-" + id,
+		Size:        _testFiveMiB,
+		PartSize:    _testFiveMiB,
+		PartCount:   1,
+	}
+}
+
+func TestAbortUploadDeletesSessionAndMultipart(t *testing.T) {
+	t.Parallel()
+
+	session := expiredSession("upload", "user")
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.AbortUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("AbortUpload() error = %v, want nil", err)
+	}
+
+	if storage.abortCalls != 1 {
+		t.Fatalf("abort calls = %d, want 1", storage.abortCalls)
+	}
+
+	if storage.abortKey != session.StorageKey || storage.abortID != session.MultipartID {
+		t.Errorf(
+			"aborted %q/%q, want %q/%q",
+			storage.abortID,
+			storage.abortKey,
+			session.MultipartID,
+			session.StorageKey,
+		)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+
+	if uploads.lockCalls != 1 || uploads.releases != 1 {
+		t.Errorf(
+			"quota lock calls/releases = %d/%d, want 1/1",
+			uploads.lockCalls,
+			uploads.releases,
+		)
+	}
+}
+
+func TestAbortUploadIsIdempotentForMissingSession(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.AbortUpload(context.Background(), "user", "gone")
+	if err != nil {
+		t.Fatalf("AbortUpload() error = %v, want nil for a missing session", err)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0 for a missing session", storage.abortCalls)
+	}
+
+	if len(uploads.deleted) != 0 {
+		t.Errorf("deleted sessions = %v, want none for a missing session", uploads.deleted)
+	}
+
+	if uploads.lockCalls != 0 {
+		t.Errorf("quota lock calls = %d, want 0 for a missing session", uploads.lockCalls)
+	}
+}
+
+func TestAbortUploadRejectsAnotherUser(t *testing.T) {
+	t.Parallel()
+
+	session := expiredSession("upload", "user")
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.AbortUpload(context.Background(), "intruder", "upload")
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("AbortUpload() error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Error("AbortUpload() aborted another account's upload")
+	}
+
+	if len(uploads.deleted) != 0 {
+		t.Errorf("deleted sessions = %v, want none for another account", uploads.deleted)
+	}
+}
+
+func TestSweepUploadsAbortsExpiredSessions(t *testing.T) {
+	t.Parallel()
+
+	first := expiredSession("upload-1", "user")
+	second := expiredSession("upload-2", "other")
+
+	uploads := &fakeUploadRepo{expired: []entity.UploadSession{first, second}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	count, err := uc.SweepUploads(context.Background())
+	if err != nil {
+		t.Fatalf("SweepUploads() error = %v, want nil", err)
+	}
+
+	if count != 2 {
+		t.Errorf("swept sessions = %d, want 2", count)
+	}
+
+	if storage.abortCalls != 2 {
+		t.Errorf("abort calls = %d, want 2", storage.abortCalls)
+	}
+
+	if len(uploads.deleted) != 2 {
+		t.Errorf("deleted sessions = %v, want both expired sessions", uploads.deleted)
+	}
+
+	for _, session := range []entity.UploadSession{first, second} {
+		if !slices.Contains(uploads.deleted, session.ID) {
+			t.Errorf("deleted sessions = %v, want %q", uploads.deleted, session.ID)
+		}
+	}
+
+	if uploads.lockCalls != 2 || uploads.releases != 2 {
+		t.Errorf(
+			"quota lock calls/releases = %d/%d, want one pair per session",
+			uploads.lockCalls,
+			uploads.releases,
+		)
+	}
+
+	if uploads.expiredCalls != 2 {
+		t.Errorf("expired queries = %d, want 2 (one page, then an empty page)", uploads.expiredCalls)
+	}
+}
+
+func TestSweepUploadsKeepsSessionsWhoseAbortFails(t *testing.T) {
+	t.Parallel()
+
+	session := expiredSession("upload", "user")
+	uploads := &fakeUploadRepo{expired: []entity.UploadSession{session}}
+	storage := &fakeUploadStorage{abortErr: errUploadStore}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	count, err := uc.SweepUploads(context.Background())
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("SweepUploads() error = %v, want %v", err, errUploadStore)
+	}
+
+	if !strings.Contains(err.Error(), "FileUseCase - SweepUploads - uc.storage.AbortMultipartUpload") {
+		t.Errorf("SweepUploads() error = %v, want the storage path in the message", err)
+	}
+
+	if count != 0 {
+		t.Errorf("swept sessions = %d, want 0", count)
+	}
+
+	if len(uploads.deleted) != 0 {
+		t.Errorf("deleted sessions = %v, want the session kept for a retry", uploads.deleted)
+	}
+
+	if uploads.expiredCalls != 1 {
+		t.Errorf("expired queries = %d, want 1 so a stuck session is not refetched", uploads.expiredCalls)
+	}
+
+	storage.abortErr = nil
+
+	count, err = uc.SweepUploads(context.Background())
+	if err != nil {
+		t.Fatalf("SweepUploads() retry error = %v, want nil", err)
+	}
+
+	if count != 1 {
+		t.Errorf("swept sessions on retry = %d, want 1", count)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+}
+
+func TestSweepUploadsWithoutExpiredSessions(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	count, err := uc.SweepUploads(context.Background())
+	if err != nil {
+		t.Fatalf("SweepUploads() error = %v, want nil", err)
+	}
+
+	if count != 0 {
+		t.Errorf("swept sessions = %d, want 0", count)
+	}
+
+	if storage.abortCalls != 0 || len(uploads.deleted) != 0 {
+		t.Errorf(
+			"abort calls/deleted = %d/%d, want 0/0",
+			storage.abortCalls,
+			len(uploads.deleted),
 		)
 	}
 }

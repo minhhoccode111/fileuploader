@@ -91,6 +91,8 @@ type (
 			size int64,
 		) error
 		CompleteUpload(ctx context.Context, userID, uploadID string) (entity.File, error)
+		AbortUpload(ctx context.Context, userID, uploadID string) error
+		SweepUploads(ctx context.Context) (int, error)
 	}
 )
 
