@@ -3,6 +3,8 @@ package file
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,24 +23,27 @@ const (
 	_testUploadTTL  = time.Hour
 	_testSlowRate   = int64(100) * 1024
 	_testSlowPartSz = int64(9_216_000)
+	_testFiveMiB    = int64(5) << 20
 )
 
 // fakeUploadRepo keeps the sessions the use case stores and answers the
 // queries a start makes, so a test can set the reserved headroom it sees.
 type fakeUploadRepo struct {
-	sessions  []entity.UploadSession
-	reserved  []entity.UploadSession
-	parts     map[string]map[int]string
-	expired   []entity.UploadSession
-	createErr error
-	getErr    error
-	listErr   error
-	lockErr   error
-	created   []entity.UploadSession
-	lastTTL   time.Duration
-	lockCalls int
-	releases  int
-	deleted   []string
+	sessions     []entity.UploadSession
+	reserved     []entity.UploadSession
+	parts        map[string]map[int]string
+	expired      []entity.UploadSession
+	createErr    error
+	getErr       error
+	listErr      error
+	lockErr      error
+	created      []entity.UploadSession
+	lastTTL      time.Duration
+	partExpiry   time.Time
+	setPartCalls int
+	lockCalls    int
+	releases     int
+	deleted      []string
 }
 
 func (f *fakeUploadRepo) Create(
@@ -72,8 +77,11 @@ func (f *fakeUploadRepo) SetPart(
 	uploadID string,
 	partNumber int,
 	etag string,
-	_ time.Time,
+	expiresAt time.Time,
 ) error {
+	f.setPartCalls++
+	f.partExpiry = expiresAt
+
 	if f.parts == nil {
 		f.parts = make(map[string]map[int]string)
 	}
@@ -144,6 +152,13 @@ type fakeUploadStorage struct {
 	abortID    string
 	abortKey   string
 	abortErr   error
+	partID     string
+	partKey    string
+	partNumber int
+	partSize   int64
+	partBody   []byte
+	partErr    error
+	partCalls  int
 	aborted    bool
 }
 
@@ -171,6 +186,35 @@ func (f *fakeUploadStorage) AbortMultipartUpload(_ context.Context, _, key, uplo
 	f.abortID = uploadID
 
 	return f.abortErr
+}
+
+// UploadPart consumes the reader the use case paced, so a test sees the bytes
+// the limiter throttled and the way a failed write stops the part.
+func (f *fakeUploadStorage) UploadPart(
+	_ context.Context,
+	_, key, uploadID string,
+	partNumber int,
+	reader io.Reader,
+	size int64,
+) (string, error) {
+	f.partCalls++
+	f.partID = uploadID
+	f.partKey = key
+	f.partNumber = partNumber
+	f.partSize = size
+
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+
+	f.partBody = body
+
+	if f.partErr != nil {
+		return "", f.partErr
+	}
+
+	return "etag", nil
 }
 
 // newUploadUseCase wires the use case the way the app does.
@@ -426,5 +470,273 @@ func TestStartUploadAbortsMultipartWhenSessionStoreFails(t *testing.T) {
 
 	if uploads.lockCalls != 0 {
 		t.Errorf("quota lock calls = %d, want 0 without a quota", uploads.lockCalls)
+	}
+}
+
+// partSession is the two-part session the upload part tests send into.
+func partSession() entity.UploadSession {
+	return entity.UploadSession{
+		ID:          "upload",
+		UserID:      "user",
+		FolderID:    "folder",
+		FileID:      "file",
+		StorageKey:  "users/user/files/file",
+		MultipartID: "multipart-id",
+		Size:        _testFiveMiB + 7,
+		PartSize:    _testFiveMiB,
+		PartCount:   2,
+	}
+}
+
+func TestUploadPartStoresETagAndSlidesExpiry(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{partSession()}}
+	storage := &fakeUploadStorage{}
+	pacer := &fakePacer{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		pacer,
+		usecase.UploadSettings{
+			MaxBytes:       _testMaxBytes,
+			PartBytes:      _testPartBytes,
+			SessionIdleTTL: _testUploadTTL,
+		},
+	)
+
+	before := time.Now()
+
+	err := uc.UploadPart(
+		context.Background(),
+		"user",
+		"upload",
+		1,
+		strings.NewReader(strings.Repeat("a", int(_testFiveMiB))),
+		_testFiveMiB,
+	)
+	if err != nil {
+		t.Fatalf("UploadPart() error = %v, want nil", err)
+	}
+
+	if got := uploads.parts["upload"][1]; got != "etag" {
+		t.Errorf("stored etag = %q, want %q", got, "etag")
+	}
+
+	if uploads.setPartCalls != 1 {
+		t.Fatalf("SetPart calls = %d, want 1", uploads.setPartCalls)
+	}
+
+	if !uploads.partExpiry.After(before) {
+		t.Errorf("part expiry = %v, want after %v", uploads.partExpiry, before)
+	}
+
+	if storage.partID != "multipart-id" || storage.partKey != "users/user/files/file" {
+		t.Errorf(
+			"uploaded to %q/%q, want multipart-id/users/user/files/file",
+			storage.partID,
+			storage.partKey,
+		)
+	}
+
+	if storage.partNumber != 1 || storage.partSize != _testFiveMiB {
+		t.Errorf(
+			"uploaded part %d of %d bytes, want part 1 of %d",
+			storage.partNumber,
+			storage.partSize,
+			_testFiveMiB,
+		)
+	}
+
+	if len(pacer.calls) != 0 {
+		t.Errorf("pacer calls = %d, want 0 without a rate", len(pacer.calls))
+	}
+}
+
+func TestUploadPartRejectsWrongLength(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{partSession()}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.UploadPart(context.Background(), "user", "upload", 2, strings.NewReader("12345678"), 8)
+	if !errors.Is(err, entity.ErrUploadPartMismatch) {
+		t.Fatalf("UploadPart() short last part error = %v, want %v", err, entity.ErrUploadPartMismatch)
+	}
+
+	err = uc.UploadPart(
+		context.Background(),
+		"user",
+		"upload",
+		1,
+		strings.NewReader(strings.Repeat("a", int(_testFiveMiB+1))),
+		_testFiveMiB+1,
+	)
+	if !errors.Is(err, entity.ErrUploadPartMismatch) {
+		t.Fatalf("UploadPart() long part error = %v, want %v", err, entity.ErrUploadPartMismatch)
+	}
+
+	if storage.partCalls != 0 {
+		t.Errorf("storage calls = %d, want 0 for a mismatched part", storage.partCalls)
+	}
+
+	if uploads.setPartCalls != 0 {
+		t.Errorf("SetPart calls = %d, want 0 for a mismatched part", uploads.setPartCalls)
+	}
+}
+
+func TestUploadPartRejectsAnotherUsersSession(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{partSession()}}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.UploadPart(
+		context.Background(),
+		"intruder",
+		"upload",
+		1,
+		strings.NewReader(strings.Repeat("a", int(_testFiveMiB))),
+		_testFiveMiB,
+	)
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("UploadPart() error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if storage.partCalls != 0 {
+		t.Error("UploadPart() stored a part of another account")
+	}
+}
+
+func TestUploadPartPacesTheBody(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rate    = int64(1) << 20
+		bodyLen = int64(1) << 20
+		batch   = int64(256) << 10
+	)
+
+	session := partSession()
+	session.Size = bodyLen
+	session.PartSize = bodyLen
+	session.PartCount = 1
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	storage := &fakeUploadStorage{}
+	pacer := &fakePacer{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		pacer,
+		usecase.UploadSettings{
+			MaxBytes:                     _testMaxBytes,
+			PartBytes:                    _testPartBytes,
+			DefaultUploadRateBytesPerSec: rate,
+		},
+	)
+
+	err := uc.UploadPart(
+		context.Background(),
+		"user",
+		"upload",
+		1,
+		strings.NewReader(strings.Repeat("a", int(bodyLen))),
+		bodyLen,
+	)
+	if err != nil {
+		t.Fatalf("UploadPart() error = %v, want nil", err)
+	}
+
+	if int64(len(storage.partBody)) != bodyLen {
+		t.Fatalf("stored bytes = %d, want %d", len(storage.partBody), bodyLen)
+	}
+
+	checkPartPaces(t, pacer.calls, rate, bodyLen, batch)
+}
+
+// checkPartPaces asserts each pace call carries one batch at the account rate
+// and that the calls add up to the whole body.
+func checkPartPaces(t *testing.T, calls []fakePace, rate, bodyLen, batch int64) {
+	t.Helper()
+
+	if len(calls) < 2 {
+		t.Fatalf("pacer calls = %d, want one per read batch", len(calls))
+	}
+
+	var paced int64
+
+	for _, call := range calls {
+		if call.userID != "user" {
+			t.Errorf("paced user = %q, want %q", call.userID, "user")
+		}
+
+		if call.rate != rate {
+			t.Errorf("paced rate = %d, want %d", call.rate, rate)
+		}
+
+		if call.bytes > batch {
+			t.Errorf("paced %d bytes in one call, want at most %d", call.bytes, batch)
+		}
+
+		paced += call.bytes
+	}
+
+	if paced != bodyLen {
+		t.Errorf("paced bytes = %d, want %d", paced, bodyLen)
+	}
+}
+
+func TestUploadPartDoesNotStoreETagOnStorageFailure(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{partSession()}}
+	storage := &fakeUploadStorage{partErr: errUploadStore}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	err := uc.UploadPart(
+		context.Background(),
+		"user",
+		"upload",
+		1,
+		strings.NewReader(strings.Repeat("a", int(_testFiveMiB))),
+		_testFiveMiB,
+	)
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("UploadPart() error = %v, want %v", err, errUploadStore)
+	}
+
+	if !strings.Contains(err.Error(), "FileUseCase - UploadPart - uc.storage.UploadPart") {
+		t.Errorf("UploadPart() error = %v, want the storage path in the message", err)
+	}
+
+	if uploads.setPartCalls != 0 {
+		t.Errorf("SetPart calls = %d, want 0 when the store rejects the part", uploads.setPartCalls)
+	}
+
+	if uploads.parts != nil {
+		t.Errorf("stored parts = %v, want none", uploads.parts)
 	}
 }

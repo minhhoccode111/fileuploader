@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/repo"
 )
 
 const (
@@ -15,6 +17,19 @@ const (
 	// account's upload rate. It stays well inside the proxy and server
 	// timeouts, so a slow account still finishes each part.
 	_uploadPartTargetSeconds = 90
+
+	// _paceBatchDivisor splits one second of an account's rate into the
+	// batches a paced read hands over, so the limiter is consulted a few
+	// times a second instead of once per kilobyte.
+	_paceBatchDivisor = 4
+
+	// _paceBatchFloor is the smallest batch a paced read hands over. Below
+	// it the reservations are too fine-grained to matter.
+	_paceBatchFloor = int64(64 << 10)
+
+	// _paceBatchCeiling is the largest batch a paced read hands over, so a
+	// slow sender is never granted more than a megabyte at once.
+	_paceBatchCeiling = int64(1 << 20)
 
 	// _uploadPartFloor is the smallest part S3 accepts, apart from the last
 	// part of an upload, which may be shorter.
@@ -133,6 +148,149 @@ func (uc *UseCase) uploadAllowance(ctx context.Context, userID string) (quota, r
 	}
 
 	return user.EffectiveStorageQuota(uc.defaultQuota), user.EffectiveUploadRate(uc.defaultUploadRate), nil
+}
+
+// UploadPart stores one numbered part of an open upload. The part must carry
+// the size the session expects, and the bytes are paced at the account's
+// upload rate on their way to the bucket. The session expiry slides forward
+// only after the bucket accepted the part, so a failed write leaves the
+// session exactly where it was.
+func (uc *UseCase) UploadPart(
+	ctx context.Context,
+	userID, uploadID string,
+	partNumber int,
+	body io.Reader,
+	size int64,
+) error {
+	session, err := uc.uploads.Get(ctx, uploadID)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - UploadPart - uc.uploads.Get: %w", err)
+	}
+
+	if session.UserID != userID {
+		return entity.ErrUploadNotFound
+	}
+
+	expected, err := session.ExpectedPartSize(partNumber)
+	if err != nil {
+		return err
+	}
+
+	if size != expected {
+		return entity.ErrUploadPartMismatch
+	}
+
+	rate, err := uc.uploadRate(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	reader := body
+	if rate > 0 && uc.pacer != nil {
+		reader = &pacedReader{
+			r:       body,
+			limiter: uc.pacer,
+			ctx:     ctx,
+			userID:  userID,
+			rate:    rate,
+			batch:   paceBatch(rate),
+		}
+	}
+
+	etag, err := uc.storage.UploadPart(
+		ctx,
+		uc.bucket,
+		session.StorageKey,
+		session.MultipartID,
+		partNumber,
+		reader,
+		size,
+	)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - UploadPart - uc.storage.UploadPart: %w", err)
+	}
+
+	err = uc.slideSession(ctx, uploadID, partNumber, etag)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// slideSession records the accepted part and pushes the session expiry one idle
+// window forward, so an upload that keeps sending parts never expires.
+func (uc *UseCase) slideSession(ctx context.Context, uploadID string, partNumber int, etag string) error {
+	err := uc.uploads.SetPart(
+		ctx,
+		uploadID,
+		partNumber,
+		etag,
+		time.Now().UTC().Add(uc.sessionIdleTTL),
+	)
+	if err != nil {
+		return fmt.Errorf("FileUseCase - UploadPart - uc.uploads.SetPart: %w", err)
+	}
+
+	return nil
+}
+
+// uploadRate resolves the rate the parts of an account are paced at. A use
+// case without a user repository falls back to the default rate, and a rate of
+// zero means the account is not paced at all.
+func (uc *UseCase) uploadRate(ctx context.Context, userID string) (int64, error) {
+	if uc.users == nil {
+		return uc.defaultUploadRate, nil
+	}
+
+	user, err := uc.users.GetByID(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("FileUseCase - UploadPart - uc.users.GetByID: %w", err)
+	}
+
+	return user.EffectiveUploadRate(uc.defaultUploadRate), nil
+}
+
+// pacedReader wraps the body of one part and reserves every batch it hands
+// over at the account's rate. It reads in batches, so a fast sender cannot
+// outrun the limiter between two reservations.
+type pacedReader struct {
+	r       io.Reader
+	limiter repo.TransferLimiter
+	ctx     context.Context
+	userID  string
+	rate    int64
+	batch   int
+}
+
+// Read hands over at most one batch and waits for the limiter before the bytes
+// reach the caller. A failed reservation is reported with the bytes already
+// read, so the caller still sees the read that made progress.
+func (p *pacedReader) Read(buf []byte) (int, error) {
+	if len(buf) > p.batch {
+		buf = buf[:p.batch]
+	}
+
+	n, err := p.r.Read(buf)
+	if n == 0 {
+		return n, err
+	}
+
+	paceErr := p.limiter.Pace(p.ctx, p.userID, int64(n), p.rate)
+	if paceErr != nil {
+		return n, paceErr
+	}
+
+	return n, err
+}
+
+// paceBatch returns how many bytes one paced read hands over. The batch is a
+// quarter of a second of the account's rate, held between the floor and the
+// ceiling so every rate gets a workable batch.
+func paceBatch(rate int64) int {
+	batch := min(max(rate/_paceBatchDivisor, _paceBatchFloor), _paceBatchCeiling)
+
+	return int(batch)
 }
 
 // reserveUploadQuota takes the per-account quota lock and admits the declared

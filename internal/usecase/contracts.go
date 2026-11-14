@@ -83,6 +83,13 @@ type (
 			userID, folderID, name, contentType string,
 			size int64,
 		) (entity.UploadSession, error)
+		UploadPart(
+			ctx context.Context,
+			userID, uploadID string,
+			partNumber int,
+			body io.Reader,
+			size int64,
+		) error
 	}
 )
 
