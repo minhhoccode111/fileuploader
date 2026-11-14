@@ -1,6 +1,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
+	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
 const (
@@ -233,6 +235,150 @@ func (uc *UseCase) slideSession(ctx context.Context, uploadID string, partNumber
 	}
 
 	return nil
+}
+
+// CompleteUpload joins the parts of one open upload into a single object and
+// records the file that points at it. The size reserved at start becomes stored
+// usage, so the per-account quota lock is held from the join until the row is
+// written. A completion that cannot record the row removes the joined object
+// and ends the session, so no phantom reservation is left behind.
+func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) (entity.File, error) {
+	session, err := uc.uploads.Get(ctx, uploadID)
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - CompleteUpload - uc.uploads.Get: %w", err)
+	}
+
+	if session.UserID != userID {
+		return entity.File{}, entity.ErrUploadNotFound
+	}
+
+	parts, err := uc.sessionParts(ctx, &session)
+	if err != nil {
+		return entity.File{}, err
+	}
+
+	release, err := uc.uploads.LockQuota(ctx, userID)
+	if err != nil {
+		return entity.File{}, fmt.Errorf("FileUseCase - CompleteUpload - uc.uploads.LockQuota: %w", err)
+	}
+
+	defer release()
+
+	err = uc.joinParts(ctx, &session, parts)
+	if err != nil {
+		uc.endSession(ctx, session.ID)
+
+		return entity.File{}, err
+	}
+
+	file := fileFromSession(&session)
+
+	err = uc.storeRow(ctx, session.UserID, session.FolderID, session.Name, &file)
+	if err != nil {
+		finalErr := uc.finalizeError(ctx, &file, err)
+		uc.endSession(ctx, session.ID)
+
+		return entity.File{}, fmt.Errorf("FileUseCase - CompleteUpload - uc.storeRow: %w", finalErr)
+	}
+
+	uc.endSession(ctx, session.ID)
+
+	return file, nil
+}
+
+// sessionParts returns the ETags of a session in part order and refuses a
+// session that is not fully uploaded yet. The store joins the parts by number,
+// so a gap means the browser still owes bytes.
+func (uc *UseCase) sessionParts(
+	ctx context.Context,
+	session *entity.UploadSession,
+) ([]multipart.Part, error) {
+	stored, err := uc.uploads.Parts(ctx, session.ID)
+	if err != nil {
+		return nil, fmt.Errorf("FileUseCase - CompleteUpload - uc.uploads.Parts: %w", err)
+	}
+
+	if len(stored) != session.PartCount {
+		return nil, entity.ErrUploadIncomplete
+	}
+
+	parts := make([]multipart.Part, 0, session.PartCount)
+
+	for number := 1; number <= session.PartCount; number++ {
+		etag, ok := stored[number]
+		if !ok || etag == "" {
+			return nil, entity.ErrUploadIncomplete
+		}
+
+		parts = append(parts, multipart.Part{Number: number, ETag: etag})
+	}
+
+	return parts, nil
+}
+
+// joinParts turns the uploaded parts into the final object. An empty upload has
+// no parts to join, so the empty object is written directly.
+func (uc *UseCase) joinParts(
+	ctx context.Context,
+	session *entity.UploadSession,
+	parts []multipart.Part,
+) error {
+	if session.Size == 0 {
+		err := uc.storage.PutObject(
+			ctx,
+			uc.bucket,
+			session.StorageKey,
+			bytes.NewReader(nil),
+			0,
+			session.ContentType,
+		)
+		if err != nil {
+			return fmt.Errorf("FileUseCase - CompleteUpload - uc.storage.PutObject: %w", err)
+		}
+
+		return nil
+	}
+
+	err := uc.storage.CompleteMultipartUpload(
+		ctx,
+		uc.bucket,
+		session.StorageKey,
+		session.MultipartID,
+		parts,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"FileUseCase - CompleteUpload - uc.storage.CompleteMultipartUpload: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
+// endSession removes the session a finished upload leaves behind, which is what
+// releases its quota reservation. A failed delete is ignored: the sweeper finds
+// the expired session and releases it later.
+func (uc *UseCase) endSession(ctx context.Context, uploadID string) {
+	//nolint:errcheck // the sweeper releases a session that outlives its upload
+	uc.uploads.Delete(context.WithoutCancel(ctx), uploadID)
+}
+
+// fileFromSession builds the row of a completed upload. The identifiers and the
+// key come from the session, so the object the parts were joined under is the
+// object the row points at.
+func fileFromSession(session *entity.UploadSession) entity.File {
+	return entity.File{
+		ID:          session.FileID,
+		UserID:      session.UserID,
+		FolderID:    session.FolderID,
+		Name:        session.Name,
+		ContentType: session.ContentType,
+		StorageKey:  session.StorageKey,
+		Size:        session.Size,
+		CreatedAt:   session.CreatedAt,
+		UpdatedAt:   time.Now().UTC(),
+	}
 }
 
 // uploadRate resolves the rate the parts of an account are paced at. A use

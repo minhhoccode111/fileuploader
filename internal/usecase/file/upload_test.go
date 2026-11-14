@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
 // errUploadStore is the failure the fake upload repository reports for a write.
@@ -145,21 +147,26 @@ func (f *fakePacer) Pace(_ context.Context, userID string, bytes, rate int64) er
 // fakeStorage answers the plain object calls.
 type fakeUploadStorage struct {
 	fakeStorage
-	createID   string
-	createKey  string
-	createType string
-	createErr  error
-	abortID    string
-	abortKey   string
-	abortErr   error
-	partID     string
-	partKey    string
-	partNumber int
-	partSize   int64
-	partBody   []byte
-	partErr    error
-	partCalls  int
-	aborted    bool
+	createID      string
+	createKey     string
+	createType    string
+	createErr     error
+	abortID       string
+	abortKey      string
+	abortErr      error
+	partID        string
+	partKey       string
+	partNumber    int
+	partSize      int64
+	partBody      []byte
+	partErr       error
+	partCalls     int
+	aborted       bool
+	completeKey   string
+	completeID    string
+	completeParts []multipart.Part
+	completeErr   error
+	completeCalls int
 }
 
 func (f *fakeUploadStorage) CreateMultipartUpload(
@@ -186,6 +193,21 @@ func (f *fakeUploadStorage) AbortMultipartUpload(_ context.Context, _, key, uplo
 	f.abortID = uploadID
 
 	return f.abortErr
+}
+
+// CompleteMultipartUpload records the parts the use case joins and the key it
+// joins them under, so a test sees the order a completion sends.
+func (f *fakeUploadStorage) CompleteMultipartUpload(
+	_ context.Context,
+	_, key, uploadID string,
+	parts []multipart.Part,
+) error {
+	f.completeCalls++
+	f.completeKey = key
+	f.completeID = uploadID
+	f.completeParts = parts
+
+	return f.completeErr
 }
 
 // UploadPart consumes the reader the use case paced, so a test sees the bytes
@@ -738,5 +760,338 @@ func TestUploadPartDoesNotStoreETagOnStorageFailure(t *testing.T) {
 
 	if uploads.parts != nil {
 		t.Errorf("stored parts = %v, want none", uploads.parts)
+	}
+}
+
+// completeSession is the two-part session the completion tests finish.
+func completeSession() entity.UploadSession {
+	return entity.UploadSession{
+		ID:          "upload",
+		UserID:      "user",
+		FolderID:    "folder",
+		FileID:      "file",
+		Name:        "big.iso",
+		ContentType: "application/octet-stream",
+		StorageKey:  "users/user/files/file",
+		MultipartID: "multipart-id",
+		Size:        _testFiveMiB + 7,
+		PartSize:    _testFiveMiB,
+		PartCount:   2,
+		CreatedAt:   time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
+	}
+}
+
+// completeUseCase wires a completion the way the app does, onto fakes the test
+// can inspect afterwards.
+func completeUseCase(
+	users *fakeUserRepoForFile,
+	files *fakeFileRepo,
+	storage *fakeUploadStorage,
+	uploads *fakeUploadRepo,
+) usecase.File {
+	return New(
+		users,
+		files,
+		&fakeFolderRepo{folder: entity.Folder{ID: "folder", UserID: "user"}},
+		storage,
+		&fakeUnitOfWork{},
+		"bucket",
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{
+			MaxBytes:       _testMaxBytes,
+			PartBytes:      _testPartBytes,
+			SessionIdleTTL: _testUploadTTL,
+		},
+	)
+}
+
+func TestCompleteUploadAssemblesPartsAndStoresRow(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: _testGiB}}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {2: "two", 1: "one"},
+		},
+	}
+	uc := completeUseCase(users, files, storage, uploads)
+
+	file, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("CompleteUpload() error = %v, want nil", err)
+	}
+
+	wantParts := []multipart.Part{{Number: 1, ETag: "one"}, {Number: 2, ETag: "two"}}
+	if !slices.Equal(storage.completeParts, wantParts) {
+		t.Errorf("completed parts = %v, want %v", storage.completeParts, wantParts)
+	}
+
+	if storage.completeKey != session.StorageKey || storage.completeID != session.MultipartID {
+		t.Errorf(
+			"completed %q/%q, want %q/%q",
+			storage.completeID,
+			storage.completeKey,
+			session.MultipartID,
+			session.StorageKey,
+		)
+	}
+
+	checkCompletedFile(t, &file, &session)
+	checkCompletedRow(t, files, uploads, users, &session)
+}
+
+// checkCompletedRow asserts a finished upload left the row, the account usage
+// and the session behind as expected.
+func checkCompletedRow(
+	t *testing.T,
+	files *fakeFileRepo,
+	uploads *fakeUploadRepo,
+	users *fakeUserRepoForFile,
+	session *entity.UploadSession,
+) {
+	t.Helper()
+
+	if files.stored == nil {
+		t.Fatal("CompleteUpload() did not store the row")
+	}
+
+	if files.stored.ID != "file" || files.stored.Size != session.Size {
+		t.Errorf(
+			"stored row = %q of %d bytes, want %q of %d bytes",
+			files.stored.ID,
+			files.stored.Size,
+			"file",
+			session.Size,
+		)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+
+	if users.user.StorageUsedBytes != session.Size {
+		t.Errorf(
+			"storage used = %d, want %d",
+			users.user.StorageUsedBytes,
+			session.Size,
+		)
+	}
+
+	if uploads.lockCalls != 1 || uploads.releases != 1 {
+		t.Errorf(
+			"quota lock calls/releases = %d/%d, want 1/1",
+			uploads.lockCalls,
+			uploads.releases,
+		)
+	}
+}
+
+// checkCompletedFile asserts the row carries what the session held.
+func checkCompletedFile(t *testing.T, file *entity.File, session *entity.UploadSession) {
+	t.Helper()
+
+	if file.UserID != session.UserID || file.FolderID != session.FolderID {
+		t.Errorf("file owner = %q/%q, want %q/%q", file.UserID, file.FolderID, session.UserID, session.FolderID)
+	}
+
+	if file.Name != session.Name || file.ContentType != session.ContentType {
+		t.Errorf("file name/type = %q/%q, want %q/%q", file.Name, file.ContentType, session.Name, session.ContentType)
+	}
+
+	if file.StorageKey != session.StorageKey {
+		t.Errorf("file key = %q, want %q", file.StorageKey, session.StorageKey)
+	}
+
+	if !file.CreatedAt.Equal(session.CreatedAt) {
+		t.Errorf("file created at = %v, want %v", file.CreatedAt, session.CreatedAt)
+	}
+
+	if file.UpdatedAt.Before(session.CreatedAt) {
+		t.Errorf("file updated at = %v, want at or after %v", file.UpdatedAt, session.CreatedAt)
+	}
+}
+
+func TestCompleteUploadRejectsMissingParts(t *testing.T) {
+	t.Parallel()
+
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{completeSession()},
+		parts: map[string]map[int]string{
+			"upload": {1: "one"},
+		},
+	}
+	uc := completeUseCase(&fakeUserRepoForFile{}, &fakeFileRepo{}, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, entity.ErrUploadIncomplete) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, entity.ErrUploadIncomplete)
+	}
+
+	if storage.completeCalls != 0 {
+		t.Errorf("completion calls = %d, want 0 for an incomplete upload", storage.completeCalls)
+	}
+
+	if len(uploads.deleted) != 0 {
+		t.Errorf("deleted sessions = %v, want none for an upload that can still finish", uploads.deleted)
+	}
+
+	if uploads.lockCalls != 0 {
+		t.Errorf("quota lock calls = %d, want 0 for an incomplete upload", uploads.lockCalls)
+	}
+}
+
+func TestCompleteUploadReleasesReservationOnStorageFailure(t *testing.T) {
+	t.Parallel()
+
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{completeErr: errUploadStore}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{completeSession()},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(&fakeUserRepoForFile{}, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, errUploadStore)
+	}
+
+	if !strings.Contains(err.Error(), "FileUseCase - CompleteUpload - uc.storage.CompleteMultipartUpload") {
+		t.Errorf("CompleteUpload() error = %v, want the storage path in the message", err)
+	}
+
+	if files.stored != nil {
+		t.Error("CompleteUpload() stored a row for an object it never joined")
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want the reservation released", uploads.deleted)
+	}
+
+	if uploads.releases != 1 {
+		t.Errorf("quota releases = %d, want 1", uploads.releases)
+	}
+}
+
+func TestCompleteUploadCleansUpOnNameConflict(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	files := &fakeFileRepo{nameTaken: true}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(&fakeUserRepoForFile{}, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, entity.ErrEntryAlreadyExists) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, entity.ErrEntryAlreadyExists)
+	}
+
+	if storage.removeKey != session.StorageKey {
+		t.Errorf("removed %q, want %q", storage.removeKey, session.StorageKey)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+
+	if uploads.releases != 1 {
+		t.Errorf("quota releases = %d, want 1", uploads.releases)
+	}
+}
+
+func TestCompleteUploadUsesPutObjectForAnEmptyFile(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	session.Size = 0
+	session.PartCount = 0
+
+	users := &fakeUserRepoForFile{}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{sessions: []entity.UploadSession{session}}
+	uc := completeUseCase(users, files, storage, uploads)
+
+	file, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("CompleteUpload() error = %v, want nil", err)
+	}
+
+	if storage.completeCalls != 0 {
+		t.Errorf("completion calls = %d, want 0 for an empty file", storage.completeCalls)
+	}
+
+	if storage.putKey != session.StorageKey || storage.putSize != 0 {
+		t.Errorf("put %q of %d bytes, want %q of 0 bytes", storage.putKey, storage.putSize, session.StorageKey)
+	}
+
+	if file.Size != 0 {
+		t.Errorf("file size = %d, want 0", file.Size)
+	}
+
+	if users.user.StorageUsedBytes != 0 {
+		t.Errorf("storage used = %d, want 0", users.user.StorageUsedBytes)
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+}
+
+func TestCompleteUploadReleasesTheReservation(t *testing.T) {
+	t.Parallel()
+
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 100, StorageUsedBytes: 100}}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{completeSession()},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(users, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
+		t.Fatalf("CompleteUpload() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
+	}
+
+	if users.user.StorageUsedBytes != 100 {
+		t.Errorf("storage used = %d, want the unchanged 100", users.user.StorageUsedBytes)
+	}
+
+	if files.stored != nil {
+		t.Error("CompleteUpload() stored a row over the quota")
+	}
+
+	if !slices.Equal(uploads.deleted, []string{"upload"}) {
+		t.Errorf("deleted sessions = %v, want [upload]", uploads.deleted)
+	}
+
+	if storage.removeKey == "" {
+		t.Error("CompleteUpload() kept the object of the failed completion")
+	}
+
+	if uploads.lockCalls != 1 || uploads.releases != 1 {
+		t.Errorf(
+			"quota lock calls/releases = %d/%d, want 1/1",
+			uploads.lockCalls,
+			uploads.releases,
+		)
 	}
 }

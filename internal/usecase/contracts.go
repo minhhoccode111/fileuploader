@@ -90,6 +90,7 @@ type (
 			body io.Reader,
 			size int64,
 		) error
+		CompleteUpload(ctx context.Context, userID, uploadID string) (entity.File, error)
 	}
 )
 
