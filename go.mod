@@ -15,6 +15,7 @@ tool (
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/a-h/templ v0.3.1100
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/goccy/go-json v0.11.2
@@ -361,6 +362,7 @@ require (
 	github.com/yeya24/promlinter v0.3.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	gitlab.com/bosi/decorder v0.4.2 // indirect
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect

@@ -80,6 +80,20 @@ type (
 		Delete(ctx context.Context, userID, shareID string) error
 	}
 
+	// UploadSessionRepo keeps the multipart uploads in flight. A session dies
+	// on its own once the account stops sending parts, so the store is the
+	// place for it and not the database.
+	UploadSessionRepo interface {
+		Create(ctx context.Context, session entity.UploadSession, idleTTL time.Duration) error
+		Get(ctx context.Context, uploadID string) (entity.UploadSession, error)
+		SetPart(ctx context.Context, uploadID string, partNumber int, etag string, expiresAt time.Time) error
+		Parts(ctx context.Context, uploadID string) (map[int]string, error)
+		ListByUser(ctx context.Context, userID string) ([]entity.UploadSession, error)
+		Expired(ctx context.Context, now time.Time, limit int) ([]entity.UploadSession, error)
+		Delete(ctx context.Context, uploadID string) error
+		LockQuota(ctx context.Context, userID string) (func(), error)
+	}
+
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the
 	// only thing the repository layer knows about it, so the storage can be
 	// swapped without touching the domain.
