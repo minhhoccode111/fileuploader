@@ -35,18 +35,35 @@ const (
 	// _maxDuplicateAttempts is how many numbered names a duplicate tries
 	// before falling back to a timestamp.
 	_maxDuplicateAttempts = 99
+
+	// _defaultUploadMaxBytes is the whole-file ceiling a chunked upload is
+	// held to when the settings carry none.
+	_defaultUploadMaxBytes = int64(10) << 30
+
+	// _defaultUploadPartBytes is the preferred part size when the settings
+	// carry none.
+	_defaultUploadPartBytes = int64(50) << 20
+
+	// _defaultSessionIdleTTL is how long a session survives without a part
+	// when the settings carry none.
+	_defaultSessionIdleTTL = time.Hour
 )
 
 // UseCase -.
 type UseCase struct {
-	users        repo.UserRepo
-	files        repo.FileRepo
-	folders      repo.FolderRepo
-	storage      repo.ObjectStorage
-	uow          repo.UnitOfWork
-	bucket       string
-	maxBytes     int64
-	defaultQuota int64
+	users             repo.UserRepo
+	files             repo.FileRepo
+	folders           repo.FolderRepo
+	storage           repo.ObjectStorage
+	uow               repo.UnitOfWork
+	uploads           repo.UploadSessionRepo
+	pacer             repo.TransferLimiter
+	bucket            string
+	maxBytes          int64
+	partBytes         int64
+	sessionIdleTTL    time.Duration
+	defaultQuota      int64
+	defaultUploadRate int64
 }
 
 // New returns a File use case. Its arguments are accepted in any order, so the
@@ -66,6 +83,10 @@ func New(args ...any) usecase.File {
 			uc.folders = v
 		case repo.ObjectStorage:
 			uc.storage = v
+		case repo.UploadSessionRepo:
+			uc.uploads = v
+		case repo.TransferLimiter:
+			uc.pacer = v
 		case repo.UnitOfWork:
 			uc.uow = v
 		case string:
@@ -82,10 +103,49 @@ func New(args ...any) usecase.File {
 			}
 		case usecase.Limits:
 			uc.defaultQuota = v.StorageQuotaBytes
+		case usecase.UploadSettings:
+			uc.applyUploadSettings(v)
 		}
 	}
 
+	if uc.maxBytes == 0 {
+		uc.maxBytes = _defaultUploadMaxBytes
+	}
+
+	if uc.partBytes == 0 {
+		uc.partBytes = _defaultUploadPartBytes
+	}
+
+	if uc.sessionIdleTTL <= 0 {
+		uc.sessionIdleTTL = _defaultSessionIdleTTL
+	}
+
 	return uc
+}
+
+// applyUploadSettings copies the chunked upload settings onto the use case. A
+// zero field keeps the default, so a caller can set only the limits it cares
+// about.
+func (uc *UseCase) applyUploadSettings(settings usecase.UploadSettings) {
+	if settings.MaxBytes != 0 {
+		uc.maxBytes = settings.MaxBytes
+	}
+
+	if settings.PartBytes != 0 {
+		uc.partBytes = settings.PartBytes
+	}
+
+	if settings.SessionIdleTTL > 0 {
+		uc.sessionIdleTTL = settings.SessionIdleTTL
+	}
+
+	if settings.DefaultQuotaBytes != 0 {
+		uc.defaultQuota = settings.DefaultQuotaBytes
+	}
+
+	if settings.DefaultUploadRateBytesPerSec != 0 {
+		uc.defaultUploadRate = settings.DefaultUploadRateBytesPerSec
+	}
 }
 
 // Get returns one file of the account.

@@ -78,10 +78,27 @@ type (
 		OpenFile(ctx context.Context, userID, fileID string) (io.ReadCloser, entity.File, error)
 		Move(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
 		Duplicate(ctx context.Context, userID, fileID, folderID string) (entity.File, error)
+		StartUpload(
+			ctx context.Context,
+			userID, folderID, name, contentType string,
+			size int64,
+		) (entity.UploadSession, error)
 	}
 )
 
 // Limits carries the global defaults a per-account zero inherits.
 type Limits struct {
 	StorageQuotaBytes int64
+}
+
+// UploadSettings carries the size and pacing limits of a chunked upload. A
+// zero MaxBytes, PartBytes or SessionIdleTTL falls back to the use case
+// default, and an account inherits a default quota or upload rate when it
+// carries no value of its own.
+type UploadSettings struct {
+	MaxBytes                     int64
+	PartBytes                    int64
+	SessionIdleTTL               time.Duration
+	DefaultQuotaBytes            int64
+	DefaultUploadRateBytesPerSec int64
 }
