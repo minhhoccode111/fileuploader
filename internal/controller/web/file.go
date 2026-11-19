@@ -19,6 +19,8 @@ import (
 // fileNew fills the drawer with the form that uploads one file into the folder
 // on the screen.
 func (c *Controller) fileNew(ctx *fiber.Ctx) error {
+	ctx.Set("Cache-Control", "no-store")
+
 	return c.renderPage(ctx, templates.FileUploadContent(ctx.Query("folder")))
 }
 

@@ -103,7 +103,7 @@ func NewSharedDrive(shareID string, view *entity.FolderView) SharedDrive {
 			ID:       item.ID,
 			Name:     item.Name,
 			Type:     item.ContentType,
-			Size:     byteLabel(item.Size),
+			Size:     ByteLabel(item.Size),
 			Updated:  item.UpdatedAt.Format(_driveDateLayout),
 			Download: "/share/" + shareID + "/files/" + item.ID + "/download",
 		})

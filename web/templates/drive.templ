@@ -9,13 +9,32 @@ const filePickerState = `{
 	name: '',
 	size: '',
 	extension: '',
+	formatBytes(size) {
+		if (!Number.isFinite(size) || size < 0) return '0 B';
+		if (size < 10) return size + ' B';
+		const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+		const base = 1024;
+		let exponent = Math.floor(Math.log(size) / Math.log(base));
+		if (exponent < 0) exponent = 0;
+		if (exponent >= units.length) exponent = units.length - 1;
+		let value = size / Math.pow(base, exponent);
+		if (exponent < units.length - 1) {
+			const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
+			if (rounded >= base) {
+				exponent += 1;
+				value /= base;
+			}
+		}
+		if (value < 10) return value.toFixed(1) + ' ' + units[exponent];
+		return Math.round(value) + ' ' + units[exponent];
+	},
 	pick(event) {
 		const file = event.target.files[0];
 		if (!file) {
 			return;
 		}
 		this.name = file.name;
-		this.size = file.size + ' bytes';
+		this.size = this.formatBytes(file.size);
 		this.extension = file.name.includes('.') ? file.name.split('.').pop() : 'none';
 	}
 }`

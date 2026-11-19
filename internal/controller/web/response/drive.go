@@ -2,6 +2,7 @@ package response
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +22,14 @@ const (
 	// _folderIndentPx is the left padding per level of depth in a folder
 	// destination select, so the tree shape is visible.
 	_folderIndentPx = 24
+
+	// _byteUnit is the number of bytes in one kilobyte of the binary units
+	// the drive shows.
+	_byteUnit = 1 << 10
+
+	// _byteLabelSmall is the size below which a value is printed in bytes
+	// without a fractional part.
+	_byteLabelSmall = 10
 )
 
 // Crumb is one step of the breadcrumb above a folder listing.
@@ -109,7 +118,7 @@ func NewDrive(view *entity.FolderView) Drive {
 			ID:      item.ID,
 			Name:    item.Name,
 			Type:    item.ContentType,
-			Size:    byteLabel(item.Size),
+			Size:    ByteLabel(item.Size),
 			Updated: item.UpdatedAt.Format(_driveDateLayout),
 		})
 	}
@@ -130,14 +139,53 @@ func NewFileInfo(file *entity.File) FileInfo {
 		ID:      file.ID,
 		Name:    file.Name,
 		Type:    file.ContentType,
-		Size:    byteLabel(file.Size),
+		Size:    ByteLabel(file.Size),
 		Updated: file.UpdatedAt.Format(_driveDateLayout),
 	}
 }
 
-// byteLabel words a size in bytes, which is the unit the drive shows.
+// byteLabel words a size in bytes using the largest unit that keeps the value
+// readable, so the drive shows "1.5 KB" instead of "1536 bytes".
 func byteLabel(size int64) string {
-	return strconv.FormatInt(size, 10) + " bytes"
+	if size < _byteLabelSmall {
+		return strconv.FormatInt(size, 10) + " B"
+	}
+
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
+
+	exponent := max(int(math.Floor(math.Log(float64(size))/math.Log(_byteUnit))), 0)
+	if exponent >= len(units) {
+		exponent = len(units) - 1
+	}
+
+	value := float64(size) / math.Pow(_byteUnit, float64(exponent))
+
+	// Rounding must not print the next unit's base (e.g. "1024 KB"
+	// instead of "1.0 MB").
+	if exponent < len(units)-1 {
+		var rounded float64
+		if value < _byteLabelSmall {
+			rounded = math.Round(value*float64(_byteLabelSmall)) / float64(_byteLabelSmall)
+		} else {
+			rounded = math.Round(value)
+		}
+
+		if rounded >= _byteUnit {
+			exponent++
+			value /= _byteUnit
+		}
+	}
+
+	if value < _byteLabelSmall {
+		return fmt.Sprintf("%.1f %s", value, units[exponent])
+	}
+
+	return fmt.Sprintf("%.0f %s", value, units[exponent])
+}
+
+// ByteLabel is the exported name of byteLabel.
+func ByteLabel(size int64) string {
+	return byteLabel(size)
 }
 
 // itemLabel words the number of entries a folder holds.

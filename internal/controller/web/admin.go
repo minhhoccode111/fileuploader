@@ -186,6 +186,23 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
 	}
 
+	storageQuota, uploadRate, downloadRate, err := req.Limits()
+	if err != nil {
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"A size or rate must use an optional K, M or G suffix."},
+		)
+	}
+
+	if storageQuota < 0 || uploadRate < 0 || downloadRate < 0 {
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"A size or rate must not be negative."},
+		)
+	}
+
 	user, sessionsEnded, err := c.u.UpdateUser(
 		ctx.UserContext(),
 		req.ID,
@@ -198,25 +215,12 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.userUpdateError(ctx, err)
 	}
 
-	// Limits are persisted separately, and only when the edited values differ
-	// from what the account already holds, so an unchanged form does not
-	// rewrite the row.
-	if req.StorageQuotaBytes != user.StorageQuotaBytes ||
-		req.UploadRateBytesPerSec != user.UploadRateBytesPerSec ||
-		req.DownloadRateBytesPerSec != user.DownloadRateBytesPerSec {
-		updated, err := c.u.SetUserLimits(
-			ctx.UserContext(),
-			req.ID,
-			req.StorageQuotaBytes,
-			req.UploadRateBytesPerSec,
-			req.DownloadRateBytesPerSec,
-		)
-		if err != nil {
-			return c.userUpdateError(ctx, err)
-		}
-
-		user = updated
+	updatedUser, err := c.applyUserLimits(ctx, &user, &req)
+	if err != nil {
+		return err
 	}
+
+	user = updatedUser
 
 	ctx.Set(_hxTriggerHeader, _usersUpdatedEvent)
 
@@ -224,6 +228,42 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		ctx,
 		templates.AdminUsersEditDone(response.NewUserRowFromUser(&user), sessionsEnded),
 	)
+}
+
+// applyUserLimits persists the account's storage and transfer limits when they
+// changed, and reports any failure as a rendered error.
+func (c *Controller) applyUserLimits(
+	ctx *fiber.Ctx,
+	user *entity.User,
+	req *request.UserUpdate,
+) (entity.User, error) {
+	storageQuota, uploadRate, downloadRate, err := req.Limits()
+	if err != nil {
+		return *user, c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"A size or rate must use an optional K, M or G suffix."},
+		)
+	}
+
+	if storageQuota == user.StorageQuotaBytes &&
+		uploadRate == user.UploadRateBytesPerSec &&
+		downloadRate == user.DownloadRateBytesPerSec {
+		return *user, nil
+	}
+
+	updated, err := c.u.SetUserLimits(
+		ctx.UserContext(),
+		req.ID,
+		storageQuota,
+		uploadRate,
+		downloadRate,
+	)
+	if err != nil {
+		return *user, c.userUpdateError(ctx, err)
+	}
+
+	return updated, nil
 }
 
 // userUpdateError maps a failed account update to a status and a message the
