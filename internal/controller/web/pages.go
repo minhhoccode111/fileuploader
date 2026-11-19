@@ -48,6 +48,9 @@ const (
 
 	// _adminSettingsPath is the settings page of the admin area.
 	_adminSettingsPath = "/admin/settings"
+
+	// _adminAccessRequestsPath is the access-request approval page.
+	_adminAccessRequestsPath = "/admin/access-requests"
 )
 
 // renderErrors renders the error fragment htmx swaps into a form's error target.
@@ -112,6 +115,14 @@ func (c *Controller) adminUsers(ctx *fiber.Ctx) error {
 // role, so the handler only renders.
 func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
 	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent(), templates.AdminSettingsTitle)
+}
+
+// adminAccessRequests renders the pending account requests. The guard has
+// already checked the role.
+func (c *Controller) adminAccessRequests(ctx *fiber.Ctx) error {
+	filters := response.UserFilters{Sort: "created_at", Dir: "desc", Limit: "10", Page: 1}
+
+	return c.render(ctx, templates.AdminAccessRequests(c.view(ctx), filters), templates.AdminAccessRequestsContent(filters), templates.AdminAccessRequestsTitle)
 }
 
 // logout renders the confirmation screen. It is a GET because it changes nothing:

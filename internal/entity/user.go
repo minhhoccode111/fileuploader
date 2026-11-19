@@ -28,6 +28,30 @@ func (r UserRole) IsValid() bool {
 	}
 }
 
+// UserStatus is the lifecycle state of an account. New accounts start pending
+// and only an administrator moves them to active; an active account can be
+// disabled and re-enabled later.
+type UserStatus string
+
+const (
+	// UserStatusPending is a registration that has not been approved yet.
+	UserStatusPending UserStatus = "pending"
+	// UserStatusActive may sign in and use the app.
+	UserStatusActive UserStatus = "active"
+	// UserStatusDisabled may not sign in; its live sessions are ended.
+	UserStatusDisabled UserStatus = "disabled"
+)
+
+// IsValid reports whether the status is one the domain knows.
+func (s UserStatus) IsValid() bool {
+	switch s {
+	case UserStatusPending, UserStatusActive, UserStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // UserSortField names a column the account list can be ordered by. The set is
 // closed: every field maps to a column of the users table, so a hand-written
 // query never reaches the SQL.
@@ -84,6 +108,7 @@ type UserListItem struct {
 	Username                string
 	Email                   string
 	Role                    UserRole
+	Status                  UserStatus
 	StorageQuotaBytes       int64
 	StorageUsedBytes        int64
 	UploadRateBytesPerSec   int64
@@ -106,13 +131,14 @@ const (
 // role and a nil day mean "any", and Sanitize clamps the rest before the
 // filter reaches a repository.
 type UserFilter struct {
-	Query string            // matches the username or the email
-	Role  UserRole          // empty means every role
-	On    *time.Time        // the day an account was created or last updated on
-	Sort  UserSortField     // the column the list is ordered by
-	Dir   UserSortDirection // the direction of the order
-	Limit int               // rows on one page
-	Page  int               // the page number, starting at 1
+	Query  string            // matches the username or the email
+	Role   UserRole          // empty means every role
+	Status UserStatus        // empty means every status
+	On     *time.Time        // the day an account was created or last updated on
+	Sort   UserSortField     // the column the list is ordered by
+	Dir    UserSortDirection // the direction of the order
+	Limit  int               // rows on one page
+	Page   int               // the page number, starting at 1
 }
 
 // UserList is one page of the account list plus the number of accounts that
@@ -130,6 +156,10 @@ func (f *UserFilter) Sanitize() {
 
 	if !f.Role.IsValid() {
 		f.Role = ""
+	}
+
+	if !f.Status.IsValid() {
+		f.Status = ""
 	}
 
 	if f.On != nil && f.On.IsZero() {
@@ -155,17 +185,18 @@ func (f *UserFilter) Sanitize() {
 
 // User -.
 type User struct {
-	ID                      string    `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
-	Username                string    `json:"username"   example:"johndoe"`
-	Email                   string    `json:"email"      example:"john@example.com"`
-	PasswordHash            string    `json:"-"`
-	Role                    UserRole  `json:"role"                      example:"user"`
-	StorageQuotaBytes       int64     `json:"storage_quota_bytes"        example:"0"`
-	StorageUsedBytes        int64     `json:"storage_used_bytes"         example:"0"`
-	UploadRateBytesPerSec   int64     `json:"upload_rate_bytes_per_sec"  example:"0"`
-	DownloadRateBytesPerSec int64     `json:"download_rate_bytes_per_sec" example:"0"`
-	CreatedAt               time.Time `json:"created_at"                example:"2026-01-01T00:00:00Z"`
-	UpdatedAt               time.Time `json:"updated_at"                example:"2026-01-01T00:00:00Z"`
+	ID                      string     `json:"id"         example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username                string     `json:"username"   example:"johndoe"`
+	Email                   string     `json:"email"      example:"john@example.com"`
+	PasswordHash            string     `json:"-"`
+	Role                    UserRole   `json:"role"                      example:"user"`
+	Status                  UserStatus `json:"status"                    example:"active"`
+	StorageQuotaBytes       int64      `json:"storage_quota_bytes"        example:"0"`
+	StorageUsedBytes        int64      `json:"storage_used_bytes"         example:"0"`
+	UploadRateBytesPerSec   int64      `json:"upload_rate_bytes_per_sec"  example:"0"`
+	DownloadRateBytesPerSec int64      `json:"download_rate_bytes_per_sec" example:"0"`
+	CreatedAt               time.Time  `json:"created_at"                example:"2026-01-01T00:00:00Z"`
+	UpdatedAt               time.Time  `json:"updated_at"                example:"2026-01-01T00:00:00Z"`
 }
 
 // EffectiveStorageQuota resolves a per-user override against the global default.

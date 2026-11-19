@@ -42,13 +42,18 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 
 	token, _, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
 	if err != nil {
-		if errors.Is(err, entity.ErrInvalidCredentials) {
+		switch {
+		case errors.Is(err, entity.ErrInvalidCredentials):
 			return c.renderErrors(ctx, http.StatusUnauthorized, []string{"Invalid email or password."})
+		case errors.Is(err, entity.ErrUserPending):
+			return c.renderErrors(ctx, http.StatusForbidden, []string{"Your account is awaiting admin approval."})
+		case errors.Is(err, entity.ErrUserDisabled):
+			return c.renderErrors(ctx, http.StatusForbidden, []string{"Your account has been disabled."})
+		default:
+			c.l.Error(fmt.Errorf("web - loginSubmit - uc.Login: %w", err))
+
+			return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 		}
-
-		c.l.Error(fmt.Errorf("web - loginSubmit - uc.Login: %w", err))
-
-		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
 	return c.renderAuthenticated(ctx, token)

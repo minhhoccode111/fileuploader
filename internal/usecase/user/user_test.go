@@ -67,6 +67,14 @@ func (f *fakeUserRepo) UpdateRole(_ context.Context, _ string, role entity.UserR
 	return nil
 }
 
+func (f *fakeUserRepo) UpdateStatus(_ context.Context, _ string, _ entity.UserStatus) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	return nil
+}
+
 func (f *fakeUserRepo) Update(_ context.Context, user *entity.User) error {
 	if f.err != nil {
 		return f.err

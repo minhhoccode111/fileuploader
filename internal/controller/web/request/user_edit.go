@@ -31,6 +31,7 @@ type UserUpdate struct {
 	Username string `form:"username" validate:"required,username,min=3,max=255"`
 	Email    string `form:"email"    validate:"required,email,max=255"`
 	Role     string `form:"role"     validate:"required,oneof=admin user"`
+	Status   string `form:"status"   validate:"omitempty,oneof=pending active disabled"`
 	Password string `form:"password" validate:"omitempty,min=6,max=72,password"`
 
 	// Per-account storage and transfer limits. Zero inherits the default;
@@ -55,6 +56,7 @@ func (r *UserUpdate) Sanitize() {
 	r.Username = strings.TrimSpace(r.Username)
 	r.Email = strings.ToLower(strings.TrimSpace(r.Email))
 	r.Role = strings.ToLower(strings.TrimSpace(r.Role))
+	r.Status = strings.ToLower(strings.TrimSpace(r.Status))
 
 	r.StorageQuota = strings.TrimSpace(r.StorageQuota)
 	r.UploadRate = strings.TrimSpace(r.UploadRate)

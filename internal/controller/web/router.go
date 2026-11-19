@@ -73,6 +73,7 @@ func NewRouter(
 	app.Get("/admin", middleware.RequireAdmin(u), c.admin)
 	app.Get("/admin/users", middleware.RequireAdmin(u), c.adminUsers)
 	app.Get("/admin/settings", middleware.RequireAdmin(u), c.adminSettings)
+	app.Get(_adminAccessRequestsPath, middleware.RequireAdmin(u), c.adminAccessRequests)
 	app.Get("/login", middleware.RequireGuest(u), c.login)
 	app.Get("/register", middleware.RequireGuest(u), c.register)
 	app.Get("/logout", middleware.RequireAuth(u), c.logout)
@@ -124,4 +125,7 @@ func NewRouter(
 	app.Post("/htmx/admin/users/edit", middleware.RequireAdmin(u), c.adminUsersEditSubmit)
 
 	app.Get("/htmx/admin/users", middleware.RequireAdmin(u), c.adminUsersTable)
+
+	app.Get("/htmx/admin/access-requests", middleware.RequireAdmin(u), c.adminAccessRequestsTable)
+	app.Post("/htmx/admin/access-requests/approve", middleware.RequireAdmin(u), c.adminAccessRequestApprove)
 }

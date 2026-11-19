@@ -11,6 +11,8 @@ var (
 	ErrPasswordTooLong       = errors.New("password too long")
 	ErrSessionNotFound       = errors.New("session not found")
 	ErrInvalidRole           = errors.New("invalid role")
+	ErrUserPending           = errors.New("user pending approval")
+	ErrUserDisabled          = errors.New("user disabled")
 	ErrInvalidLimits         = errors.New("invalid limits")
 	ErrFolderNotFound        = errors.New("folder not found")
 	ErrFileNotFound          = errors.New("file not found")
@@ -29,4 +31,11 @@ var (
 	ErrStorageCleanup        = errors.New("storage cleanup failed")
 	ErrShareNotFound         = errors.New("share not found")
 	ErrShareExpired          = errors.New("share expired")
+)
+
+// Aliases for account lifecycle errors, kept for callers that name them differently.
+var (
+	ErrAccountPending      = ErrUserPending
+	ErrAccountDisabled     = ErrUserDisabled
+	ErrUserPendingApproval = ErrUserPending
 )

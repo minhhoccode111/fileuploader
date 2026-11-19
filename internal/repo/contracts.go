@@ -35,6 +35,7 @@ type (
 		GetByEmail(ctx context.Context, email string) (entity.User, error)
 		List(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error)
 		UpdateRole(ctx context.Context, userID string, role entity.UserRole) error
+		UpdateStatus(ctx context.Context, userID string, status entity.UserStatus) error
 		Update(ctx context.Context, user *entity.User) error
 		AdjustStorageUsed(ctx context.Context, userID string, delta int64) error
 		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) error

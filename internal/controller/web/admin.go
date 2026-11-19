@@ -108,6 +108,7 @@ func userFilters(req *request.UserListQuery) response.UserFilters {
 	return response.UserFilters{
 		Query:  req.Query,
 		Role:   req.Role,
+		Status: req.Status,
 		Date:   req.Date,
 		Sort:   string(req.SortField()),
 		Dir:    string(req.SortDirection()),
@@ -186,23 +187,6 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
 	}
 
-	storageQuota, uploadRate, downloadRate, err := req.Limits()
-	if err != nil {
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"A size or rate must use an optional K, M or G suffix."},
-		)
-	}
-
-	if storageQuota < 0 || uploadRate < 0 || downloadRate < 0 {
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"A size or rate must not be negative."},
-		)
-	}
-
 	user, sessionsEnded, err := c.u.UpdateUser(
 		ctx.UserContext(),
 		req.ID,
@@ -221,6 +205,17 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 	}
 
 	user = updatedUser
+
+	ended, err := c.applyUserStatus(ctx, &user, &req, sessionsEnded)
+	if err != nil {
+		return err
+	}
+
+	sessionsEnded = ended
+
+	if req.Status != "" {
+		user.Status = entity.UserStatus(req.Status)
+	}
 
 	ctx.Set(_hxTriggerHeader, _usersUpdatedEvent)
 
@@ -246,6 +241,14 @@ func (c *Controller) applyUserLimits(
 		)
 	}
 
+	if storageQuota < 0 || uploadRate < 0 || downloadRate < 0 {
+		return *user, c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"A size or rate must not be negative."},
+		)
+	}
+
 	if storageQuota == user.StorageQuotaBytes &&
 		uploadRate == user.UploadRateBytesPerSec &&
 		downloadRate == user.DownloadRateBytesPerSec {
@@ -264,6 +267,29 @@ func (c *Controller) applyUserLimits(
 	}
 
 	return updated, nil
+}
+
+// applyUserStatus applies a requested lifecycle change and reports whether the
+// account's sessions were ended by it.
+func (c *Controller) applyUserStatus(
+	ctx *fiber.Ctx,
+	user *entity.User,
+	req *request.UserUpdate,
+	sessionsEnded bool,
+) (bool, error) {
+	if req.Status == "" || entity.UserStatus(req.Status) == user.Status {
+		return sessionsEnded, nil
+	}
+
+	if err := c.u.SetStatus(ctx.UserContext(), req.ID, entity.UserStatus(req.Status)); err != nil {
+		return sessionsEnded, c.userUpdateError(ctx, err)
+	}
+
+	if entity.UserStatus(req.Status) == entity.UserStatusDisabled {
+		sessionsEnded = true
+	}
+
+	return sessionsEnded, nil
 }
 
 // userUpdateError maps a failed account update to a status and a message the
@@ -357,4 +383,50 @@ func (c *Controller) roleError(ctx *fiber.Ctx, err error) error {
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
+}
+
+// adminAccessRequestsTable renders the pending account requests.
+func (c *Controller) adminAccessRequestsTable(ctx *fiber.Ctx) error {
+	req, messages := parseUserListQuery(ctx, c.v)
+	if messages != nil {
+		return c.renderErrors(ctx, http.StatusUnprocessableEntity, messages)
+	}
+
+	filter := req.Filter()
+	filter.Status = entity.UserStatusPending
+	filter.Sort = entity.UserSortCreatedAt
+	filter.Dir = entity.UserSortDescending
+
+	list, err := c.u.ListUsers(ctx.UserContext(), &filter)
+	if err != nil {
+		c.l.Error(fmt.Errorf("web - adminAccessRequestsTable - uc.ListUsers: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	rows := make([]response.UserRow, 0, len(list.Items))
+	for i := range list.Items {
+		rows = append(rows, response.NewUserRow(&list.Items[i]))
+	}
+
+	return c.renderPage(
+		ctx,
+		templates.AdminAccessRequestsFragment(rows, response.NewUserPager(list, &filter), userFilters(&req)),
+	)
+}
+
+// adminAccessRequestApprove approves one pending account.
+func (c *Controller) adminAccessRequestApprove(ctx *fiber.Ctx) error {
+	id := ctx.FormValue("id")
+	if id == "" {
+		id = ctx.Query("id")
+	}
+
+	if err := c.u.ApproveUser(ctx.UserContext(), id); err != nil {
+		return c.userUpdateError(ctx, err)
+	}
+
+	ctx.Set(_hxTriggerHeader, "accessRequestsUpdated")
+
+	return ctx.SendStatus(http.StatusNoContent)
 }

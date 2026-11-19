@@ -23,6 +23,7 @@ type UserRow struct {
 	Username string
 	Email    string
 	IsAdmin  bool
+	Status   entity.UserStatus
 	Joined   string
 	Updated  string
 
@@ -154,6 +155,7 @@ func NewUserRow(item *entity.UserListItem) UserRow {
 		Username: item.Username,
 		Email:    item.Email,
 		IsAdmin:  item.Role == entity.UserRoleAdmin,
+		Status:   item.Status,
 		Joined:   item.CreatedAt.Format(_joinedLayout),
 		Updated:  item.UpdatedAt.Format(_joinedLayout),
 
@@ -184,6 +186,7 @@ func NewUserRowFromUser(user *entity.User) UserRow {
 		Username: user.Username,
 		Email:    user.Email,
 		IsAdmin:  user.Role == entity.UserRoleAdmin,
+		Status:   user.Status,
 		Joined:   user.CreatedAt.Format(_joinedLayout),
 		Updated:  user.UpdatedAt.Format(_joinedLayout),
 
@@ -240,6 +243,7 @@ func NewUserPager(list entity.UserList, filter *entity.UserFilter) UserPager {
 type UserFilters struct {
 	Query  string
 	Role   string
+	Status string
 	Date   string
 	Sort   string
 	Dir    string

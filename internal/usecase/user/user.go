@@ -74,6 +74,7 @@ func (uc *UseCase) Register(
 		Email:        email,
 		PasswordHash: string(hash),
 		Role:         entity.UserRoleUser,
+		Status:       entity.UserStatusPending,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -126,6 +127,14 @@ func (uc *UseCase) Login(ctx context.Context, email, password string) (string, e
 		}
 
 		return "", entity.User{}, fmt.Errorf("UserUseCase - Login - bcrypt.CompareHashAndPassword: %w", err)
+	}
+
+	if user.Status == entity.UserStatusPending {
+		return "", entity.User{}, entity.ErrUserPending
+	}
+
+	if user.Status == entity.UserStatusDisabled {
+		return "", entity.User{}, entity.ErrUserDisabled
 	}
 
 	sessionID, err := newSessionID()
@@ -214,6 +223,84 @@ func (uc *UseCase) SetRole(ctx context.Context, email string, role entity.UserRo
 	}
 
 	return nil
+}
+
+// SetStatus changes the lifecycle state of an account. Disabling ends its live
+// sessions, so a disabled account is signed out immediately.
+func (uc *UseCase) SetStatus(ctx context.Context, userID string, status entity.UserStatus) error {
+	if !status.IsValid() {
+		return entity.ErrInvalidRole
+	}
+
+	if _, err := uc.repo.GetByID(ctx, userID); err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.ErrUserNotFound
+		}
+
+		return fmt.Errorf("UserUseCase - SetStatus - uc.repo.GetByID: %w", err)
+	}
+
+	err := uc.repo.UpdateStatus(ctx, userID, status)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.ErrUserNotFound
+		}
+
+		return fmt.Errorf("UserUseCase - SetStatus - uc.repo.UpdateStatus: %w", err)
+	}
+
+	if status == entity.UserStatusDisabled {
+		if err := uc.sessions.DeleteUserSessions(ctx, userID); err != nil {
+			return fmt.Errorf("UserUseCase - SetStatus - uc.sessions.DeleteUserSessions: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ApproveUser moves a pending account to active.
+func (uc *UseCase) ApproveUser(ctx context.Context, userID string) error {
+	return uc.SetStatus(ctx, userID, entity.UserStatusActive)
+}
+
+// DisableUser moves an account to disabled and ends its sessions.
+func (uc *UseCase) DisableUser(ctx context.Context, userID string) error {
+	return uc.SetStatus(ctx, userID, entity.UserStatusDisabled)
+}
+
+// EnableUser moves a disabled account back to active.
+func (uc *UseCase) EnableUser(ctx context.Context, userID string) error {
+	return uc.SetStatus(ctx, userID, entity.UserStatusActive)
+}
+
+// UpdateStatus is an alias for SetStatus.
+func (uc *UseCase) UpdateStatus(ctx context.Context, userID string, status entity.UserStatus) error {
+	return uc.SetStatus(ctx, userID, status)
+}
+
+// SetUserStatus is an alias for SetStatus.
+func (uc *UseCase) SetUserStatus(ctx context.Context, userID string, status entity.UserStatus) error {
+	return uc.SetStatus(ctx, userID, status)
+}
+
+// UpdateUserStatus is an alias for SetStatus.
+func (uc *UseCase) UpdateUserStatus(ctx context.Context, userID string, status entity.UserStatus) error {
+	return uc.SetStatus(ctx, userID, status)
+}
+
+// Approve is an alias for ApproveUser.
+func (uc *UseCase) Approve(ctx context.Context, userID string) error {
+	return uc.ApproveUser(ctx, userID)
+}
+
+// Disable is an alias for DisableUser.
+func (uc *UseCase) Disable(ctx context.Context, userID string) error {
+	return uc.DisableUser(ctx, userID)
+}
+
+// Enable is an alias for EnableUser.
+func (uc *UseCase) Enable(ctx context.Context, userID string) error {
+	return uc.EnableUser(ctx, userID)
 }
 
 // SetUserLimits updates the per-account storage and transfer limits. Negative

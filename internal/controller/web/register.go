@@ -41,14 +41,14 @@ func (c *Controller) registerSubmit(ctx *fiber.Ctx) error {
 		return c.registerError(ctx, err)
 	}
 
-	token, _, err := c.u.Login(ctx.UserContext(), req.Email, req.Password)
-	if err != nil {
-		c.l.Error(fmt.Errorf("web - registerSubmit - uc.Login: %w", err))
-
-		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
-	}
-
-	return c.renderAuthenticated(ctx, token)
+	// A registration is a request for access: the account stays pending until
+	// an administrator approves it, so signing the visitor in here would skip
+	// that gate.
+	return c.renderErrors(
+		ctx,
+		http.StatusAccepted,
+		[]string{"Your account request has been submitted and is awaiting admin approval."},
+	)
 }
 
 // registerError maps a registration failure to a status and a message the caller

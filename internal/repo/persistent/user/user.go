@@ -33,8 +33,8 @@ func New(pg *postgres.Postgres) repo.UserRepo {
 func (r *Repo) Store(ctx context.Context, user *entity.User) error {
 	sql, args, err := r.Builder.
 		Insert("users").
-		Columns("id, username, email, password_hash, role, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
-		Values(user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.StorageQuotaBytes, user.StorageUsedBytes, user.UploadRateBytesPerSec, user.DownloadRateBytesPerSec, user.CreatedAt, user.UpdatedAt).
+		Columns("id, username, email, password_hash, role, status, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
+		Values(user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.Status, user.StorageQuotaBytes, user.StorageUsedBytes, user.UploadRateBytesPerSec, user.DownloadRateBytesPerSec, user.CreatedAt, user.UpdatedAt).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("UserRepo - Store - r.Builder: %w", err)
@@ -79,19 +79,31 @@ func (r *Repo) GetByEmail(ctx context.Context, email string) (entity.User, error
 // UpdateRole changes the role of an account. A missing account maps to
 // ErrUserNotFound.
 func (r *Repo) UpdateRole(ctx context.Context, userID string, role entity.UserRole) error {
+	return r.updateUserColumn(ctx, userID, "role", role, "UpdateRole")
+}
+
+// UpdateStatus changes the lifecycle state of an account. A missing account
+// maps to ErrUserNotFound.
+func (r *Repo) UpdateStatus(ctx context.Context, userID string, status entity.UserStatus) error {
+	return r.updateUserColumn(ctx, userID, "status", status, "UpdateStatus")
+}
+
+// updateUserColumn writes one column of an account. The column name is a
+// constant chosen by the caller, never input from the request.
+func (r *Repo) updateUserColumn(ctx context.Context, userID, column string, value any, op string) error {
 	sql, args, err := r.Builder.
 		Update("users").
-		Set("role", role).
+		Set(column, value).
 		Set("updated_at", time.Now().UTC()).
 		Where(sq.Eq{_idColumn: userID}).
 		ToSql()
 	if err != nil {
-		return fmt.Errorf("UserRepo - UpdateRole - r.Builder: %w", err)
+		return fmt.Errorf("UserRepo - %s - r.Builder: %w", op, err)
 	}
 
 	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
 	if err != nil {
-		return fmt.Errorf("UserRepo - UpdateRole - r.Querier(ctx).Exec: %w", err)
+		return fmt.Errorf("UserRepo - %s - r.Querier(ctx).Exec: %w", op, err)
 	}
 
 	if tag.RowsAffected() == 0 {
@@ -197,7 +209,7 @@ func (r *Repo) List(ctx context.Context, filter *entity.UserFilter) (entity.User
 	offset := max((filter.Page-_userFirstPage)*filter.Limit, 0)
 
 	pageSQL, pageArgs, err := r.Builder.
-		Select("id, username, email, role, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
+		Select("id, username, email, role, status, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
 		From("users").
 		Where(where).
 		OrderBy(listOrder(filter)...).
@@ -220,7 +232,7 @@ func (r *Repo) List(ctx context.Context, filter *entity.UserFilter) (entity.User
 	for rows.Next() {
 		var user entity.UserListItem
 
-		err = rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.StorageQuotaBytes, &user.StorageUsedBytes, &user.UploadRateBytesPerSec, &user.DownloadRateBytesPerSec, &user.CreatedAt, &user.UpdatedAt)
+		err = rows.Scan(&user.ID, &user.Username, &user.Email, &user.Role, &user.Status, &user.StorageQuotaBytes, &user.StorageUsedBytes, &user.UploadRateBytesPerSec, &user.DownloadRateBytesPerSec, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			return entity.UserList{}, fmt.Errorf("UserRepo - List - rows.Scan: %w", err)
 		}
@@ -298,6 +310,10 @@ func listWhere(filter *entity.UserFilter) sq.Sqlizer {
 		})
 	}
 
+	if filter.Status != "" {
+		conds = append(conds, sq.Eq{"status": filter.Status})
+	}
+
 	if len(conds) == 0 {
 		return nil
 	}
@@ -343,7 +359,7 @@ func (r *Repo) adjustStorageUsage(ctx context.Context, userID string, delta int6
 
 func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, error) {
 	sql, args, err := r.Builder.
-		Select("id, username, email, password_hash, role, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
+		Select("id, username, email, password_hash, role, status, storage_quota_bytes, storage_used_bytes, upload_rate_bytes_per_sec, download_rate_bytes_per_sec, created_at, updated_at").
 		From("users").
 		Where(sq.Eq{column: value}).
 		ToSql()
@@ -354,7 +370,7 @@ func (r *Repo) getUser(ctx context.Context, column, value string) (entity.User, 
 	var user entity.User
 
 	err = r.Querier(ctx).QueryRow(ctx, sql, args...).
-		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.StorageQuotaBytes, &user.StorageUsedBytes, &user.UploadRateBytesPerSec, &user.DownloadRateBytesPerSec, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.Status, &user.StorageQuotaBytes, &user.StorageUsedBytes, &user.UploadRateBytesPerSec, &user.DownloadRateBytesPerSec, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.User{}, entity.ErrUserNotFound

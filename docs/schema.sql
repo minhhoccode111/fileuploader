@@ -21,10 +21,12 @@ CREATE TABLE "public"."users" (
   "storage_used_bytes" bigint NOT NULL DEFAULT 0,
   "upload_rate_bytes_per_sec" bigint NOT NULL DEFAULT 0,
   "download_rate_bytes_per_sec" bigint NOT NULL DEFAULT 0,
+  "status" character varying(16) NOT NULL DEFAULT 'active',
   PRIMARY KEY ("id"),
   CONSTRAINT "users_email_key" UNIQUE ("email"),
   CONSTRAINT "users_username_key" UNIQUE ("username"),
-  CONSTRAINT "users_role_check" CHECK ((role)::text = ANY ((ARRAY['admin'::character varying, 'user'::character varying])::text[]))
+  CONSTRAINT "users_role_check" CHECK ((role)::text = ANY ((ARRAY['admin'::character varying, 'user'::character varying])::text[])),
+  CONSTRAINT "users_status_check" CHECK ((status)::text = ANY ((ARRAY['pending'::character varying, 'active'::character varying, 'disabled'::character varying])::text[]))
 );
 -- Create "folders" table
 CREATE TABLE "public"."folders" (

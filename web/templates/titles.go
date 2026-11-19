@@ -4,12 +4,13 @@ package templates
 // head on a full load, and the transport publishes the same title as the
 // head-only update that follows a client-side navigation.
 const (
-	HomeTitle          = "Home"
-	LoginTitle         = "Login"
-	RegisterTitle      = "Register"
-	ShareTitle         = "Share"
-	SharedTitle        = "Shared folder"
-	LogoutTitle        = "Logout"
-	AdminUsersTitle    = "Admin · Users"
-	AdminSettingsTitle = "Admin · Settings"
+	HomeTitle                = "Home"
+	LoginTitle               = "Login"
+	RegisterTitle            = "Register"
+	ShareTitle               = "Share"
+	SharedTitle              = "Shared folder"
+	LogoutTitle              = "Logout"
+	AdminUsersTitle          = "Admin · Users"
+	AdminSettingsTitle       = "Admin · Settings"
+	AdminAccessRequestsTitle = "Admin · Access requests"
 )

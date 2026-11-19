@@ -32,13 +32,14 @@ const (
 // must be one the table can toggle, which is also what keeps a hand-crafted
 // URL from asking for the whole table in one page.
 type UserListQuery struct {
-	Query string `query:"q"     validate:"max=100"`
-	Role  string `query:"role"  validate:"omitempty,oneof=all admin user"`
-	Date  string `query:"date"  validate:"omitempty,datetime=2006-01-02"`
-	Sort  string `query:"sort"  validate:"omitempty,oneof=username email role created_at updated_at"`
-	Dir   string `query:"dir"   validate:"omitempty,oneof=asc desc"`
-	Limit int    `query:"limit" validate:"omitempty,oneof=5 10 20 50"`
-	Page  int    `query:"page"  validate:"omitempty,min=1"`
+	Query  string `query:"q"     validate:"max=100"`
+	Role   string `query:"role"   validate:"omitempty,oneof=all admin user"`
+	Status string `query:"status" validate:"omitempty,oneof=all pending active disabled"`
+	Date   string `query:"date"  validate:"omitempty,datetime=2006-01-02"`
+	Sort   string `query:"sort"  validate:"omitempty,oneof=username email role created_at updated_at"`
+	Dir    string `query:"dir"   validate:"omitempty,oneof=asc desc"`
+	Limit  int    `query:"limit" validate:"omitempty,oneof=5 10 20 50"`
+	Page   int    `query:"page"  validate:"omitempty,min=1"`
 }
 
 // Sanitize normalizes the raw query input before validation runs. The text
@@ -47,6 +48,7 @@ type UserListQuery struct {
 func (q *UserListQuery) Sanitize() {
 	q.Query = strings.TrimSpace(q.Query)
 	q.Role = strings.ToLower(strings.TrimSpace(q.Role))
+	q.Status = strings.ToLower(strings.TrimSpace(q.Status))
 	q.Sort = strings.ToLower(strings.TrimSpace(q.Sort))
 	q.Dir = strings.ToLower(strings.TrimSpace(q.Dir))
 }
@@ -94,6 +96,10 @@ func (q *UserListQuery) Filter() entity.UserFilter {
 		filter.Role = entity.UserRole(q.Role)
 	}
 
+	if q.Status != "" && q.Status != "all" {
+		filter.Status = entity.UserStatus(q.Status)
+	}
+
 	if q.Date != "" {
 		on, err := time.Parse(_userListDateLayout, q.Date)
 		if err == nil {
@@ -120,13 +126,15 @@ func (q *UserListQuery) PageSize() int {
 // HasFilters reports whether the query narrows the list at all, which is how
 // the empty row between "no accounts yet" and "nothing matches" is chosen.
 func (q *UserListQuery) HasFilters() bool {
-	return q.Query != "" || (q.Role != "" && q.Role != _userListAllRoles) || q.Date != ""
+	return q.Query != "" || (q.Role != "" && q.Role != _userListAllRoles) || (q.Status != "" && q.Status != "all") || q.Date != ""
 }
 
 // BookmarkQuery renders the narrowing parts of the query as the query string
 // of the page path the address bar holds, so a view can be bookmarked and
 // come back the same. The parts that carry no narrowing are dropped, and the
 // page window rides along once the visitor leaves the first page.
+//
+//nolint:gocyclo,cyclop // many independent optional filters
 func (q *UserListQuery) BookmarkQuery() url.Values {
 	values := url.Values{}
 
@@ -136,6 +144,10 @@ func (q *UserListQuery) BookmarkQuery() url.Values {
 
 	if q.Role != "" && q.Role != _userListAllRoles {
 		values.Set("role", q.Role)
+	}
+
+	if q.Status != "" && q.Status != "all" {
+		values.Set("status", q.Status)
 	}
 
 	if q.Date != "" {

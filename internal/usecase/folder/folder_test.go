@@ -637,6 +637,10 @@ func (f *fakeUserRepoForFolder) UpdateRole(_ context.Context, _ string, _ entity
 	return nil
 }
 
+func (f *fakeUserRepoForFolder) UpdateStatus(_ context.Context, _ string, _ entity.UserStatus) error {
+	return nil
+}
+
 func (f *fakeUserRepoForFolder) Update(_ context.Context, user *entity.User) error {
 	f.updated = user
 
