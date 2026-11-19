@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
+	"github.com/minhhoccode111/fileuploader/internal/usecase/pace"
 	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
@@ -19,19 +20,6 @@ const (
 	// account's upload rate. It stays well inside the proxy and server
 	// timeouts, so a slow account still finishes each part.
 	_uploadPartTargetSeconds = 90
-
-	// _paceBatchDivisor splits one second of an account's rate into the
-	// batches a paced read hands over, so the limiter is consulted a few
-	// times a second instead of once per kilobyte.
-	_paceBatchDivisor = 4
-
-	// _paceBatchFloor is the smallest batch a paced read hands over. Below
-	// it the reservations are too fine-grained to matter.
-	_paceBatchFloor = int64(64 << 10)
-
-	// _paceBatchCeiling is the largest batch a paced read hands over, so a
-	// slow sender is never granted more than a megabyte at once.
-	_paceBatchCeiling = int64(1 << 20)
 
 	// _uploadPartFloor is the smallest part S3 accepts, apart from the last
 	// part of an upload, which may be shorter.
@@ -210,14 +198,7 @@ func (uc *UseCase) UploadPart(
 
 	reader := body
 	if rate > 0 && uc.pacer != nil {
-		reader = &pacedReader{
-			r:       body,
-			limiter: uc.pacer,
-			ctx:     ctx,
-			userID:  userID,
-			rate:    rate,
-			batch:   paceBatch(rate),
-		}
+		reader = pace.NewReader(ctx, body, uc.pacer, userID, repo.TransferUpload, rate)
 	}
 
 	etag, err := uc.storage.UploadPart(
@@ -606,54 +587,6 @@ func (uc *UseCase) uploadRate(ctx context.Context, userID string) (int64, error)
 	}
 
 	return user.EffectiveUploadRate(uc.defaultUploadRate), nil
-}
-
-// pacedReader wraps the body of one part and reserves every batch it hands
-// over at the account's rate. It reads in batches, so a fast sender cannot
-// outrun the limiter between two reservations.
-type pacedReader struct {
-	r       io.Reader
-	limiter repo.TransferLimiter
-	ctx     context.Context
-	userID  string
-	rate    int64
-	batch   int
-}
-
-// Read hands over at most one batch and waits for the limiter before the bytes
-// reach the caller. A failed reservation is reported with the bytes already
-// read, so the caller still sees the read that made progress.
-func (p *pacedReader) Read(buf []byte) (int, error) {
-	if len(buf) > p.batch {
-		buf = buf[:p.batch]
-	}
-
-	n, err := p.r.Read(buf)
-	if n == 0 {
-		if err == nil {
-			// A reader that makes no progress and reports no error would
-			// spin the caller forever.
-			return 0, io.ErrNoProgress
-		}
-
-		return n, err
-	}
-
-	paceErr := p.limiter.Pace(p.ctx, p.userID, int64(n), p.rate)
-	if paceErr != nil {
-		return n, paceErr
-	}
-
-	return n, err
-}
-
-// paceBatch returns how many bytes one paced read hands over. The batch is a
-// quarter of a second of the account's rate, held between the floor and the
-// ceiling so every rate gets a workable batch.
-func paceBatch(rate int64) int {
-	batch := min(max(rate/_paceBatchDivisor, _paceBatchFloor), _paceBatchCeiling)
-
-	return int(batch)
 }
 
 // reserveUploadQuota takes the per-account quota lock and admits the declared

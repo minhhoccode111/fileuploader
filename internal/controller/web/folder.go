@@ -404,20 +404,11 @@ func (c *Controller) folderDownloadZip(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _loginPath)
 	}
 
-	rateLimit, err := c.downloadRate(ctx, userID)
-	if err != nil {
-		return c.driveError(ctx, err, "folderDownloadZip - c.u.GetUser")
-	}
-
 	reader, filename, err := c.folders.DownloadZip(ctx.UserContext(), userID, folderID)
 	if err != nil {
 		c.l.Error(fmt.Errorf("web - folderDownloadZip - uc.folders.DownloadZip: %w", err))
 
 		return middleware.Redirect(ctx, _homePath)
-	}
-
-	if rateLimit > 0 {
-		reader = newThrottledReader(ctx.UserContext(), reader, rateLimit)
 	}
 
 	ctx.Set(fiber.HeaderContentType, "application/zip")

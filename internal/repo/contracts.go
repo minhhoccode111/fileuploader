@@ -10,6 +10,14 @@ import (
 	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
+const (
+	// TransferUpload names the upload budget of an account.
+	TransferUpload TransferScope = "upload"
+
+	// TransferDownload names the download budget of an account.
+	TransferDownload TransferScope = "download"
+)
+
 type (
 	// UnitOfWork runs a group of repository calls inside a single database
 	// transaction. The context it hands to the callback carries the
@@ -94,11 +102,16 @@ type (
 		LockQuota(ctx context.Context, userID string) (func(), error)
 	}
 
+	// TransferScope names one direction of an account's transfer budget. The
+	// upload and download limits are separate, so traffic in one direction
+	// does not consume the budget of the other.
+	TransferScope string
+
 	// TransferLimiter paces the bytes one account sends. Pace reserves bytes
 	// at rate bytes per second and returns once the reservation may transmit,
 	// so a slow account is delayed at the sender and never at the socket.
 	TransferLimiter interface {
-		Pace(ctx context.Context, userID string, bytes, rate int64) error
+		Pace(ctx context.Context, userID string, scope TransferScope, bytes, rate int64) error
 	}
 
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the

@@ -124,4 +124,8 @@ func TestFileDownloadKeepsTheStreamOpen(t *testing.T) {
 	if string(body) != "hello" {
 		t.Errorf("body = %q, want %q", body, "hello")
 	}
+
+	if got := res.Header.Get(fiber.HeaderContentLength); got != "5" {
+		t.Errorf("Content-Length = %q, want %q", got, "5")
+	}
 }

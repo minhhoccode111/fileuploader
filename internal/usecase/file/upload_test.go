@@ -12,6 +12,7 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/internal/usecase/pace"
 	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
@@ -153,12 +154,18 @@ type fakePacer struct {
 
 type fakePace struct {
 	userID string
+	scope  repo.TransferScope
 	bytes  int64
 	rate   int64
 }
 
-func (f *fakePacer) Pace(_ context.Context, userID string, bytes, rate int64) error {
-	f.calls = append(f.calls, fakePace{userID: userID, bytes: bytes, rate: rate})
+func (f *fakePacer) Pace(
+	_ context.Context,
+	userID string,
+	scope repo.TransferScope,
+	bytes, rate int64,
+) error {
+	f.calls = append(f.calls, fakePace{userID: userID, scope: scope, bytes: bytes, rate: rate})
 
 	return f.err
 }
@@ -818,6 +825,10 @@ func checkPartPaces(t *testing.T, calls []fakePace, rate, bodyLen, batch int64) 
 			t.Errorf("paced user = %q, want %q", call.userID, "user")
 		}
 
+		if call.scope != repo.TransferUpload {
+			t.Errorf("paced scope = %q, want %q", call.scope, repo.TransferUpload)
+		}
+
 		if call.rate != rate {
 			t.Errorf("paced rate = %d, want %d", call.rate, rate)
 		}
@@ -845,14 +856,14 @@ func TestPacedReaderReportsNoProgress(t *testing.T) {
 
 	pacer := &fakePacer{}
 
-	reader := &pacedReader{
-		r:       stuckReader{},
-		limiter: pacer,
-		ctx:     context.Background(),
-		userID:  "user",
-		rate:    1 << 20,
-		batch:   1 << 20,
-	}
+	reader := pace.NewReader(
+		context.Background(),
+		stuckReader{},
+		pacer,
+		"user",
+		repo.TransferUpload,
+		1<<20,
+	)
 
 	n, err := reader.Read(make([]byte, 16))
 	if n != 0 || !errors.Is(err, io.ErrNoProgress) {

@@ -91,18 +91,20 @@ type (
 )
 
 // Limits carries the global defaults a per-account zero inherits.
+// Limits carries the account-wide defaults. An account inherits a default
+// quota, upload rate or download rate when it carries no value of its own.
 type Limits struct {
-	StorageQuotaBytes int64
+	StorageQuotaBytes       int64
+	DownloadRateBytesPerSec int64
 }
 
 // UploadSettings carries the size and pacing limits of a chunked upload. A
 // zero MaxBytes, PartBytes or SessionIdleTTL falls back to the use case
-// default, and an account inherits a default quota or upload rate when it
-// carries no value of its own.
+// default, and an account inherits the default upload rate when it carries no
+// value of its own.
 type UploadSettings struct {
 	MaxBytes                     int64
 	PartBytes                    int64
 	SessionIdleTTL               time.Duration
-	DefaultQuotaBytes            int64
 	DefaultUploadRateBytesPerSec int64
 }

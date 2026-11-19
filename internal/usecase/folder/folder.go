@@ -15,6 +15,7 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/internal/usecase/pace"
 )
 
 const (
@@ -35,17 +36,21 @@ type _zipEntry struct {
 }
 
 type UseCase struct {
-	users        repo.UserRepo
-	folders      repo.FolderRepo
-	files        repo.FileRepo
-	storage      repo.ObjectStorage
-	uow          repo.UnitOfWork
-	bucket       string
-	defaultQuota int64
+	users               repo.UserRepo
+	folders             repo.FolderRepo
+	files               repo.FileRepo
+	storage             repo.ObjectStorage
+	uow                 repo.UnitOfWork
+	pacer               repo.TransferLimiter
+	bucket              string
+	defaultQuota        int64
+	defaultDownloadRate int64
 }
 
-// New returns a Folder use case. Its arguments are accepted in any order, so the
-// user repository can be added without breaking existing callers.
+// New returns a Folder use case. Its arguments are accepted in any order, so a
+// dependency can be added without breaking existing callers.
+//
+//nolint:gocyclo,cyclop // variadic constructor dispatches dependencies by type
 func New(args ...any) usecase.Folder {
 	uc := &UseCase{}
 
@@ -61,16 +66,30 @@ func New(args ...any) usecase.Folder {
 			uc.storage = v
 		case repo.UnitOfWork:
 			uc.uow = v
+		case repo.TransferLimiter:
+			uc.pacer = v
 		case string:
 			if uc.bucket == "" {
 				uc.bucket = v
 			}
 		case usecase.Limits:
-			uc.defaultQuota = v.StorageQuotaBytes
+			uc.applyLimits(v)
 		}
 	}
 
 	return uc
+}
+
+// applyLimits copies the account-wide defaults onto the use case. A zero field
+// keeps the default, so a caller can set only the limits it cares about.
+func (uc *UseCase) applyLimits(limits usecase.Limits) {
+	if limits.StorageQuotaBytes != 0 {
+		uc.defaultQuota = limits.StorageQuotaBytes
+	}
+
+	if limits.DownloadRateBytesPerSec != 0 {
+		uc.defaultDownloadRate = limits.DownloadRateBytesPerSec
+	}
 }
 
 // Get returns one folder of the account.
@@ -683,6 +702,11 @@ func splitFolderName(name string) (base, ext string) {
 // The returned reader is the archive; the caller closes it. The name is the
 // file name the browser should save the archive under.
 func (uc *UseCase) DownloadZip(ctx context.Context, userID, folderID string) (io.ReadCloser, string, error) {
+	rate, err := uc.downloadRate(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+
 	entries, root, err := uc.collectZipEntries(ctx, userID, folderID)
 	if err != nil {
 		return nil, "", err
@@ -699,7 +723,22 @@ func (uc *UseCase) DownloadZip(ctx context.Context, userID, folderID string) (io
 
 	go uc.writeZip(ctx, writer, entries)
 
-	return reader, filename, nil
+	return pace.NewReader(ctx, reader, uc.pacer, userID, repo.TransferDownload, rate), filename, nil
+}
+
+// downloadRate resolves the effective download rate of an account. A use case
+// without a user repository has no limits.
+func (uc *UseCase) downloadRate(ctx context.Context, userID string) (int64, error) {
+	if uc.users == nil {
+		return uc.defaultDownloadRate, nil
+	}
+
+	user, err := uc.users.GetByID(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("FolderUseCase - DownloadZip - uc.users.GetByID: %w", err)
+	}
+
+	return user.EffectiveDownloadRate(uc.defaultDownloadRate), nil
 }
 
 // collectZipEntries gathers the files that make up the archive.

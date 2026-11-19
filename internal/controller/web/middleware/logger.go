@@ -19,9 +19,21 @@ func buildRequestMessage(ctx *fiber.Ctx) string {
 	result.WriteString(" - ")
 	result.WriteString(strconv.Itoa(ctx.Response().StatusCode()))
 	result.WriteString(" ")
-	result.WriteString(strconv.Itoa(len(ctx.Response().Body())))
+	result.WriteString(strconv.Itoa(responseBodySize(ctx)))
 
 	return result.String()
+}
+
+// responseBodySize reports the buffered body length, or the declared length of
+// a stream. It must not call Body() on a stream: that reads the whole response
+// into memory before the server can write the headers. A chunked stream has no
+// declared length and reports -1.
+func responseBodySize(ctx *fiber.Ctx) int {
+	if ctx.Response().IsBodyStream() {
+		return ctx.Response().Header.ContentLength()
+	}
+
+	return len(ctx.Response().Body())
 }
 
 func Logger(l logger.Interface) func(c *fiber.Ctx) error {

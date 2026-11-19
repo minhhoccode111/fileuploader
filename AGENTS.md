@@ -178,6 +178,11 @@ reach the bucket and stores the returned ETag. `CompleteUpload` assembles the pa
 through `storeRow` (folder lock, name check, quota check, usage update) and removes the object again
 if the row fails.
 
+Downloads use the same limiter under a separate `download-rate:<user>` bucket. `OpenDownload` and
+`DownloadZip` wrap the stream in `internal/usecase/pace`, so concurrent file, share and folder
+downloads share one account budget. Keep streamed responses out of `Response().Body()` in middleware:
+calling it buffers the whole file and delays every header until the last byte.
+
 A background sweeper (`internal/app/sweeper.go`) runs one sweep at startup and then every five
 minutes: it aborts multipart uploads whose session expired and never finished, which is the backstop
 for a browser that never sends the abort beacon. There is no single-request upload path — the

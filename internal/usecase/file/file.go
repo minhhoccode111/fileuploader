@@ -15,6 +15,7 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/internal/usecase/pace"
 )
 
 const (
@@ -51,19 +52,20 @@ const (
 
 // UseCase -.
 type UseCase struct {
-	users             repo.UserRepo
-	files             repo.FileRepo
-	folders           repo.FolderRepo
-	storage           repo.ObjectStorage
-	uow               repo.UnitOfWork
-	uploads           repo.UploadSessionRepo
-	pacer             repo.TransferLimiter
-	bucket            string
-	maxBytes          int64
-	partBytes         int64
-	sessionIdleTTL    time.Duration
-	defaultQuota      int64
-	defaultUploadRate int64
+	users               repo.UserRepo
+	files               repo.FileRepo
+	folders             repo.FolderRepo
+	storage             repo.ObjectStorage
+	uow                 repo.UnitOfWork
+	uploads             repo.UploadSessionRepo
+	pacer               repo.TransferLimiter
+	bucket              string
+	maxBytes            int64
+	partBytes           int64
+	sessionIdleTTL      time.Duration
+	defaultQuota        int64
+	defaultUploadRate   int64
+	defaultDownloadRate int64
 }
 
 // New returns a File use case. Its arguments are accepted in any order, so the
@@ -102,7 +104,7 @@ func New(args ...any) usecase.File {
 				uc.maxBytes = int64(v)
 			}
 		case usecase.Limits:
-			uc.defaultQuota = v.StorageQuotaBytes
+			uc.applyLimits(v)
 		case usecase.UploadSettings:
 			uc.applyUploadSettings(v)
 		}
@@ -123,6 +125,18 @@ func New(args ...any) usecase.File {
 	return uc
 }
 
+// applyLimits copies the account-wide defaults onto the use case. A zero field
+// keeps the default, so a caller can set only the limits it cares about.
+func (uc *UseCase) applyLimits(limits usecase.Limits) {
+	if limits.StorageQuotaBytes != 0 {
+		uc.defaultQuota = limits.StorageQuotaBytes
+	}
+
+	if limits.DownloadRateBytesPerSec != 0 {
+		uc.defaultDownloadRate = limits.DownloadRateBytesPerSec
+	}
+}
+
 // applyUploadSettings copies the chunked upload settings onto the use case. A
 // zero field keeps the default, so a caller can set only the limits it cares
 // about.
@@ -137,10 +151,6 @@ func (uc *UseCase) applyUploadSettings(settings usecase.UploadSettings) {
 
 	if settings.SessionIdleTTL > 0 {
 		uc.sessionIdleTTL = settings.SessionIdleTTL
-	}
-
-	if settings.DefaultQuotaBytes != 0 {
-		uc.defaultQuota = settings.DefaultQuotaBytes
 	}
 
 	if settings.DefaultUploadRateBytesPerSec != 0 {
@@ -583,12 +593,32 @@ func (uc *UseCase) OpenDownload(ctx context.Context, userID, fileID string) (io.
 		return nil, entity.File{}, fmt.Errorf("FileUseCase - OpenDownload - uc.files.Get: %w", err)
 	}
 
+	rate, err := uc.downloadRate(ctx, userID)
+	if err != nil {
+		return nil, entity.File{}, err
+	}
+
 	reader, err := uc.storage.GetObject(ctx, uc.bucket, file.StorageKey)
 	if err != nil {
 		return nil, entity.File{}, fmt.Errorf("FileUseCase - OpenDownload - uc.storage.GetObject: %w", err)
 	}
 
-	return reader, file, nil
+	return pace.NewReader(ctx, reader, uc.pacer, userID, repo.TransferDownload, rate), file, nil
+}
+
+// downloadRate resolves the effective download rate of an account. A use case
+// without a user repository has no limits.
+func (uc *UseCase) downloadRate(ctx context.Context, userID string) (int64, error) {
+	if uc.users == nil {
+		return uc.defaultDownloadRate, nil
+	}
+
+	user, err := uc.users.GetByID(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("FileUseCase - OpenDownload - uc.users.GetByID: %w", err)
+	}
+
+	return user.EffectiveDownloadRate(uc.defaultDownloadRate), nil
 }
 
 // DownloadFile is an alias for OpenDownload.

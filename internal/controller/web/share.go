@@ -298,20 +298,12 @@ func (c *Controller) sharedFileDownload(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
 	}
 
-	rateLimit := int64(0)
-	if user, userErr := c.u.GetUser(ctx.UserContext(), share.UserID); userErr == nil {
-		rateLimit = user.EffectiveDownloadRate(c.cfg.Limits.DownloadRateBytesPerSec)
-	}
-
-	if rateLimit > 0 {
-		reader = newThrottledReader(ctx.UserContext(), reader, rateLimit)
-	}
-
 	ctx.Set(fiber.HeaderContentType, opened.ContentType)
 	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", opened.Name))
 
+	// The size keeps the response determinate while the body still streams.
 	if opened.Size > 0 {
-		ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", opened.Size))
+		return ctx.SendStream(reader, int(opened.Size))
 	}
 
 	// The server closes the stream after it writes the response. Closing it

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/pkg/redis"
 )
 
@@ -68,12 +69,12 @@ func TestPaceSkipsUnlimitedAndZeroBytes(t *testing.T) {
 	r, waits := newTestRepo(t, time.Unix(_testNow, 0))
 	ctx := context.Background()
 
-	err := r.Pace(ctx, "user", 1<<20, 0)
+	err := r.Pace(ctx, "user", repo.TransferUpload, 1<<20, 0)
 	if err != nil {
 		t.Fatalf("Pace(rate=0) error = %v, want nil", err)
 	}
 
-	err = r.Pace(ctx, "user", 0, 1<<20)
+	err = r.Pace(ctx, "user", repo.TransferUpload, 0, 1<<20)
 	if err != nil {
 		t.Fatalf("Pace(bytes=0) error = %v, want nil", err)
 	}
@@ -101,7 +102,7 @@ func TestPaceDelaysTheSecondReservation(t *testing.T) {
 	ctx := context.Background()
 
 	for range 2 {
-		err := r.Pace(ctx, "user", 1<<20, 1<<20)
+		err := r.Pace(ctx, "user", repo.TransferUpload, 1<<20, 1<<20)
 		if err != nil {
 			t.Fatalf("Pace() error = %v, want nil", err)
 		}
@@ -110,6 +111,41 @@ func TestPaceDelaysTheSecondReservation(t *testing.T) {
 	want := []time.Duration{0, time.Second}
 	if !slices.Equal(*waits, want) {
 		t.Errorf("waits = %v, want %v", *waits, want)
+	}
+}
+
+// Upload and download are separate budgets: traffic in one direction must not
+// consume the headroom of the other.
+func TestPaceKeepsDirectionsApart(t *testing.T) {
+	t.Parallel()
+
+	r, waits := newTestRepo(t, time.Unix(_testNow, 0))
+	ctx := context.Background()
+
+	err := r.Pace(ctx, "user", repo.TransferUpload, 1<<20, 1<<20)
+	if err != nil {
+		t.Fatalf("Pace(upload) error = %v, want nil", err)
+	}
+
+	err = r.Pace(ctx, "user", repo.TransferDownload, 1<<20, 1<<20)
+	if err != nil {
+		t.Fatalf("Pace(download) error = %v, want nil", err)
+	}
+
+	want := []time.Duration{0, 0}
+	if !slices.Equal(*waits, want) {
+		t.Errorf("waits = %v, want %v", *waits, want)
+	}
+
+	for _, key := range []string{"upload-rate:user", "download-rate:user"} {
+		exists, existsErr := r.rdb.Client.Exists(ctx, key).Result()
+		if existsErr != nil {
+			t.Fatalf("Exists(%q) error = %v, want nil", key, existsErr)
+		}
+
+		if exists != 1 {
+			t.Errorf("%s exists = %d, want 1", key, exists)
+		}
 	}
 }
 
@@ -125,7 +161,37 @@ func TestPaceSharesOneBucketAcrossCallers(t *testing.T) {
 
 	for range 2 {
 		wg.Go(func() {
-			err := r.Pace(ctx, "user", 1<<20, 1<<20)
+			err := r.Pace(ctx, "user", repo.TransferUpload, 1<<20, 1<<20)
+			if err != nil {
+				t.Errorf("Pace() error = %v, want nil", err)
+			}
+		})
+	}
+
+	wg.Wait()
+
+	got := slices.Clone(*waits)
+	slices.Sort(got)
+
+	want := []time.Duration{0, time.Second}
+	if !slices.Equal(got, want) {
+		t.Errorf("waits = %v, want %v", got, want)
+	}
+}
+
+// Two pacer instances do not share a mutex, but the Lua reservation still
+// gives them distinct slots. This is the prefork case.
+func TestPaceSharesOneBucketAcrossInstances(t *testing.T) {
+	t.Parallel()
+
+	r, waits, _ := newTestRepoWithServer(t, time.Unix(_testNow, 0))
+	other := &Repo{rdb: r.rdb, now: r.now, wait: r.wait}
+
+	var wg sync.WaitGroup
+
+	for _, pacer := range []*Repo{r, other} {
+		wg.Go(func() {
+			err := pacer.Pace(context.Background(), "user", repo.TransferUpload, 1<<20, 1<<20)
 			if err != nil {
 				t.Errorf("Pace() error = %v, want nil", err)
 			}
@@ -151,7 +217,7 @@ func TestPaceReturnsRedisFailure(t *testing.T) {
 	r, _, mr := newTestRepoWithServer(t, time.Unix(_testNow, 0))
 	mr.Close()
 
-	err := r.Pace(context.Background(), "user", 1<<20, 1<<20)
+	err := r.Pace(context.Background(), "user", repo.TransferUpload, 1<<20, 1<<20)
 	if err == nil {
 		t.Fatal("Pace() error = nil, want a Redis failure")
 	}

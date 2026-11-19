@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/a-h/templ"
@@ -15,7 +14,6 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/pkg/validatorx"
 	"github.com/minhhoccode111/fileuploader/web/templates"
-	"golang.org/x/time/rate"
 )
 
 // fileNew fills the drawer with the form that uploads one file into the folder
@@ -273,11 +271,6 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _loginPath)
 	}
 
-	rateLimit, err := c.downloadRate(ctx, userID)
-	if err != nil {
-		return c.driveError(ctx, err, "fileDownload - c.u.GetUser")
-	}
-
 	reader, file, err := c.files.OpenDownload(ctx.UserContext(), userID, fileID)
 	if err != nil {
 		if !errors.Is(err, entity.ErrFileNotFound) {
@@ -287,102 +280,16 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _homePath)
 	}
 
-	if rateLimit > 0 {
-		reader = newThrottledReader(ctx.UserContext(), reader, rateLimit)
-	}
-
 	ctx.Set(fiber.HeaderContentType, file.ContentType)
 	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", file.Name))
 
+	// The size keeps the response determinate, so the browser can show real
+	// download progress while the body still streams.
 	if file.Size > 0 {
-		ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", file.Size))
+		return ctx.SendStream(reader, int(file.Size))
 	}
 
 	// The server closes the stream after it writes the response. Closing it
 	// here would close the object before the body is read.
 	return ctx.SendStream(reader)
-}
-
-// downloadRate resolves the effective download rate for the signed-in account.
-func (c *Controller) downloadRate(ctx *fiber.Ctx, userID string) (int64, error) {
-	user, err := c.u.GetUser(ctx.UserContext(), userID)
-	if err != nil {
-		return 0, err
-	}
-
-	return user.EffectiveDownloadRate(c.cfg.Limits.DownloadRateBytesPerSec), nil
-}
-
-// _maxThrottleBurst caps the tokens a limiter may hold. The burst also caps
-// one read, so a rate below the reader's buffer size cannot make WaitN reject
-// the read for exceeding the burst.
-const _maxThrottleBurst = 32 * 1024
-
-// newThrottledReader wraps upload with a rate limiter when rateLimit is
-// positive. A non-positive limit leaves the stream untouched.
-func newThrottledReader(ctx context.Context, upload io.Reader, rateLimit int64) io.ReadCloser {
-	if rateLimit <= 0 {
-		if closer, ok := upload.(io.ReadCloser); ok {
-			return closer
-		}
-
-		return io.NopCloser(upload)
-	}
-
-	burst := min(rateLimit, int64(_maxThrottleBurst))
-
-	reader := &throttledReader{
-		r:       upload,
-		limiter: rate.NewLimiter(rate.Limit(rateLimit), int(burst)),
-		ctx:     ctx,
-		maxRead: int(burst),
-	}
-
-	if closer, ok := upload.(io.Closer); ok {
-		reader.closer = closer
-	}
-
-	return reader
-}
-
-// throttledReader wraps an upload stream with a per-request rate limiter. Each
-// completed read is accounted for before it is returned, so the consumer only
-// sees the bytes once the limiter has admitted them.
-type throttledReader struct {
-	r       io.Reader
-	limiter *rate.Limiter
-	ctx     context.Context
-	closer  io.Closer
-	maxRead int
-}
-
-// Close closes the wrapped reader when it can be closed.
-func (t *throttledReader) Close() error {
-	if t.closer != nil {
-		return t.closer.Close()
-	}
-
-	return nil
-}
-
-// Read pulls bytes from the wrapped reader and waits for the limiter to admit
-// them before returning.
-func (t *throttledReader) Read(p []byte) (int, error) {
-	if t.maxRead > 0 && len(p) > t.maxRead {
-		p = p[:t.maxRead]
-	}
-
-	n, err := t.r.Read(p)
-	if n > 0 && t.limiter != nil {
-		waitCtx := t.ctx
-		if waitCtx == nil {
-			waitCtx = context.Background()
-		}
-
-		if waitErr := t.limiter.WaitN(waitCtx, n); waitErr != nil {
-			return n, waitErr
-		}
-	}
-
-	return n, err
 }

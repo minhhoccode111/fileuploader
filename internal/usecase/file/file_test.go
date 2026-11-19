@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/repo"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/internal/usecase/pace"
 	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
@@ -158,6 +161,7 @@ type fakeStorage struct {
 	removeErr        error
 	presign          string
 	presignErr       error
+	objectBody       []byte
 	uploadPartNumber int
 	uploadPartSize   int64
 }
@@ -199,7 +203,7 @@ func (f *fakeStorage) CopyObject(_ context.Context, _, dstKey, srcKey string) er
 }
 
 func (f *fakeStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(nil)), nil
+	return io.NopCloser(bytes.NewReader(f.objectBody)), nil
 }
 
 func (f *fakeStorage) CreateMultipartUpload(_ context.Context, _, _, _ string) (string, error) {
@@ -308,6 +312,119 @@ func TestDownloadSignsTheObject(t *testing.T) {
 
 	if link != storage.presign {
 		t.Errorf("Download() link = %q, want %q", link, storage.presign)
+	}
+}
+
+// A download is paced at the account rate, on the download budget, before its
+// bytes reach the transport.
+func TestOpenDownloadPacesTheStream(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rate    = int64(1) << 20
+		bodyLen = int64(1) << 20
+	)
+
+	files := &fakeFileRepo{file: entity.File{
+		ID:         "file",
+		Name:       "note.txt",
+		StorageKey: "users/user/files/file",
+		Size:       bodyLen,
+	}}
+	users := &fakeUserRepoForFile{user: entity.User{DownloadRateBytesPerSec: rate}}
+	storage := &fakeStorage{objectBody: make([]byte, bodyLen)}
+	pacer := &fakePacer{}
+	uc := New(users, files, &fakeFolderRepo{}, storage, &fakeUnitOfWork{}, "bucket", pacer)
+
+	reader, _, err := uc.OpenDownload(context.Background(), "user", "file")
+	if err != nil {
+		t.Fatalf("OpenDownload() error = %v, want nil", err)
+	}
+	defer reader.Close()
+
+	got, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v, want nil", err)
+	}
+
+	if int64(len(got)) != bodyLen {
+		t.Fatalf("ReadAll() bytes = %d, want %d", len(got), bodyLen)
+	}
+
+	checkDownloadPaces(t, pacer.calls, rate, bodyLen)
+}
+
+// An account with no rate of its own inherits the global download default.
+func TestOpenDownloadUsesTheGlobalDefaultRate(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rate    = int64(1) << 20
+		bodyLen = int64(1) << 20
+	)
+
+	files := &fakeFileRepo{file: entity.File{ID: "file", StorageKey: "key", Size: bodyLen}}
+	users := &fakeUserRepoForFile{user: entity.User{}}
+	pacer := &fakePacer{}
+	uc := New(
+		users,
+		files,
+		&fakeFolderRepo{},
+		&fakeStorage{objectBody: make([]byte, bodyLen)},
+		&fakeUnitOfWork{},
+		"bucket",
+		pacer,
+		usecase.Limits{DownloadRateBytesPerSec: rate},
+	)
+
+	reader, _, err := uc.OpenDownload(context.Background(), "user", "file")
+	if err != nil {
+		t.Fatalf("OpenDownload() error = %v, want nil", err)
+	}
+	defer reader.Close()
+
+	if _, err := io.ReadAll(reader); err != nil {
+		t.Fatalf("ReadAll() error = %v, want nil", err)
+	}
+
+	checkDownloadPaces(t, pacer.calls, rate, bodyLen)
+}
+
+// checkDownloadPaces asserts each reservation uses the download budget and the
+// calls add up to the whole stream.
+func checkDownloadPaces(t *testing.T, calls []fakePace, rate, bodyLen int64) {
+	t.Helper()
+
+	if len(calls) == 0 {
+		t.Fatal("pacer calls = 0, want at least one")
+	}
+
+	batch := int64(pace.BatchSize(rate))
+
+	var paced int64
+
+	for _, call := range calls {
+		if call.userID != "user" {
+			t.Errorf("paced user = %q, want %q", call.userID, "user")
+		}
+
+		if call.scope != repo.TransferDownload {
+			t.Errorf("paced scope = %q, want %q", call.scope, repo.TransferDownload)
+		}
+
+		if call.rate != rate {
+			t.Errorf("paced rate = %d, want %d", call.rate, rate)
+		}
+
+		if call.bytes > batch {
+			t.Errorf("paced %d bytes in one call, want at most %d", call.bytes, batch)
+		}
+
+		paced += call.bytes
+	}
+
+	if paced != bodyLen {
+		t.Errorf("paced bytes = %d, want %d", paced, bodyLen)
 	}
 }
 

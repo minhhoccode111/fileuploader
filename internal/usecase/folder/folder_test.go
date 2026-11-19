@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
+	"github.com/minhhoccode111/fileuploader/internal/usecase/pace"
 	"github.com/minhhoccode111/fileuploader/pkg/multipart"
 )
 
@@ -203,8 +205,9 @@ func (f *fakeUnitOfWork) Do(ctx context.Context, fn func(context.Context) error)
 
 // fakeStorage records the objects a delete removed.
 type fakeStorage struct {
-	removed []string
-	err     error
+	removed    []string
+	objectBody []byte
+	err        error
 }
 
 func (f *fakeStorage) PutObject(
@@ -237,7 +240,7 @@ func (f *fakeStorage) CopyObject(_ context.Context, _, _, _ string) error {
 }
 
 func (f *fakeStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(nil)), nil
+	return io.NopCloser(bytes.NewReader(f.objectBody)), nil
 }
 
 func (f *fakeStorage) CreateMultipartUpload(_ context.Context, _, _, _ string) (string, error) {
@@ -729,5 +732,122 @@ func TestDuplicateUsesGlobalDefaultQuota(t *testing.T) {
 	_, err := uc.Duplicate(context.Background(), "user", "source", "dest")
 	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
 		t.Fatalf("Duplicate() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
+	}
+}
+
+type fakePacer struct {
+	calls []fakePace
+}
+
+type fakePace struct {
+	userID string
+	scope  repo.TransferScope
+	bytes  int64
+	rate   int64
+}
+
+func (f *fakePacer) Pace(
+	_ context.Context,
+	userID string,
+	scope repo.TransferScope,
+	size, rate int64,
+) error {
+	f.calls = append(f.calls, fakePace{userID: userID, scope: scope, bytes: size, rate: rate})
+
+	return nil
+}
+
+// The archive stream is paced on the account download budget, so a folder
+// download cannot outrun the same limit as a single file.
+func TestDownloadZipPacesTheArchive(t *testing.T) {
+	t.Parallel()
+
+	const rate = int64(1) << 20
+
+	rootID := "root"
+
+	folders := &fakeFolderRepo{byID: map[string]entity.Folder{
+		rootID: {ID: rootID, UserID: "user", Name: "/"},
+	}}
+	files := &fakeFileRepo{
+		items: []entity.FileItem{{ID: "file1", Name: "note.txt"}},
+		file: entity.File{
+			ID:         "file1",
+			UserID:     "user",
+			FolderID:   rootID,
+			StorageKey: "users/user/files/file1",
+			Size:       1 << 20,
+			Name:       "note.txt",
+		},
+	}
+	users := &fakeUserRepoForFolder{user: entity.User{DownloadRateBytesPerSec: rate}}
+	pacer := &fakePacer{}
+	uc := New(
+		users,
+		folders,
+		files,
+		&fakeStorage{objectBody: make([]byte, 1<<20)},
+		&fakeUnitOfWork{},
+		pacer,
+		"bucket",
+	)
+
+	reader, filename, err := uc.DownloadZip(context.Background(), "user", rootID)
+	if err != nil {
+		t.Fatalf("DownloadZip() error = %v, want nil", err)
+	}
+	defer reader.Close()
+
+	if filename != "root.zip" {
+		t.Errorf("filename = %q, want %q", filename, "root.zip")
+	}
+
+	got, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v, want nil", err)
+	}
+
+	if len(got) == 0 {
+		t.Fatal("archive is empty")
+	}
+
+	if len(pacer.calls) == 0 {
+		t.Fatal("pacer calls = 0, want at least one")
+	}
+
+	checkArchivePaces(t, pacer.calls, rate, int64(len(got)))
+}
+
+// checkArchivePaces asserts each reservation uses the download budget and the
+// calls add up to the archive that left the server.
+func checkArchivePaces(t *testing.T, calls []fakePace, rate, archiveLen int64) {
+	t.Helper()
+
+	batch := int64(pace.BatchSize(rate))
+
+	var paced int64
+
+	for _, call := range calls {
+		if call.userID != "user" {
+			t.Errorf("paced user = %q, want %q", call.userID, "user")
+		}
+
+		if call.scope != repo.TransferDownload {
+			t.Errorf("paced scope = %q, want %q", call.scope, repo.TransferDownload)
+		}
+
+		if call.rate != rate {
+			t.Errorf("paced rate = %d, want %d", call.rate, rate)
+		}
+
+		if call.bytes > batch {
+			t.Errorf("paced %d bytes in one call, want at most %d", call.bytes, batch)
+		}
+
+		paced += call.bytes
+	}
+
+	if paced != archiveLen {
+		t.Errorf("paced bytes = %d, want the archive size %d", paced, archiveLen)
 	}
 }

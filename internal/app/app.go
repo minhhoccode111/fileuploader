@@ -55,18 +55,21 @@ func initUseCases(
 	shares := shareRepo.New(pg)
 	uploads := uploadRepo.New(rdb)
 	pacer := transferRepo.New(rdb)
+	limits := usecase.Limits{
+		StorageQuotaBytes:       cfg.Limits.StorageQuotaBytes,
+		DownloadRateBytesPerSec: cfg.Limits.DownloadRateBytesPerSec,
+	}
 
 	return useCases{
 		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
-		folder: usecaseFolder.New(users, folders, files, storage, pg, cfg.MinIO.Bucket, usecase.Limits{StorageQuotaBytes: cfg.Limits.StorageQuotaBytes}),
+		folder: usecaseFolder.New(users, folders, files, storage, pg, pacer, cfg.MinIO.Bucket, limits),
 		file: usecaseFile.New(
 			users, files, folders, storage, pg, cfg.MinIO.Bucket,
-			uploads, pacer,
+			uploads, pacer, limits,
 			usecase.UploadSettings{
 				MaxBytes:                     cfg.Upload.MaxBytes,
 				PartBytes:                    cfg.Upload.PartBytes,
 				SessionIdleTTL:               cfg.Upload.SessionIdleTTL,
-				DefaultQuotaBytes:            cfg.Limits.StorageQuotaBytes,
 				DefaultUploadRateBytesPerSec: cfg.Limits.UploadRateBytesPerSec,
 			},
 		),
