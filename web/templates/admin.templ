@@ -654,19 +654,38 @@ templ AdminAccessRequestsTable(rows []response.UserRow, pager response.UserPager
 				}
 			</tbody>
 		</table>
-		<nav class="flex items-center justify-end" aria-label="Rows per page">
-			@AdminAccessRequestsLimit(filters.Limit)
-		</nav>
-		@AdminAccessRequestsPage(pager, filters)
+		@AdminAccessRequestsPager(pager, filters.Limit)
 	</div>
 }
 
-templ AdminAccessRequestsPage(pager response.UserPager, filters response.UserFilters) {
-	<nav class="flex items-center justify-between" aria-label="Pagination">
-		<span class="text-sm text-base-content/70">Page { strconv.Itoa(pager.Page) } of { strconv.Itoa(pager.Pages) }</span>
-		<div class="join">
-			<button type="button" class="join-item btn btn-sm" disabled?={ pager.Prev == 0 } hx-get="/htmx/admin/access-requests" hx-vals={ templ.JSONString(map[string]int{"page": pager.Prev}) } hx-include="#access-request-filters, #access-request-limit, #access-request-sort, #access-request-dir" hx-target="#admin-access-requests" hx-swap="innerHTML">«</button>
-			<button type="button" class="join-item btn btn-sm" disabled?={ pager.Next == 0 } hx-get="/htmx/admin/access-requests" hx-vals={ templ.JSONString(map[string]int{"page": pager.Next}) } hx-include="#access-request-filters, #access-request-limit, #access-request-sort, #access-request-dir" hx-target="#admin-access-requests" hx-swap="innerHTML">»</button>
+templ AdminAccessRequestsPager(pager response.UserPager, limit string) {
+	<nav class="flex flex-wrap items-center justify-between gap-2" aria-label="Access request pages">
+		<span class="text-sm text-base-content/70">{ pager.Total } requests</span>
+		<div class="flex items-center justify-end gap-2">
+			@AdminAccessRequestsLimit(limit)
+			<div class="join">
+				<button
+					type="button"
+					class="join-item btn btn-sm active:translate-none!"
+					disabled?={ pager.Prev == 0 }
+					hx-get="/htmx/admin/access-requests"
+					hx-include="#access-request-filters, #access-request-limit, #access-request-sort, #access-request-dir"
+					hx-vals={ templ.JSONString(map[string]int{"page": pager.Prev}) }
+					hx-target="#admin-access-requests"
+					hx-swap="innerHTML"
+				>«</button>
+				<span class="join-item btn btn-sm btn-ghost pointer-events-none">Page { pager.Page } of { pager.Pages }</span>
+				<button
+					type="button"
+					class="join-item btn btn-sm active:translate-none!"
+					disabled?={ pager.Next == 0 }
+					hx-get="/htmx/admin/access-requests"
+					hx-include="#access-request-filters, #access-request-limit, #access-request-sort, #access-request-dir"
+					hx-vals={ templ.JSONString(map[string]int{"page": pager.Next}) }
+					hx-target="#admin-access-requests"
+					hx-swap="innerHTML"
+				>»</button>
+			</div>
 		</div>
 	</nav>
 }
