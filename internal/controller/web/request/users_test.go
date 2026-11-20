@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
@@ -99,6 +100,16 @@ func TestFilterOrdersTheList(t *testing.T) {
 			},
 		},
 		{
+			name: "the storage column reaches the filter",
+			req:  UserListQuery{Sort: "storage_used_bytes", Dir: "desc"},
+			want: entity.UserFilter{
+				Sort:  entity.UserSortStorageUsed,
+				Dir:   entity.UserSortDescending,
+				Limit: _userListDefaultLimit,
+				Page:  1,
+			},
+		},
+		{
 			name: "an unknown column falls back to the default order",
 			req:  UserListQuery{Sort: "password_hash", Dir: "asc"},
 			want: entity.UserFilter{
@@ -109,6 +120,19 @@ func TestFilterOrdersTheList(t *testing.T) {
 			},
 		},
 	})
+}
+
+// The validator accepts the storage column like the other columns of the
+// table, so a click on its title reaches the list instead of a 400.
+func TestUserListQueryAcceptsTheStorageSort(t *testing.T) {
+	t.Parallel()
+
+	v := validator.New()
+
+	err := v.Struct(UserListQuery{Sort: "storage_used_bytes", Dir: "asc"})
+	if err != nil {
+		t.Errorf("Struct() error = %v, want the storage column to pass validation", err)
+	}
 }
 
 func TestHasFilters(t *testing.T) {

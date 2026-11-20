@@ -189,12 +189,13 @@ templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters
 		// column, wraps a row or moves the layout under the visitor.
 		<table class="table table-zebra table-fixed w-full min-w-[56rem]">
 			<colgroup>
-				<col class="w-[20%]"/>
-				<col class="w-[26%]"/>
-				<col class="w-[10%]"/>
-				<col class="w-[10%]"/>
-				<col class="w-[17%]"/>
-				<col class="w-[17%]"/>
+				<col class="w-[18%]"/>
+				<col class="w-[24%]"/>
+				<col class="w-[9%]"/>
+				<col class="w-[9%]"/>
+				<col class="w-[16%]"/>
+				<col class="w-[12%]"/>
+				<col class="w-[12%]"/>
 			</colgroup>
 			<thead>
 				<tr>
@@ -202,6 +203,7 @@ templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters
 					@AdminUsersSortHeader(filters, "email", "Email")
 					@AdminUsersSortHeader(filters, "role", "Role")
 					<th class="whitespace-nowrap">Status</th>
+					@AdminUsersSortHeader(filters, "storage_used_bytes", "Storage used")
 					@AdminUsersSortHeader(filters, "created_at", "Joined")
 					@AdminUsersSortHeader(filters, "updated_at", "Updated")
 				</tr>
@@ -210,9 +212,9 @@ templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters
 				if len(rows) == 0 {
 					<tr>
 						if filters.Active {
-							<td class="text-base-content/70" colspan="6">No account matches the filters.</td>
+							<td class="text-base-content/70" colspan="7">No account matches the filters.</td>
 						} else {
-							<td class="text-base-content/70" colspan="6">No accounts yet.</td>
+							<td class="text-base-content/70" colspan="7">No accounts yet.</td>
 						}
 					</tr>
 				} else {
@@ -247,6 +249,9 @@ templ AdminUsersTable(rows []response.UserRow, pager response.UserPager, filters
 								} else {
 									<span class="badge badge-error">disabled</span>
 								}
+							</td>
+							<td class="whitespace-nowrap">
+								<span class="block truncate" title={ row.StorageLabel() }>{ row.StorageLabel() }</span>
 							</td>
 							<td class="whitespace-nowrap">{ row.Joined }</td>
 							<td class="whitespace-nowrap">{ row.Updated }</td>

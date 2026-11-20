@@ -86,6 +86,11 @@ func TestListOrder(t *testing.T) {
 			filter: entity.UserFilter{Sort: entity.UserSortRole, Dir: entity.UserSortDescending},
 			want:   "role DESC, id ASC",
 		},
+		{
+			name:   "the storage column",
+			filter: entity.UserFilter{Sort: entity.UserSortStorageUsed, Dir: entity.UserSortAscending},
+			want:   "storage_used_bytes ASC, id ASC",
+		},
 	}
 
 	for _, tc := range cases {

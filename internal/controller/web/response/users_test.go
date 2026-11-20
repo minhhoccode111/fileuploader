@@ -49,6 +49,44 @@ func TestNewUserRow(t *testing.T) {
 	}
 }
 
+// The storage cell words the bytes of the account against its quota. A quota
+// of zero means no limit, so the cell says so instead of printing zero bytes.
+func TestUserRowStorageLabel(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		row  UserRow
+		want string
+	}{
+		{
+			name: "an empty account",
+			row:  UserRow{},
+			want: "0 B / Unlimited",
+		},
+		{
+			name: "usage against an unlimited quota",
+			row:  UserRow{StorageUsedBytes: 1536},
+			want: "1.5 KB / Unlimited",
+		},
+		{
+			name: "usage against a quota",
+			row:  UserRow{StorageUsedBytes: 1536, StorageQuotaBytes: 1048576},
+			want: "1.5 KB / 1.0 MB",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tc.row.StorageLabel(); got != tc.want {
+				t.Errorf("StorageLabel() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // A click on the column the table is ordered by carries the filters and asks
 // for the other direction. The header says which direction it is ordered by.
 func TestUserFiltersSortActiveAscending(t *testing.T) {

@@ -39,7 +39,7 @@ type UserListQuery struct {
 	Role   string `query:"role"   validate:"omitempty,oneof=all admin user"`
 	Status string `query:"status" validate:"omitempty,oneof=all pending active disabled"`
 	Date   string `query:"date"  validate:"omitempty,datetime=2006-01-02"`
-	Sort   string `query:"sort"  validate:"omitempty,oneof=username email role created_at updated_at"`
+	Sort   string `query:"sort"  validate:"omitempty,oneof=username email role storage_used_bytes created_at updated_at"`
 	Dir    string `query:"dir"   validate:"omitempty,oneof=asc desc"`
 	Limit  int    `query:"limit" validate:"omitempty,oneof=5 10 20 50"`
 	Page   int    `query:"page"  validate:"omitempty,min=1"`

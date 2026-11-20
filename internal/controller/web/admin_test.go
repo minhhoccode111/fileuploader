@@ -224,13 +224,41 @@ func TestAdminUsersTableKeepsTheColumnsFixed(t *testing.T) {
 		"table-fixed",
 		"min-w-[56rem]",
 		"<colgroup>",
-		`w-[20%]`,
-		`w-[26%]`,
-		`w-[10%]`,
-		`w-[17%]`,
+		`w-[18%]`,
+		`w-[24%]`,
+		`w-[9%]`,
+		`w-[16%]`,
+		`w-[12%]`,
 		"truncate",
 		`title="a-very-long-username-that-would-widen-the-column"`,
 		`title="a-very-long-email-address-that-would-widen-the-column@example.com"`,
+	}
+
+	for _, part := range want {
+		if !strings.Contains(page, part) {
+			t.Errorf("table = %q, want it to contain %q", page, part)
+		}
+	}
+}
+
+// The storage column prints the used bytes against the quota, and its title
+// sorts the list like every other column.
+func TestAdminUsersTableShowsTheStorage(t *testing.T) {
+	t.Parallel()
+
+	rows := []response.UserRow{{
+		ID:                "1",
+		Username:          "johndoe",
+		StorageUsedBytes:  1536,
+		StorageQuotaBytes: 1048576,
+	}}
+
+	page := renderComponent(t, templates.AdminUsersTable(rows, response.UserPager{Page: 1, Pages: 1}, response.UserFilters{Limit: "10"}))
+
+	want := []string{
+		"Storage used",
+		"1.5 KB / 1.0 MB",
+		"sort=storage_used_bytes",
 	}
 
 	for _, part := range want {
@@ -257,8 +285,10 @@ func TestAdminUsersTableCarriesTheSort(t *testing.T) {
 		`sort=username`,
 		`sort=email`,
 		`sort=role`,
+		`sort=storage_used_bytes`,
 		`sort=created_at`,
 		`sort=updated_at`,
+		`colspan="7"`,
 	}
 
 	for _, part := range want {

@@ -252,35 +252,42 @@ func (r *Repo) List(ctx context.Context, filter *entity.UserFilter) (entity.User
 // are column names and never text from the caller. The identifier breaks a
 // tie, so a page never repeats or skips a row between two requests.
 func listOrder(filter *entity.UserFilter) []string {
-	var column string
+	return []string{listColumn(filter.Sort) + " " + listDirection(filter.Dir), "id ASC"}
+}
 
-	switch filter.Sort {
+// listColumn maps a sort field to the column it names. The domain has already
+// kept the filter to the columns it knows, so an unknown field can only come
+// from a caller that skipped the domain, and it takes the default column.
+func listColumn(field entity.UserSortField) string {
+	switch field {
 	case entity.UserSortUsername:
-		column = "username"
+		return "username"
 	case entity.UserSortEmail:
-		column = "email"
+		return "email"
 	case entity.UserSortRole:
-		column = "role"
-	case entity.UserSortCreatedAt:
-		column = "created_at"
+		return "role"
 	case entity.UserSortUpdatedAt:
-		column = "updated_at"
+		return "updated_at"
+	case entity.UserSortStorageUsed:
+		return "storage_used_bytes"
+	case entity.UserSortCreatedAt:
+		return "created_at"
 	default:
-		column = "created_at"
+		return "created_at"
 	}
+}
 
-	var direction string
-
-	switch filter.Dir {
+// listDirection maps a sort direction to its SQL keyword. An unknown
+// direction takes the default of the list.
+func listDirection(direction entity.UserSortDirection) string {
+	switch direction {
 	case entity.UserSortAscending:
-		direction = "ASC"
+		return "ASC"
 	case entity.UserSortDescending:
-		direction = "DESC"
+		return "DESC"
 	default:
-		direction = "DESC"
+		return "DESC"
 	}
-
-	return []string{column + " " + direction, "id ASC"}
 }
 
 // listWhere builds the conditions the account list filters by: the query

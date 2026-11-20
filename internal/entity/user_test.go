@@ -38,6 +38,12 @@ func TestUserFilterSanitizeSort(t *testing.T) {
 			wantSort: UserSortEmail,
 			wantDir:  UserSortDescending,
 		},
+		{
+			name:     "the storage column stays",
+			filter:   UserFilter{Sort: UserSortStorageUsed, Dir: UserSortDescending},
+			wantSort: UserSortStorageUsed,
+			wantDir:  UserSortDescending,
+		},
 	}
 
 	for _, tc := range cases {

@@ -76,6 +76,22 @@ func (r UserRow) StorageUsedValue() int64 {
 	return r.Used
 }
 
+// StorageLabel words the used bytes against the quota. A quota of zero means
+// the account has no limit, so the label says that instead of printing a zero
+// quota.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) StorageLabel() string {
+	used := ByteLabel(r.StorageUsedValue())
+
+	quota := r.StorageQuotaValue()
+	if quota <= 0 {
+		return used + " / Unlimited"
+	}
+
+	return used + " / " + ByteLabel(quota)
+}
+
 // UploadRateValue returns the upload rate the row carries.
 //
 //nolint:gocritic // value receiver matches the rest of the presentation type

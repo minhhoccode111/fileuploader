@@ -75,12 +75,14 @@ const (
 	UserSortCreatedAt UserSortField = "created_at"
 	// UserSortUpdatedAt orders the list by the day the account last changed.
 	UserSortUpdatedAt UserSortField = "updated_at"
+	// UserSortStorageUsed orders the list by the bytes the account stores.
+	UserSortStorageUsed UserSortField = "storage_used_bytes"
 )
 
 // IsValid reports whether the column is one the list can be ordered by.
 func (f UserSortField) IsValid() bool {
 	switch f {
-	case UserSortUsername, UserSortEmail, UserSortRole, UserSortCreatedAt, UserSortUpdatedAt:
+	case UserSortUsername, UserSortEmail, UserSortRole, UserSortCreatedAt, UserSortUpdatedAt, UserSortStorageUsed:
 		return true
 	default:
 		return false
