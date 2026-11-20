@@ -319,7 +319,7 @@ func TestLoginStoresTheRoleInTheSession(t *testing.T) {
 		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
 	}
 
-	repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleAdmin, PasswordHash: string(hash)}}
+	repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleAdmin, Status: entity.UserStatusActive, PasswordHash: string(hash)}}
 	sessions := &fakeSessionRepo{}
 	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
 

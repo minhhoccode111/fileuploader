@@ -120,7 +120,25 @@ func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
 // adminAccessRequests renders the pending account requests. The guard has
 // already checked the role.
 func (c *Controller) adminAccessRequests(ctx *fiber.Ctx) error {
-	filters := response.UserFilters{Sort: "created_at", Dir: "desc", Limit: "10", Page: 1}
+	req := decodeUserListQuery(ctx)
+
+	filters := userFilters(&req)
+
+	if filters.Sort == "" {
+		filters.Sort = "created_at"
+	}
+
+	if filters.Dir == "" {
+		filters.Dir = "desc"
+	}
+
+	if filters.Limit == "" {
+		filters.Limit = "10"
+	}
+
+	if filters.Page == 0 {
+		filters.Page = 1
+	}
 
 	return c.render(ctx, templates.AdminAccessRequests(c.view(ctx), filters), templates.AdminAccessRequestsContent(filters), templates.AdminAccessRequestsTitle)
 }

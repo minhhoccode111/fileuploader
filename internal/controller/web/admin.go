@@ -187,6 +187,10 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
 	}
 
+	if err := c.validateUserLimits(ctx, &req); err != nil {
+		return err
+	}
+
 	user, sessionsEnded, err := c.u.UpdateUser(
 		ctx.UserContext(),
 		req.ID,
@@ -223,6 +227,28 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		ctx,
 		templates.AdminUsersEditDone(response.NewUserRowFromUser(&user), sessionsEnded),
 	)
+}
+
+// validateUserLimits parses and checks the account's limits before any write.
+func (c *Controller) validateUserLimits(ctx *fiber.Ctx, req *request.UserUpdate) error {
+	storageQuota, uploadRate, downloadRate, err := req.Limits()
+	if err != nil {
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"A size or rate must use an optional K, M or G suffix."},
+		)
+	}
+
+	if storageQuota < 0 || uploadRate < 0 || downloadRate < 0 {
+		return c.renderErrors(
+			ctx,
+			http.StatusUnprocessableEntity,
+			[]string{"A size or rate must not be negative."},
+		)
+	}
+
+	return nil
 }
 
 // applyUserLimits persists the account's storage and transfer limits when they
@@ -285,7 +311,7 @@ func (c *Controller) applyUserStatus(
 		return sessionsEnded, c.userUpdateError(ctx, err)
 	}
 
-	if entity.UserStatus(req.Status) == entity.UserStatusDisabled {
+	if entity.UserStatus(req.Status) != entity.UserStatusActive {
 		sessionsEnded = true
 	}
 
@@ -420,6 +446,10 @@ func (c *Controller) adminAccessRequestApprove(ctx *fiber.Ctx) error {
 	id := ctx.FormValue("id")
 	if id == "" {
 		id = ctx.Query("id")
+	}
+
+	if err := c.v.Struct(request.UserEditQuery{ID: id}); err != nil {
+		return c.renderErrors(ctx, http.StatusBadRequest, []string{"A valid account id is required."})
 	}
 
 	if err := c.u.ApproveUser(ctx.UserContext(), id); err != nil {

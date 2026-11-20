@@ -21,7 +21,7 @@ CREATE TABLE "public"."users" (
   "storage_used_bytes" bigint NOT NULL DEFAULT 0,
   "upload_rate_bytes_per_sec" bigint NOT NULL DEFAULT 0,
   "download_rate_bytes_per_sec" bigint NOT NULL DEFAULT 0,
-  "status" character varying(16) NOT NULL DEFAULT 'active',
+  "status" character varying(16) NOT NULL DEFAULT 'pending',
   PRIMARY KEY ("id"),
   CONSTRAINT "users_email_key" UNIQUE ("email"),
   CONSTRAINT "users_username_key" UNIQUE ("username"),

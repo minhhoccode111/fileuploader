@@ -20,14 +20,9 @@ type (
 		ListUsers(ctx context.Context, filter *entity.UserFilter) (entity.UserList, error)
 		SetRole(ctx context.Context, email string, role entity.UserRole) error
 		SetStatus(ctx context.Context, userID string, status entity.UserStatus) error
-		SetUserStatus(ctx context.Context, userID string, status entity.UserStatus) error
-		UpdateUserStatus(ctx context.Context, userID string, status entity.UserStatus) error
 		ApproveUser(ctx context.Context, userID string) error
-		Approve(ctx context.Context, userID string) error
 		DisableUser(ctx context.Context, userID string) error
-		Disable(ctx context.Context, userID string) error
 		EnableUser(ctx context.Context, userID string) error
-		Enable(ctx context.Context, userID string) error
 		UpdateStatus(ctx context.Context, userID string, status entity.UserStatus) error
 		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) (entity.User, error)
 		UpdateUser(

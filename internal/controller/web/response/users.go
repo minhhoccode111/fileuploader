@@ -276,6 +276,10 @@ func (f *UserFilters) SortColumn(field string) UserSort {
 		values.Set("role", f.Role)
 	}
 
+	if f.Status != "" && f.Status != "all" {
+		values.Set("status", f.Status)
+	}
+
 	if f.Date != "" {
 		values.Set("date", f.Date)
 	}

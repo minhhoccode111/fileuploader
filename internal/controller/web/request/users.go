@@ -16,6 +16,9 @@ const (
 	// _userListAllRoles is the role dropdown entry that keeps every role.
 	_userListAllRoles = "all"
 
+	// _userListAllStatuses is the status dropdown entry that keeps every status.
+	_userListAllStatuses = "all"
+
 	// _userListDefaultPage is the page the list starts at. It must stay in
 	// step with the page the domain clamps to, entity's _firstUsersPage.
 	_userListDefaultPage = 1
@@ -96,7 +99,7 @@ func (q *UserListQuery) Filter() entity.UserFilter {
 		filter.Role = entity.UserRole(q.Role)
 	}
 
-	if q.Status != "" && q.Status != "all" {
+	if q.Status != "" && q.Status != _userListAllStatuses {
 		filter.Status = entity.UserStatus(q.Status)
 	}
 
@@ -126,7 +129,7 @@ func (q *UserListQuery) PageSize() int {
 // HasFilters reports whether the query narrows the list at all, which is how
 // the empty row between "no accounts yet" and "nothing matches" is chosen.
 func (q *UserListQuery) HasFilters() bool {
-	return q.Query != "" || (q.Role != "" && q.Role != _userListAllRoles) || (q.Status != "" && q.Status != "all") || q.Date != ""
+	return q.Query != "" || (q.Role != "" && q.Role != _userListAllRoles) || (q.Status != "" && q.Status != _userListAllStatuses) || q.Date != ""
 }
 
 // BookmarkQuery renders the narrowing parts of the query as the query string
@@ -146,7 +149,7 @@ func (q *UserListQuery) BookmarkQuery() url.Values {
 		values.Set("role", q.Role)
 	}
 
-	if q.Status != "" && q.Status != "all" {
+	if q.Status != "" && q.Status != _userListAllStatuses {
 		values.Set("status", q.Status)
 	}
 

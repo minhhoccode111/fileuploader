@@ -553,7 +553,7 @@ templ AdminAccessRequestsContent(filters response.UserFilters) {
 					class="overflow-x-auto"
 					hx-get="/htmx/admin/access-requests"
 					hx-trigger="load, accessRequestsUpdated from:body"
-					hx-include="#access-request-filters, #access-request-limit, #access-request-sort, #access-request-dir"
+					hx-include="#access-request-filters, #access-request-limit, #access-request-sort, #access-request-dir, #access-request-page"
 					hx-swap="innerHTML"
 				>
 					<div class="flex flex-col gap-3">
@@ -608,6 +608,7 @@ templ AdminAccessRequestsTable(rows []response.UserRow, pager response.UserPager
 	<div class="flex flex-col gap-3">
 		<input type="hidden" id="access-request-sort" name="sort" value={ filters.Sort }/>
 		<input type="hidden" id="access-request-dir" name="dir" value={ filters.Dir }/>
+		<input type="hidden" id="access-request-page" name="page" value={ strconv.Itoa(pager.Page) }/>
 		<table class="table table-zebra table-fixed w-full min-w-[48rem]">
 			<colgroup>
 				<col class="w-[24%]"/>
@@ -653,6 +654,9 @@ templ AdminAccessRequestsTable(rows []response.UserRow, pager response.UserPager
 				}
 			</tbody>
 		</table>
+		<nav class="flex items-center justify-end" aria-label="Rows per page">
+			@AdminAccessRequestsLimit(filters.Limit)
+		</nav>
 		@AdminAccessRequestsPage(pager, filters)
 	</div>
 }

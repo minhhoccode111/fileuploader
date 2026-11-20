@@ -52,6 +52,13 @@ func (s UserStatus) IsValid() bool {
 	}
 }
 
+// CanSignIn reports whether an account in this state may sign in. Only active
+// accounts may; an unknown or unset status is denied, so the zero value is
+// fail-closed.
+func (s UserStatus) CanSignIn() bool {
+	return s == UserStatusActive
+}
+
 // UserSortField names a column the account list can be ordered by. The set is
 // closed: every field maps to a column of the users table, so a hand-written
 // query never reaches the SQL.
