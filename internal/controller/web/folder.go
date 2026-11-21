@@ -122,7 +122,7 @@ func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 			c.l.Error(fmt.Errorf("web - folderRename - uc.folders.Get: %w", err))
 		}
 
-		return middleware.Redirect(ctx, _homePath)
+		return middleware.Redirect(ctx, withSearch(_homePath, c.entrySearch(ctx)))
 	}
 
 	path := _homePath

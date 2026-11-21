@@ -139,7 +139,7 @@ route. The cursor lives in the link, never in the address bar, so a reload start
 again. An unusable cursor is a 400 on the partial and never a silent restart.
 
 `q` narrows a folder page to the direct children whose name holds the term, without changing the
-breadcrumb or the folder URL. `/search` is the own-drive search: it needs at least three characters
+breadcrumb or the folder path. `/search` is the own-drive search: it needs at least three characters
 (a shorter substring cannot use `pg_trgm`), never includes shared content, and every result carries
 the folder path that leads to it. Home is `/` and keeps that URL for its local search; it has no
 folder identifier, so a global search started from Home has no `This folder` scope and clearing it
@@ -321,7 +321,8 @@ migrations.
 (`atlas schema inspect`). It reads the running database, so it needs one up; when none is
 reachable it prints `schema: database not reachable, skipping` and exits 0, which keeps it
 safe in scripts that may run without the stack. Regenerate the file after any migration
-change and commit it — the diff is the schema change.
+change and commit it — the diff is the schema change. Atlas does not dump extensions, so
+the migration is the source of truth for `CREATE EXTENSION pg_trgm`.
 
 `users.role` holds `admin` or `user`, and the database enforces it with a CHECK constraint
 (`users_role_check`). Registration always creates a `user`; the first admin is granted out of band

@@ -418,7 +418,7 @@ Empty-state copy:
 
 - folder, no query: "This folder is empty."
 - local query, no matches: "No matches in this folder."
-- global query, no matches: "No files match that search."
+- global query, no matches: "No results match that search."
 - global, query too short: "Type at least three characters to search your drive."
 
 ## Indexes And Scale

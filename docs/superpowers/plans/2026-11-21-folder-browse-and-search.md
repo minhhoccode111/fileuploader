@@ -773,7 +773,9 @@ In `sharedFolder`, read `q` and pass it to `c.folders.List`. In
 `SharedDriveContent`, add a local search form (no scope select, no global link)
 and refactor the table body into `SharedEntryRows(page)` with a "Load more"
 sentinel. The shared table has Name, Size and Modified columns, so its sentinel
-cell spans three columns. The empty copy stays "This shared folder is empty."
+cell spans three columns. Without a query the empty copy reads "This shared
+folder is empty."; a local query with no hits reads "No matches in this
+folder."
 
 - [ ] **Step 4: Add shared partial handlers**
 

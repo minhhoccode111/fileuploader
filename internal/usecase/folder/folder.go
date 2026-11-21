@@ -176,7 +176,7 @@ func (uc *UseCase) Search(
 
 	err = uc.fillPaths(ctx, userID, folders, files)
 	if err != nil {
-		return entity.SearchView{}, err
+		return entity.SearchView{}, fmt.Errorf("FolderUseCase - Search - uc.fillPaths: %w", err)
 	}
 
 	view.Folders = folders

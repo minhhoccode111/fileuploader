@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -49,10 +50,10 @@ type EntryCursor struct {
 func (c EntryCursor) Encode() string {
 	raw, err := json.Marshal(c)
 	if err != nil {
-		// The cursor holds a string, two strings and a bool, so marshaling it
-		// cannot fail. An empty value would ask for the first page, which is
-		// the safe answer if that ever changes.
-		return ""
+		// The cursor holds a kind, two strings and a bool, so marshaling it
+		// cannot fail. An empty value would silently ask for the first page,
+		// so break the invariant loudly instead of hiding it behind a restart.
+		panic(fmt.Sprintf("entity - EntryCursor.Encode - json.Marshal: %v", err))
 	}
 
 	return base64.RawURLEncoding.EncodeToString(raw)
@@ -101,6 +102,13 @@ func (c EntryCursor) validate() error {
 		return ErrInvalidCursor
 	}
 
+	// A name the drive can store is valid UTF-8 and carries no control
+	// character. A cursor that names anything else cannot match a row, and
+	// Postgres rejects the parameter, so it is a client error.
+	if !utf8.ValidString(c.Name) || strings.ContainsFunc(c.Name, unicode.IsControl) {
+		return ErrInvalidCursor
+	}
+
 	if _, err := uuid.Parse(c.ID); err != nil {
 		return ErrInvalidCursor
 	}
@@ -109,16 +117,29 @@ func (c EntryCursor) validate() error {
 }
 
 // CleanSearch normalizes the term a search runs with: it drops the invalid
-// UTF-8 a form may carry, trims the surrounding space, and keeps at most 100
-// runes. An empty result means the visitor searched for nothing, which lists
-// the whole folder.
+// UTF-8 a form may carry, drops the control characters no stored name can
+// hold, trims the surrounding space, and keeps at most 100 runes. An empty
+// result means the visitor searched for nothing, which lists the whole folder.
 func CleanSearch(raw string) string {
-	search := strings.TrimSpace(strings.ToValidUTF8(raw, ""))
+	search := strings.TrimSpace(dropSearchControl(strings.ToValidUTF8(raw, "")))
 	if utf8.RuneCountInString(search) <= _maxSearchRunes {
 		return search
 	}
 
 	return string([]rune(search)[:_maxSearchRunes])
+}
+
+// dropSearchControl removes the runes a form can carry but a stored name
+// never holds. A term with them could never match, and Postgres rejects a NUL
+// parameter, which would turn the search into a server fault.
+func dropSearchControl(raw string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+
+		return r
+	}, raw)
 }
 
 // SearchPattern turns a search term into the LIKE pattern the repositories

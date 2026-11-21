@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
@@ -120,5 +122,64 @@ func TestFolderPageQuerySelectsTheListingShape(t *testing.T) {
 
 	if len(args) != 2 || args[0] != "user-1" || args[1] != "folder-1" {
 		t.Errorf("args = %v, want the user and the parent", args)
+	}
+}
+
+// The path walk scopes both steps to the account: the anchor may not start
+// from another account's folder, and the recursive step may not climb into
+// one.
+func TestPathsQueryScopesBothStepsToTheUser(t *testing.T) {
+	t.Parallel()
+
+	steps := strings.Split(_pathsQuery, "UNION ALL")
+	if len(steps) != 2 {
+		t.Fatalf("_pathsQuery has %d steps, want the anchor and the recursive step", len(steps))
+	}
+
+	if !strings.Contains(steps[0], "user_id = $1") || !strings.Contains(steps[1], "user_id = $1") {
+		t.Errorf("_pathsQuery = %s, want both steps scoped to the user", _pathsQuery)
+	}
+
+	if !strings.Contains(steps[0], "id = ANY($2)") {
+		t.Errorf("anchor = %s, want the identifiers the caller named", steps[0])
+	}
+
+	if !strings.Contains(steps[1], "parent.user_id = $1") {
+		t.Errorf("recursive step = %s, want the parent scoped to the user", steps[1])
+	}
+}
+
+// The identifiers a page carries are strings; the query binds UUIDs, so every
+// value has to convert and a malformed one has to fail before the query runs.
+func TestPathIDsConvertToUUIDs(t *testing.T) {
+	t.Parallel()
+
+	const (
+		first  = "d9b1f4a6-4f5e-4b4a-9a39-2d8c7b6a5e44"
+		second = "0f6a1c2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+	)
+
+	ids, err := pathIDs([]string{first, second})
+	if err != nil {
+		t.Fatalf("pathIDs() error = %v, want nil", err)
+	}
+
+	want := []pgtype.UUID{
+		{Bytes: uuid.MustParse(first), Valid: true},
+		{Bytes: uuid.MustParse(second), Valid: true},
+	}
+
+	if len(ids) != len(want) {
+		t.Fatalf("pathIDs() = %v, want %v", ids, want)
+	}
+
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Errorf("pathIDs()[%d] = %v, want %v", i, ids[i], want[i])
+		}
+	}
+
+	if _, err := pathIDs([]string{"not-a-uuid"}); err == nil {
+		t.Error("pathIDs() error = nil, want a malformed identifier rejected")
 	}
 }

@@ -409,15 +409,9 @@ func (r *Repo) Paths(
 		return paths, nil
 	}
 
-	ids := make([]pgtype.UUID, 0, len(folderIDs))
-
-	for _, folderID := range folderIDs {
-		parsed, err := uuid.Parse(folderID)
-		if err != nil {
-			return nil, fmt.Errorf("FolderRepo - Paths - uuid.Parse: %w", err)
-		}
-
-		ids = append(ids, pgtype.UUID{Bytes: parsed, Valid: true})
+	ids, err := pathIDs(folderIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	rows, err := r.Querier(ctx).Query(ctx, _pathsQuery, userID, ids)
@@ -448,6 +442,24 @@ func (r *Repo) Paths(
 	}
 
 	return paths, nil
+}
+
+// pathIDs converts the identifiers a page carries into the UUID parameters the
+// path query binds. A malformed value fails before the query runs, so it never
+// reaches the driver as a half-parsed parameter.
+func pathIDs(folderIDs []string) ([]pgtype.UUID, error) {
+	ids := make([]pgtype.UUID, 0, len(folderIDs))
+
+	for _, folderID := range folderIDs {
+		parsed, err := uuid.Parse(folderID)
+		if err != nil {
+			return nil, fmt.Errorf("FolderRepo - Paths - uuid.Parse: %w", err)
+		}
+
+		ids = append(ids, pgtype.UUID{Bytes: parsed, Valid: true})
+	}
+
+	return ids, nil
 }
 
 // NameTaken reports whether a folder of the account already carries the name

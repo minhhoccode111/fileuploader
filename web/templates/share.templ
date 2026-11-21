@@ -183,7 +183,11 @@ templ SharedDriveContent(page response.SharedDrive) {
 				@SharedEntrySearchForm(page)
 				if len(page.Folders) == 0 && len(page.Files) == 0 {
 					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
-						<p class="text-base-content/70 text-sm">This shared folder is empty.</p>
+						if page.Search != "" {
+							<p class="text-base-content/70 text-sm">No matches in this folder.</p>
+						} else {
+							<p class="text-base-content/70 text-sm">This shared folder is empty.</p>
+						}
 					</div>
 				} else {
 					<table class="table table-zebra table-fixed w-full">
@@ -267,7 +271,7 @@ templ SharedEntryRows(page response.SharedDrive) {
 		</tr>
 	}
 	if page.NextURL != "" {
-		<tr id="load-more">
+		<tr>
 			<td colspan="3" class="text-center">
 				<button
 					type="button"
@@ -275,6 +279,7 @@ templ SharedEntryRows(page response.SharedDrive) {
 					hx-get={ page.NextURL }
 					hx-target="closest tr"
 					hx-swap="outerHTML"
+					hx-sync="this:drop"
 					hx-trigger="click, revealed"
 				>
 					Load more

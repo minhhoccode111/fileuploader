@@ -63,12 +63,19 @@ func TestDriveEntriesShowsLoadMoreOnlyWithANextURL(t *testing.T) {
 		`hx-get="/htmx/folders/folder-1/entries?after=abc"`,
 		`hx-target="closest tr"`,
 		`hx-swap="outerHTML"`,
+		`hx-sync="this:drop"`,
 		`hx-trigger="click, revealed"`,
 		`colspan="4"`,
 	} {
 		if !strings.Contains(html, part) {
 			t.Errorf("DriveEntries() = %s, want it to contain %q", html, part)
 		}
+	}
+
+	// The search page reuses the same rows, so a sentinel id would appear
+	// twice when a folder page and a search page are both loaded.
+	if strings.Contains(html, `id="load-more"`) {
+		t.Errorf("DriveEntries() = %s, want the sentinel to carry no page-wide id", html)
 	}
 
 	page.NextURL = ""
@@ -190,6 +197,7 @@ func TestSharedEntryRowsShowsLoadMoreOnlyWithANextURL(t *testing.T) {
 		`hx-get="/htmx/share/share-1/entries?after=abc"`,
 		`hx-target="closest tr"`,
 		`hx-swap="outerHTML"`,
+		`hx-sync="this:drop"`,
 		`hx-trigger="click, revealed"`,
 		`colspan="3"`,
 	} {
@@ -198,10 +206,34 @@ func TestSharedEntryRowsShowsLoadMoreOnlyWithANextURL(t *testing.T) {
 		}
 	}
 
+	if strings.Contains(html, `id="load-more"`) {
+		t.Errorf("SharedEntryRows() = %s, want the sentinel to carry no page-wide id", html)
+	}
+
 	page.NextURL = ""
 
 	if html := renderTemplate(t, SharedEntryRows(page)); strings.Contains(html, "Load more") {
 		t.Errorf("SharedEntryRows() = %s, want no load-more row at the end", html)
+	}
+}
+
+// A filtered shared folder with no hits is not an empty folder, so its copy
+// matches the owner's filtered listing.
+func TestSharedDriveContentWordsTheEmptyStateOfAFilteredFolder(t *testing.T) {
+	t.Parallel()
+
+	filtered := renderTemplate(t, SharedDriveContent(response.SharedDrive{Search: "note"}))
+	if !strings.Contains(filtered, "No matches in this folder.") {
+		t.Errorf("SharedDriveContent(filtered) = %s, want the no-match copy", filtered)
+	}
+
+	if strings.Contains(filtered, "This shared folder is empty.") {
+		t.Errorf("SharedDriveContent(filtered) = %s, want no empty-folder copy", filtered)
+	}
+
+	unfiltered := renderTemplate(t, SharedDriveContent(response.SharedDrive{}))
+	if !strings.Contains(unfiltered, "This shared folder is empty.") {
+		t.Errorf("SharedDriveContent(unfiltered) = %s, want the empty-folder copy", unfiltered)
 	}
 }
 
@@ -276,6 +308,26 @@ func TestSearchContentShowsTheLocationColumn(t *testing.T) {
 	}
 }
 
+// The global search looks at folders and files, so its empty state names
+// results instead of only files.
+func TestSearchContentWordsTheEmptyState(t *testing.T) {
+	t.Parallel()
+
+	html := renderTemplate(t, SearchContent(response.Drive{
+		SearchMode: true,
+		Search:     "note",
+		Breadcrumb: []response.Crumb{{Name: "Search", Href: "/search", Current: true}},
+	}))
+
+	if !strings.Contains(html, "No results match that search.") {
+		t.Errorf("SearchContent() = %s, want the no-result copy", html)
+	}
+
+	if strings.Contains(html, "No files match that search.") {
+		t.Errorf("SearchContent() = %s, want no file-only copy", html)
+	}
+}
+
 // A search result is read-only: a file name downloads the file, its location
 // links to the folder that holds it, and no action button opens a drawer.
 func TestSearchEntryRowsLinkTheFileToItsFolderAndNotItsDrawer(t *testing.T) {
@@ -301,6 +353,7 @@ func TestSearchEntryRowsLinkTheFileToItsFolderAndNotItsDrawer(t *testing.T) {
 	for _, part := range []string{
 		`href="/files/file-1/download"`,
 		`href="/folders/folder-1"`,
+		`data-full-name="notes.txt"`,
 		"Home / Docs",
 		`hx-get="/htmx/search?q=note&amp;after=abc"`,
 		`colspan="4"`,

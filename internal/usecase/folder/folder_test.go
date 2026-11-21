@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -861,6 +862,95 @@ func TestListContinuesAFilePageWithoutFolders(t *testing.T) {
 	}
 }
 
+// A folder cursor with FoldersDone means the folder pass already ended: the
+// next page skips it and starts the files at the first row behind the folder
+// batch instead of restarting the listing.
+func TestListContinuesAfterAFullFolderPage(t *testing.T) {
+	t.Parallel()
+
+	cursor := &entity.EntryCursor{
+		Kind:        entity.EntryKindFolder,
+		Name:        "folder 099",
+		ID:          "folder-099",
+		FoldersDone: true,
+	}
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, after *entity.EntryCursor, limit int) ([]entity.FileItem, error) {
+		if after != nil {
+			t.Errorf("file page after = %+v, want the first file", after)
+		}
+
+		if limit != _pageSize+1 {
+			t.Errorf("file page limit = %d, want %d", limit, _pageSize+1)
+		}
+
+		return pageFiles(limit), nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "", cursor)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if folders.folderCalls != 0 {
+		t.Errorf("List() asked for folders %d times, want 0", folders.folderCalls)
+	}
+
+	if len(view.Folders) != 0 {
+		t.Errorf("List() returned %d folders, want 0", len(view.Folders))
+	}
+
+	if len(view.Files) != _pageSize {
+		t.Errorf("List() returned %d files, want %d", len(view.Files), _pageSize)
+	}
+}
+
+// A page that ends exactly at the last row carries no cursor: the merge learns
+// a next page exists only from the extra row each repository is asked for.
+func TestListOmitsTheCursorAtTheDataBoundary(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		folders []entity.FolderItem
+		files   []entity.FileItem
+	}{
+		{name: "a full folder page and no files", folders: pageFolders(_pageSize)},
+		{name: "a full file page and no folders", files: pageFiles(_pageSize)},
+		{name: "three folders and the rest files", folders: pageFolders(3), files: pageFiles(_pageSize - 3)},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			folders := &fakeFolderRepo{
+				byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+				folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+					return tc.folders, nil
+				},
+			}
+			files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+				return tc.files, nil
+			}}
+			uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+			view, err := uc.List(context.Background(), "user", "folder", "", nil)
+			if err != nil {
+				t.Fatalf("List() error = %v, want nil", err)
+			}
+
+			if view.Next != nil {
+				t.Errorf("List() next = %+v, want no next page", view.Next)
+			}
+		})
+	}
+}
+
 func TestListPassesTheFolderAndSearchToBothRepos(t *testing.T) {
 	t.Parallel()
 
@@ -997,6 +1087,29 @@ func TestSearchFillsPathsForFoldersAndFiles(t *testing.T) {
 
 	if len(view.Files) != 1 || !reflect.DeepEqual(view.Files[0].Path, filePath) {
 		t.Errorf("file path = %+v, want %+v", view.Files, filePath)
+	}
+}
+
+// A path lookup that fails while filling the results names the step that
+// failed, so the log points at the search and not at the listing.
+func TestSearchLabelsAPathLookupFailure(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+			return []entity.FolderItem{{ID: "folder-1", Name: "Docs"}}, nil
+		},
+		pathsErr: errStorage,
+	}
+	uc := New(folders, &fakeFileRepo{}, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.Search(context.Background(), "user", "docs", "", nil)
+	if !errors.Is(err, errStorage) {
+		t.Fatalf("Search() error = %v, want %v", err, errStorage)
+	}
+
+	if !strings.Contains(err.Error(), "FolderUseCase - Search - uc.fillPaths") {
+		t.Errorf("Search() error = %v, want the fillPaths step", err)
 	}
 }
 

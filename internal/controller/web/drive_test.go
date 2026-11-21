@@ -424,6 +424,34 @@ func TestFolderRenameRedirectsWithTheActiveFilter(t *testing.T) {
 	}
 }
 
+// The folder that held the renamed row is gone too, so the way back is Home.
+// The filter the visitor left still rides along, like every other rename
+// redirect.
+func TestFolderRenameKeepsTheFilterWhenTheParentIsGone(t *testing.T) {
+	t.Parallel()
+
+	folders := &driveFolder{parentErr: entity.ErrFolderNotFound}
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/htmx/folders/"+_driveTestFolder+"/rename",
+		strings.NewReader("name=notes"),
+	)
+	req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationForm)
+	req.Header.Set(_hxCurrentURLHeader, "http://x/folders/"+_driveTestFolder+"?q=note&scope=folder")
+
+	status, header, _ := driveResponse(t, drivePageApp(folders), req)
+
+	if status != http.StatusFound {
+		t.Errorf("status = %d, want %d", status, http.StatusFound)
+	}
+
+	if got := header.Get(fiber.HeaderLocation); got != "/?q=note" {
+		t.Errorf("Location = %q, want %q", got, "/?q=note")
+	}
+}
+
 // Delete also leaves the table for the folder that held the row, so its way
 // back keeps the filter for the same reason.
 func TestFolderDeleteRedirectsWithTheActiveFilter(t *testing.T) {
@@ -463,6 +491,7 @@ type driveFolder struct {
 
 	view      entity.FolderView
 	parent    entity.Folder
+	parentErr error
 	folderID  string
 	search    string
 	after     *entity.EntryCursor
@@ -488,6 +517,10 @@ func (f *driveFolder) Create(_ context.Context, _, parentID, name string) (entit
 }
 
 func (f *driveFolder) Get(_ context.Context, _, _ string) (entity.Folder, error) {
+	if f.parentErr != nil {
+		return entity.Folder{}, f.parentErr
+	}
+
 	return f.parent, nil
 }
 

@@ -215,3 +215,23 @@ func TestNewDriveOmitsTheNextHrefAtTheEnd(t *testing.T) {
 		t.Errorf("Search = %q, want empty", page.Search)
 	}
 }
+
+// A path the walk could not resolve still renders a location: a result no
+// longer anchored in the drive falls back to Home instead of an empty cell.
+func TestNewSearchFallsBackToHomeWhenThePathIsMissing(t *testing.T) {
+	t.Parallel()
+
+	page := NewSearch(&entity.SearchView{
+		Search:  "note",
+		Folders: []entity.FolderItem{{ID: "folder-2", Name: "Notes"}},
+		Files:   []entity.FileItem{{ID: "file-1", FolderID: "folder-1", Name: "note.txt"}},
+	})
+
+	if got := page.Folders[0].Path; got != "Home" {
+		t.Errorf("folder path = %q, want %q", got, "Home")
+	}
+
+	if got := page.Files[0].Path; got != "Home" {
+		t.Errorf("file path = %q, want %q", got, "Home")
+	}
+}
