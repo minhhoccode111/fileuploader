@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
 
@@ -21,7 +22,7 @@ func TestFolderPageWhereScopesToUserAndEscapesSearch(t *testing.T) {
 	}
 
 	// sq.And groups the conjunction in one pair of parentheses.
-	want := "(user_id = ? AND parent_id = ? AND lower(name) LIKE lower(?) ESCAPE '\\')"
+	want := "(f.user_id = ? AND f.parent_id = ? AND lower(f.name) LIKE lower(?) ESCAPE '\\')"
 	if sql != want {
 		t.Errorf("sql = %q, want %q", sql, want)
 	}
@@ -47,7 +48,7 @@ func TestFolderPageWhereResumesAfterCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "(lower(name) > lower(?) OR (lower(name) = lower(?) AND id > ?::uuid))"
+	want := "(lower(f.name) > lower(?) OR (lower(f.name) = lower(?) AND f.id > ?::uuid))"
 	if !strings.Contains(sql, want) {
 		t.Errorf("sql = %q, want it to contain %q", sql, want)
 	}
@@ -71,7 +72,7 @@ func TestFolderPageWhereDropsTheParentAndSearchWhenUnset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if strings.Contains(sql, "parent_id") {
+	if strings.Contains(sql, "f.parent_id") {
 		t.Errorf("sql = %q, want no parent condition", sql)
 	}
 
@@ -81,5 +82,43 @@ func TestFolderPageWhereDropsTheParentAndSearchWhenUnset(t *testing.T) {
 
 	if len(args) != 1 || args[0] != "user-1" {
 		t.Errorf("args = %v, want only the user", args)
+	}
+}
+
+// A listing row keeps the shape the drive table renders: the effective
+// modified time and the entry count, both scoped to the account. The hard
+// limit and the cursor order must not change either.
+func TestFolderPageQuerySelectsTheListingShape(t *testing.T) {
+	t.Parallel()
+
+	sql, args, err := folderPageQuery(
+		sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		"user-1",
+		"folder-1",
+		"",
+		nil,
+		101,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		"f.id",
+		"f.name",
+		"GREATEST(",
+		"AS updated_at",
+		"item_count",
+		"FROM folders f",
+		"ORDER BY lower(f.name) ASC, f.id ASC",
+		"LIMIT 101",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("sql = %q, want it to contain %q", sql, want)
+		}
+	}
+
+	if len(args) != 2 || args[0] != "user-1" || args[1] != "folder-1" {
+		t.Errorf("args = %v, want the user and the parent", args)
 	}
 }

@@ -57,6 +57,20 @@ ORDER BY leaf, depth DESC`
 // _userIDColumn is the column every query of the repository scopes by.
 const _userIDColumn = "user_id"
 
+// _folderPageUpdatedAt is the modified time a listing row shows: the newest of
+// the folder itself and the entries directly inside it, so a page reflects when
+// its contents last changed and not only when the folder was made.
+const _folderPageUpdatedAt = "GREATEST(" +
+	"f.updated_at," +
+	" COALESCE((SELECT max(c.updated_at) FROM folders c WHERE c.parent_id = f.id AND c.user_id = f.user_id), f.updated_at)," +
+	" COALESCE((SELECT max(x.updated_at) FROM files x WHERE x.folder_id = f.id AND x.user_id = f.user_id), f.updated_at)" +
+	") AS updated_at"
+
+// _folderPageItemCount is the number of entries directly inside a folder, the
+// subfolder count plus the file count, as the listing renders it.
+const _folderPageItemCount = "(SELECT count(*) FROM folders c WHERE c.parent_id = f.id AND c.user_id = f.user_id)" +
+	" + (SELECT count(*) FROM files x WHERE x.folder_id = f.id AND x.user_id = f.user_id) AS item_count"
+
 // _idColumn is the primary key column of the folders table.
 const _idColumn = "id"
 
@@ -235,23 +249,19 @@ func (r *Repo) LockSubtree(ctx context.Context, userID, folderID string) error {
 
 // ListPage returns at most limit folders directly inside a folder, in name
 // order, resuming after a cursor. An empty parentID covers the whole own drive,
-// which only global search uses, and an empty search matches every name. Path
-// stays empty here: the caller fills it for a global search.
+// which only global search uses, and an empty search matches every name. The
+// row shape matches what the drive table renders: the effective modified time
+// and the number of entries directly inside the folder. Path stays empty here:
+// the caller fills it for a global search.
 func (r *Repo) ListPage(
 	ctx context.Context,
 	userID, parentID, search string,
 	after *entity.EntryCursor,
 	limit int,
 ) ([]entity.FolderItem, error) {
-	sql, args, err := r.Builder.
-		Select("id", "name", "updated_at").
-		From("folders").
-		Where(folderPageWhere(userID, parentID, search, after)).
-		OrderBy("lower(name) ASC", "id ASC").
-		Limit(uint64(max(limit, 1))).
-		ToSql()
+	sql, args, err := folderPageQuery(r.Builder, userID, parentID, search, after, limit)
 	if err != nil {
-		return nil, fmt.Errorf("FolderRepo - ListPage - r.Builder: %w", err)
+		return nil, fmt.Errorf("FolderRepo - ListPage - folderPageQuery: %w", err)
 	}
 
 	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
@@ -266,7 +276,7 @@ func (r *Repo) ListPage(
 	for rows.Next() {
 		var item entity.FolderItem
 
-		err = rows.Scan(&item.ID, &item.Name, &item.UpdatedAt)
+		err = rows.Scan(&item.ID, &item.Name, &item.UpdatedAt, &item.ItemCount)
 		if err != nil {
 			return nil, fmt.Errorf("FolderRepo - ListPage - rows.Scan: %w", err)
 		}
@@ -279,6 +289,24 @@ func (r *Repo) ListPage(
 	}
 
 	return items, nil
+}
+
+// folderPageQuery builds the statement a listing page runs. It is separate from
+// the read so a test can pin the row shape without a database. The hard limit
+// and the cursor order are the same on every page.
+func folderPageQuery(
+	builder sq.StatementBuilderType,
+	userID, parentID, search string,
+	after *entity.EntryCursor,
+	limit int,
+) (sql string, args []any, err error) {
+	return builder.
+		Select("f.id", "f.name", _folderPageUpdatedAt, _folderPageItemCount).
+		From("folders f").
+		Where(folderPageWhere(userID, parentID, search, after)).
+		OrderBy("lower(f.name) ASC", "f.id ASC").
+		Limit(uint64(max(limit, 1))).
+		ToSql()
 }
 
 // ListAll returns every folder of the account. Roots come first, then
@@ -548,22 +576,22 @@ func folderPageWhere(
 	userID, parentID, search string,
 	after *entity.EntryCursor,
 ) sq.Sqlizer {
-	conds := []sq.Sqlizer{sq.Eq{_userIDColumn: userID}}
+	conds := []sq.Sqlizer{sq.Eq{"f.user_id": userID}}
 
 	if parentID != "" {
-		conds = append(conds, sq.Eq{"parent_id": parentID})
+		conds = append(conds, sq.Eq{"f.parent_id": parentID})
 	}
 
 	if search != "" {
 		conds = append(conds, sq.Expr(
-			"lower(name) LIKE lower(?) ESCAPE '\\'",
+			"lower(f.name) LIKE lower(?) ESCAPE '\\'",
 			entity.SearchPattern(search),
 		))
 	}
 
 	if after != nil {
 		conds = append(conds, sq.Expr(
-			"(lower(name) > lower(?) OR (lower(name) = lower(?) AND id > ?::uuid))",
+			"(lower(f.name) > lower(?) OR (lower(f.name) = lower(?) AND f.id > ?::uuid))",
 			after.Name,
 			after.Name,
 			after.ID,
