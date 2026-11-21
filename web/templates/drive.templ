@@ -176,6 +176,10 @@ templ DriveToolbar(page response.Drive) {
 // when it is available. The scope control decides whether the term narrows this
 // folder or leaves for the whole-drive search; the folder route answers the
 // latter with a redirect, so no second rendering path exists here.
+//
+// The search page reuses the form with its own state: the scope starts on All
+// files, the source folder rides along in a hidden field, and a Clear link
+// returns to the folder the search came from.
 templ EntrySearchForm(page response.Drive) {
 	<form
 		class="flex w-full flex-wrap items-center gap-2"
@@ -191,16 +195,43 @@ templ EntrySearchForm(page response.Drive) {
 			type="search"
 			name="q"
 			value={ page.Search }
-			placeholder="Search this folder"
-			aria-label="Search this folder"
+			if page.SearchMode {
+				placeholder="Search your drive"
+				aria-label="Search your drive"
+			} else {
+				placeholder="Search this folder"
+				aria-label="Search this folder"
+			}
 			maxlength="100"
 			autocomplete="off"
 		/>
-		<select class="select select-bordered" name="scope" aria-label="Search scope">
-			<option value="folder" selected>This folder</option>
-			<option value="all">All files</option>
-		</select>
+		if page.SearchMode {
+			if page.From != "" {
+				<input type="hidden" name="from" value={ page.From }/>
+				<select class="select select-bordered" name="scope" aria-label="Search scope">
+					<option value="folder">This folder</option>
+					<option value="all" selected>All files</option>
+				</select>
+			} else {
+				<input type="hidden" name="scope" value="all"/>
+			}
+		} else {
+			<select class="select select-bordered" name="scope" aria-label="Search scope">
+				<option value="folder" selected>This folder</option>
+				<option value="all">All files</option>
+			</select>
+		}
 		<button type="submit" class="btn">Search</button>
+		if page.SearchMode {
+			<a
+				class="btn btn-ghost"
+				href={ templ.URL(page.ClearHref) }
+				hx-get={ page.ClearHref }
+				hx-target="#page-content"
+				hx-swap="innerHTML"
+				hx-push-url="true"
+			>Clear</a>
+		}
 	</form>
 }
 
@@ -233,10 +264,31 @@ templ DriveEntries(page response.Drive) {
 	}
 }
 
+// entryPathCell is the location of one search result: the chain from the root,
+// with the folder it ends at as the link back to the folder page. The click
+// stops at the link, because the folder row it sits in opens the folder too.
+templ entryPathCell(path, href string) {
+	<td class="truncate">
+		<a
+			class="link"
+			href={ templ.URL(href) }
+			hx-get={ href }
+			hx-target="#page-content"
+			hx-swap="innerHTML"
+			hx-push-url="true"
+			@click.stop
+		>{ path }</a>
+	</td>
+}
+
 // EntryRows renders only the rows of a listing and the load-more sentinel,
 // without the table around them. It is the body of the partial endpoint: htmx
 // replaces the sentinel row with the rows it loaded and the sentinel that
 // follows them.
+//
+// A whole-drive search reuses the rows in search mode: the location column
+// appears, a file name downloads the file, and no row opens the action drawer,
+// because a result is read-only until its folder is opened.
 templ EntryRows(page response.Drive) {
 	for _, folder := range page.Folders {
 		<tr
@@ -259,71 +311,99 @@ templ EntryRows(page response.Drive) {
 					>{ folder.Name }</span>
 				</span>
 			</td>
+			if page.ShowPath {
+				@entryPathCell(folder.Path, folder.PathHref)
+			}
 			<td class="whitespace-nowrap">{ folder.Items }</td>
 			<td class="whitespace-nowrap">{ folder.Updated }</td>
-			<td class="pe-0 text-right">
-				<button
-					type="button"
-					class="btn btn-square btn-ghost btn-sm"
-					aria-label={ "Actions for folder " + folder.Name }
-					@click.stop
-					hx-get={ "/htmx/folders/" + folder.ID + "/edit" }
-					hx-target="#entry-panel"
-					hx-swap="innerHTML"
-					hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
-						<circle cx="12" cy="5" r="1.7"></circle>
-						<circle cx="12" cy="12" r="1.7"></circle>
-						<circle cx="12" cy="19" r="1.7"></circle>
-					</svg>
-				</button>
-			</td>
+			if !page.SearchMode {
+				<td class="pe-0 text-right">
+					<button
+						type="button"
+						class="btn btn-square btn-ghost btn-sm"
+						aria-label={ "Actions for folder " + folder.Name }
+						@click.stop
+						hx-get={ "/htmx/folders/" + folder.ID + "/edit" }
+						hx-target="#entry-panel"
+						hx-swap="innerHTML"
+						hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+							<circle cx="12" cy="5" r="1.7"></circle>
+							<circle cx="12" cy="12" r="1.7"></circle>
+							<circle cx="12" cy="19" r="1.7"></circle>
+						</svg>
+					</button>
+				</td>
+			}
 		</tr>
 	}
 	for _, file := range page.Files {
-		<tr
-			class="cursor-pointer hover:bg-base-200/50"
-			aria-label={ "Open " + file.Name }
-			hx-get={ "/htmx/files/" + file.ID }
-			hx-target="#entry-panel"
-			hx-swap="innerHTML"
-			hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
-		>
-			<td class="font-medium">
-				<span class="flex items-center gap-2">
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
-						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
-						<path d="M14 2v6h6"></path>
-					</svg>
-					<span
-						class="block min-w-0 flex-1 truncate"
-						data-full-name={ file.Name }
-						title={ file.Name }
-					>{ file.Name }</span>
-				</span>
-			</td>
-			<td class="whitespace-nowrap">{ file.Size }</td>
-			<td class="whitespace-nowrap">{ file.Updated }</td>
-			<td class="pe-0 text-right">
-				<button
-					type="button"
-					class="btn btn-square btn-ghost btn-sm"
-					aria-label={ "Actions for " + file.Name }
-					@click.stop
-					hx-get={ "/htmx/files/" + file.ID }
-					hx-target="#entry-panel"
-					hx-swap="innerHTML"
-					hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
-						<circle cx="12" cy="5" r="1.7"></circle>
-						<circle cx="12" cy="12" r="1.7"></circle>
-						<circle cx="12" cy="19" r="1.7"></circle>
-					</svg>
-				</button>
-			</td>
-		</tr>
+		if page.SearchMode {
+			<tr>
+				<td class="font-medium">
+					<span class="flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
+							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+							<path d="M14 2v6h6"></path>
+						</svg>
+						<a
+							class="link block min-w-0 flex-1 truncate"
+							href={ templ.URL("/files/" + file.ID + "/download") }
+							title={ file.Name }
+						>{ file.Name }</a>
+					</span>
+				</td>
+				if page.ShowPath {
+					@entryPathCell(file.Path, file.PathHref)
+				}
+				<td class="whitespace-nowrap">{ file.Size }</td>
+				<td class="whitespace-nowrap">{ file.Updated }</td>
+			</tr>
+		} else {
+			<tr
+				class="cursor-pointer hover:bg-base-200/50"
+				aria-label={ "Open " + file.Name }
+				hx-get={ "/htmx/files/" + file.ID }
+				hx-target="#entry-panel"
+				hx-swap="innerHTML"
+				hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+			>
+				<td class="font-medium">
+					<span class="flex items-center gap-2">
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
+							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+							<path d="M14 2v6h6"></path>
+						</svg>
+						<span
+							class="block min-w-0 flex-1 truncate"
+							data-full-name={ file.Name }
+							title={ file.Name }
+						>{ file.Name }</span>
+					</span>
+				</td>
+				<td class="whitespace-nowrap">{ file.Size }</td>
+				<td class="whitespace-nowrap">{ file.Updated }</td>
+				<td class="pe-0 text-right">
+					<button
+						type="button"
+						class="btn btn-square btn-ghost btn-sm"
+						aria-label={ "Actions for " + file.Name }
+						@click.stop
+						hx-get={ "/htmx/files/" + file.ID }
+						hx-target="#entry-panel"
+						hx-swap="innerHTML"
+						hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+							<circle cx="12" cy="5" r="1.7"></circle>
+							<circle cx="12" cy="12" r="1.7"></circle>
+							<circle cx="12" cy="19" r="1.7"></circle>
+						</svg>
+					</button>
+				</td>
+			</tr>
+		}
 	}
 	if page.NextURL != "" {
 		<tr id="load-more">
@@ -341,6 +421,79 @@ templ EntryRows(page response.Drive) {
 			</td>
 		</tr>
 	}
+}
+
+// Search is the whole-drive search page: one Search crumb, the form, and the
+// results of every folder the account owns.
+templ Search(view View, title string, page response.Drive) {
+	@Layout(title, view) {
+		@SearchContent(page)
+	}
+}
+
+// SearchContent is the fragment htmx swaps into <main>. Results are read-only,
+// so the page carries no drawer: a folder row opens the folder and a file row
+// downloads the file, and the location of each row is the way back into the
+// drive where its actions live.
+templ SearchContent(page response.Drive) {
+	@PageColumnWide() {
+		<section class="card bg-base-100 shadow">
+			<div class="card-body gap-4">
+				<nav aria-label="Breadcrumb" class="breadcrumbs text-sm">
+					<ul>
+						for _, crumb := range page.Breadcrumb {
+							<li>
+								if crumb.Current {
+									<span aria-current="page">{ crumb.Name }</span>
+								} else {
+									<a
+										href={ templ.URL(crumb.Href) }
+										hx-get={ crumb.Href }
+										hx-target="#page-content"
+										hx-swap="innerHTML"
+										hx-push-url="true"
+									>{ crumb.Name }</a>
+								}
+							</li>
+						}
+					</ul>
+				</nav>
+				@EntrySearchForm(page)
+				if page.ShortSearch {
+					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
+						<p class="text-base-content/70 text-sm">Type at least three characters to search your drive.</p>
+					</div>
+				} else if len(page.Folders) == 0 && len(page.Files) == 0 {
+					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
+						<p class="text-base-content/70 text-sm">No files match that search.</p>
+					</div>
+				} else {
+					<table class="table table-zebra table-fixed w-full">
+						<thead>
+							<tr>
+								<th>Name</th>
+								if page.ShowPath {
+									<th>Location</th>
+								}
+								<th class="w-32">Size</th>
+								<th class="w-40">Modified</th>
+							</tr>
+						</thead>
+						<tbody>
+							@SearchEntryRows(page)
+						</tbody>
+					</table>
+				}
+			</div>
+		</section>
+	}
+}
+
+// SearchEntryRows renders the rows of a search result page and the load-more
+// sentinel, without the table around them. It is the body of the partial
+// endpoint, and it shares the rows with the folder listing.
+templ SearchEntryRows(page response.Drive) {
+	@EntryRows(page)
 }
 
 // FolderCreateContent is the drawer form that creates one folder inside the

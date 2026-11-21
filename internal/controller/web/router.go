@@ -66,6 +66,7 @@ func NewRouter(
 	// Pages
 	app.Get("/", middleware.RequireAuth(u), c.home)
 	app.Get("/folders/:folder", middleware.RequireAuth(u), c.folderPage)
+	app.Get(_searchPath, middleware.RequireAuth(u), c.searchPage)
 	app.Get("/share", middleware.RequireAuth(u), c.shareIndex)
 	app.Get("/share/:share", c.sharedRoot)
 	app.Get("/share/:share/folders/:folder", c.sharedFolderRoute)
@@ -97,6 +98,7 @@ func NewRouter(
 	app.Get("/htmx/folders/tree", middleware.RequireAuth(u), c.folderTree)
 	app.Get("/htmx/folders/new", middleware.RequireAuth(u), c.folderNew)
 	app.Get("/htmx/folders/:folder/entries", middleware.RequireAuth(u), c.folderEntries)
+	app.Get("/htmx/search", middleware.RequireAuth(u), c.searchEntries)
 	app.Post("/htmx/folders", middleware.RequireAuth(u), c.folderCreate)
 	app.Get("/htmx/folders/:folder/edit", middleware.RequireAuth(u), c.folderEdit)
 	app.Get("/htmx/folders/:folder/move", middleware.RequireAuth(u), c.folderMoveForm)

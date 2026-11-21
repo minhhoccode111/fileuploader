@@ -240,6 +240,86 @@ func TestSharedSearchFormCarriesTheTerm(t *testing.T) {
 	}
 }
 
+// The search page states the location of every result, so its table carries a
+// Location column the folder table does not have.
+func TestSearchContentShowsTheLocationColumn(t *testing.T) {
+	t.Parallel()
+
+	page := response.Drive{
+		SearchMode:   true,
+		ShowPath:     true,
+		Search:       "note",
+		SearchAction: "/search",
+		Breadcrumb:   []response.Crumb{{Name: "Search", Href: "/search", Current: true}},
+		Files: []response.FileRow{{
+			ID:       "file-1",
+			Name:     "notes.txt",
+			Type:     "text/plain",
+			Size:     "1 B",
+			Updated:  "now",
+			Path:     "Home / Docs",
+			PathHref: "/folders/folder-1",
+		}},
+	}
+
+	html := renderTemplate(t, SearchContent(page))
+
+	for _, part := range []string{
+		`<th>Location</th>`,
+		`<th>Name</th>`,
+		`aria-current="page"`,
+		`Search</span>`,
+	} {
+		if !strings.Contains(html, part) {
+			t.Errorf("SearchContent() = %s, want it to contain %q", html, part)
+		}
+	}
+}
+
+// A search result is read-only: a file name downloads the file, its location
+// links to the folder that holds it, and no action button opens a drawer.
+func TestSearchEntryRowsLinkTheFileToItsFolderAndNotItsDrawer(t *testing.T) {
+	t.Parallel()
+
+	page := response.Drive{
+		SearchMode: true,
+		ShowPath:   true,
+		Files: []response.FileRow{{
+			ID:       "file-1",
+			Name:     "notes.txt",
+			Type:     "text/plain",
+			Size:     "1 B",
+			Updated:  "now",
+			Path:     "Home / Docs",
+			PathHref: "/folders/folder-1",
+		}},
+		NextURL: "/htmx/search?q=note&after=abc",
+	}
+
+	html := renderTemplate(t, SearchEntryRows(page))
+
+	for _, part := range []string{
+		`href="/files/file-1/download"`,
+		`href="/folders/folder-1"`,
+		"Home / Docs",
+		`hx-get="/htmx/search?q=note&amp;after=abc"`,
+		`colspan="4"`,
+	} {
+		if !strings.Contains(html, part) {
+			t.Errorf("SearchEntryRows() = %s, want it to contain %q", html, part)
+		}
+	}
+
+	for _, part := range []string{
+		`hx-get="/htmx/files/file-1"`,
+		"Actions for",
+	} {
+		if strings.Contains(html, part) {
+			t.Errorf("SearchEntryRows() = %s, want no %q in a read-only result", html, part)
+		}
+	}
+}
+
 // renderTemplate renders one component into its HTML text.
 func renderTemplate(t *testing.T, component templ.Component) string {
 	t.Helper()

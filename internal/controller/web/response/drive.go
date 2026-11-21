@@ -31,6 +31,26 @@ const (
 	// _byteLabelSmall is the size below which a value is printed in bytes
 	// without a fractional part.
 	_byteLabelSmall = 10
+
+	// _homeLabel words the root of the drive in a result location.
+	_homeLabel = "Home"
+
+	// _rootName is the name the root folder carries in the database. It reads
+	// as Home on a page.
+	_rootName = "/"
+
+	// _homeHref is the address of the root folder page.
+	_homeHref = "/"
+
+	// _searchHref is the address of the whole-drive search page.
+	_searchHref = "/search"
+
+	// _searchEntriesHref is the partial route that answers the load-more
+	// sentinel of a search.
+	_searchEntriesHref = "/htmx/search"
+
+	// _pathSeparator joins the names of a result location.
+	_pathSeparator = " / "
 )
 
 // Crumb is one step of the breadcrumb above a folder listing.
@@ -41,29 +61,41 @@ type Crumb struct {
 }
 
 // FolderRow is one folder in the drive table. The item count is how many
-// entries sit directly inside it, already worded for the cell.
+// entries sit directly inside it, already worded for the cell. Path and
+// PathHref carry the location of a whole-drive search result: the chain from
+// the root, and the folder the chain ends at.
 type FolderRow struct {
-	ID      string
-	Name    string
-	Href    string
-	Items   string
-	Updated string
+	ID       string
+	Name     string
+	Href     string
+	Items    string
+	Updated  string
+	Path     string
+	PathHref string
 }
 
 // FileRow is one file in the drive table. The size is the number of bytes,
-// already worded for the cell.
+// already worded for the cell. Path and PathHref carry the location of a
+// whole-drive search result: the chain from the root, and the folder that holds
+// the file.
 type FileRow struct {
-	ID      string
-	Name    string
-	Type    string
-	Size    string
-	Updated string
+	ID       string
+	Name     string
+	Type     string
+	Size     string
+	Updated  string
+	Path     string
+	PathHref string
 }
 
 // Drive is everything the drive page renders for one folder. Search is the
 // term the listing was filtered with, SearchAction is where the search form of
 // the page submits, and NextURL is the partial route that answers the
 // load-more sentinel, empty when the listing is complete.
+//
+// The flags mark the whole-drive search, a state of its own: its rows are
+// read-only, so a file name downloads instead of opening the action drawer,
+// and every row shows the folder it lives in.
 type Drive struct {
 	Title        string
 	FolderID     string
@@ -75,6 +107,11 @@ type Drive struct {
 	Search       string
 	SearchAction string
 	NextURL      string
+	SearchMode   bool
+	ShowPath     bool
+	ShortSearch  bool
+	From         string
+	ClearHref    string
 }
 
 // FileInfo is the file drawer: what the file is, and the two actions it
@@ -157,12 +194,122 @@ func searchAction(folder *entity.Folder) string {
 	return "/folders/" + folder.ID
 }
 
+// NewSearch maps a whole-drive search view to the page the search template
+// renders. The breadcrumb is a single current Search crumb, because the page is
+// a state of its own rather than a folder. Every row carries the chain from the
+// root to its folder, so a result found by search can be reached where it
+// lives.
+func NewSearch(view *entity.SearchView) Drive {
+	crumbs := []Crumb{{Name: "Search", Href: _searchHref, Current: true}}
+
+	folders := make([]FolderRow, 0, len(view.Folders))
+	for i := range view.Folders {
+		item := &view.Folders[i]
+		folders = append(folders, FolderRow{
+			ID:       item.ID,
+			Name:     item.Name,
+			Href:     "/folders/" + item.ID,
+			Items:    itemLabel(item.ItemCount),
+			Updated:  item.UpdatedAt.Format(_driveDateLayout),
+			Path:     pathLabel(item.Path),
+			PathHref: "/folders/" + item.ID,
+		})
+	}
+
+	files := make([]FileRow, 0, len(view.Files))
+	for i := range view.Files {
+		item := &view.Files[i]
+		files = append(files, FileRow{
+			ID:       item.ID,
+			Name:     item.Name,
+			Type:     item.ContentType,
+			Size:     ByteLabel(item.Size),
+			Updated:  item.UpdatedAt.Format(_driveDateLayout),
+			Path:     pathLabel(item.Path),
+			PathHref: "/folders/" + item.FolderID,
+		})
+	}
+
+	return Drive{
+		Breadcrumb:   crumbs,
+		Folders:      folders,
+		Files:        files,
+		Search:       view.Search,
+		SearchAction: _searchHref,
+		NextURL:      searchNextURL(view.Search, view.From, view.Next),
+		SearchMode:   true,
+		ShowPath:     true,
+		ShortSearch:  view.TooShort,
+		From:         view.From,
+		ClearHref:    searchClearHref(view.From),
+	}
+}
+
+// pathLabel words the chain from the root to a result's folder. The root folder
+// carries "/" as its name, which reads as Home; the rest join with a simple
+// separator, which is safe because a stored name cannot hold one.
+func pathLabel(path []entity.FolderRef) string {
+	if len(path) == 0 {
+		return _homeLabel
+	}
+
+	names := make([]string, 0, len(path))
+	for _, ref := range path {
+		name := ref.Name
+		if name == _rootName {
+			name = _homeLabel
+		}
+
+		names = append(names, name)
+	}
+
+	return strings.Join(names, _pathSeparator)
+}
+
+// searchClearHref is where the Clear link of the search page returns to: the
+// folder the search came from, or Home when it named none.
+func searchClearHref(from string) string {
+	if from == "" {
+		return _homeHref
+	}
+
+	return "/folders/" + from
+}
+
 // nextEntryURL is the partial route that answers the load-more sentinel of a
 // folder listing: the batch after the cursor, under the same search. Both
 // values are escaped, and an empty search is left out, so the link stays short.
 func nextEntryURL(folderID, search string, after *entity.EntryCursor) string {
-	if after == nil {
+	query := entryQuery(search, after)
+	if query == nil {
 		return ""
+	}
+
+	return "/htmx/folders/" + folderID + "/entries?" + query.Encode()
+}
+
+// searchNextURL is the partial route that answers the load-more sentinel of a
+// search: the batch after the cursor, under the same term and the same source
+// folder. An empty value is left out, so the link stays short.
+func searchNextURL(search, from string, after *entity.EntryCursor) string {
+	query := entryQuery(search, after)
+	if query == nil {
+		return ""
+	}
+
+	if from != "" {
+		query.Set("from", from)
+	}
+
+	return _searchEntriesHref + "?" + query.Encode()
+}
+
+// entryQuery is the query of a next-page link: the cursor the listing resumes
+// after and the search it runs under. A nil result means the listing is
+// complete, so there is no link to carry.
+func entryQuery(search string, after *entity.EntryCursor) url.Values {
+	if after == nil {
+		return nil
 	}
 
 	query := url.Values{}
@@ -172,7 +319,7 @@ func nextEntryURL(folderID, search string, after *entity.EntryCursor) string {
 		query.Set("q", search)
 	}
 
-	return "/htmx/folders/" + folderID + "/entries?" + query.Encode()
+	return query
 }
 
 // NewFileInfo maps the file behind a drawer to the type the template renders.
