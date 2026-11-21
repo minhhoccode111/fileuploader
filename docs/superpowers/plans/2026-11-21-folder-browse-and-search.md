@@ -318,6 +318,8 @@ git commit -m "feat(repo): page folder reads and add search indexes"
 - Modify: `internal/usecase/folder/folder_test.go`
 - Modify: `internal/usecase/file/file_test.go`
 - Modify: `internal/usecase/user/user_test.go`
+- Modify: `internal/controller/web/drive.go` (update the `List` call sites)
+- Modify: `internal/controller/web/share.go` (update the shared `List` call site)
 - Modify: `internal/controller/web/upload_test.go:110-123`
 - Modify: `internal/repo/contracts.go` (remove `FolderRepo.List`)
 - Modify: `internal/repo/persistent/folder/folder.go` (remove old `List`)
@@ -429,6 +431,12 @@ Update `internal/usecase/contracts.go`. In `internal/repo/contracts.go`, add
 `ListPage` and `Paths` to `FolderRepo` and `ListPage` to `FileRepo`, then remove
 the old `FolderRepo.List` after no caller uses it. Remove the old `List` method
 from `internal/repo/persistent/folder/folder.go`.
+
+The interface change breaks the two existing web call sites. In
+`internal/controller/web/drive.go`, pass `""` and `nil` for the new search and
+cursor arguments; Task 4 and Task 5 replace those placeholders. In
+`internal/controller/web/share.go`, do the same for the shared folder call; Task
+6 adds shared search and paging.
 
 - [ ] **Step 5: Run the use-case tests**
 
