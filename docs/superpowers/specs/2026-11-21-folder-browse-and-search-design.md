@@ -230,8 +230,9 @@ const (
     EntryKindFile   EntryKind = "file"
 )
 
-// EntryCursor is the last row of the previous batch. Name is the lowercased
-// name the query ordered by, not the display name.
+// EntryCursor is the last row of the previous batch. Name is the display name;
+// the query compares lower(name) so every page uses the database's own
+// case-folding.
 type EntryCursor struct {
     Kind        EntryKind
     Name        string
