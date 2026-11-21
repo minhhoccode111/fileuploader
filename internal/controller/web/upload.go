@@ -25,7 +25,7 @@ const (
 
 	// _uploadNameMessage is shown when the name is empty or the drive cannot
 	// store it.
-	_uploadNameMessage = "Enter a file name without slashes, up to 255 characters."
+	_uploadNameMessage = "Enter a file name without slashes or reserved characters, up to 255 characters."
 
 	// _uploadTooLargeMessage is shown when the file or the request body is
 	// larger than the server accepts.
@@ -49,6 +49,10 @@ const (
 	// _uploadBusyMessage is shown when another start holds the quota lock of
 	// the account, so the caller may retry.
 	_uploadBusyMessage = "Another upload is starting right now. Please try again."
+
+	// _uploadRateMessage is shown when the account opens uploads faster than
+	// the server allows, so the browser waits before it tries again.
+	_uploadRateMessage = "Too many uploads are starting. Wait a minute and try again."
 
 	// _generalBodyLimitBytes bounds every request that is not a part of a
 	// chunked upload. Forms and JSON bodies are small; a part is the only body
@@ -228,6 +232,9 @@ func (c *Controller) uploadFailure(ctx *fiber.Ctx, err error, action string) err
 
 	case errors.Is(err, entity.ErrUploadQuotaBusy):
 		return ctx.Status(http.StatusServiceUnavailable).SendString(_uploadBusyMessage)
+
+	case errors.Is(err, entity.ErrUploadRateLimited):
+		return ctx.Status(http.StatusTooManyRequests).SendString(_uploadRateMessage)
 
 	default:
 		c.l.Error(fmt.Errorf("web - %s: %w", action, err))

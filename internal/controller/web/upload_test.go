@@ -514,3 +514,27 @@ func TestUploadErrorMapsQuotaAndMissingUpload(t *testing.T) {
 		}
 	})
 }
+
+func TestUploadStartRateLimited(t *testing.T) {
+	t.Parallel()
+
+	files := &fakeUploadFile{startErr: entity.ErrUploadRateLimited}
+	app := uploadApp(files, &fakeUploadFolder{})
+
+	body := `{"folder":"` + _uploadTestFolder + `","name":"note.txt",` +
+		`"size":104857600,"content_type":"text/plain"}`
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/htmx/uploads", strings.NewReader(body))
+	req.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusTooManyRequests)
+	}
+}

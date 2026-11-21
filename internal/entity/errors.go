@@ -24,6 +24,7 @@ var (
 	ErrUploadPartMismatch    = errors.New("upload part mismatch")
 	ErrUploadIncomplete      = errors.New("upload incomplete")
 	ErrUploadQuotaBusy       = errors.New("upload quota busy")
+	ErrUploadRateLimited     = errors.New("upload rate limited")
 	ErrFileTooLarge          = errors.New("file too large")
 	ErrStorageQuotaExceeded  = errors.New("storage quota exceeded")
 	ErrRootFolder            = errors.New("root folder cannot be changed")

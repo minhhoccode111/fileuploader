@@ -164,6 +164,9 @@ type fakeStorage struct {
 	objectBody       []byte
 	uploadPartNumber int
 	uploadPartSize   int64
+	incomplete       []multipart.IncompleteUpload
+	incompleteErr    error
+	incompleteCalls  int
 }
 
 func (f *fakeStorage) PutObject(
@@ -223,6 +226,15 @@ func (f *fakeStorage) CompleteMultipartUpload(_ context.Context, _, _, _ string,
 
 func (f *fakeStorage) AbortMultipartUpload(_ context.Context, _, _, _ string) error {
 	return nil
+}
+
+func (f *fakeStorage) ListIncompleteUploads(
+	_ context.Context,
+	_ string,
+) ([]multipart.IncompleteUpload, error) {
+	f.incompleteCalls++
+
+	return f.incomplete, f.incompleteErr
 }
 
 func TestRenameChecksTheFolderSideOfTheName(t *testing.T) {

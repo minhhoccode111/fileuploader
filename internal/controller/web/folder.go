@@ -411,8 +411,7 @@ func (c *Controller) folderDownloadZip(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _homePath)
 	}
 
-	ctx.Set(fiber.HeaderContentType, "application/zip")
-	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", filename))
+	setDownloadHeaders(ctx, "application/zip", filename)
 
 	// The server closes the stream after it writes the response. Closing it
 	// here would close the pipe before the archive is read.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,29 @@ const (
 	// sweep asks again until the store has none left, so the batch only caps
 	// how much it holds at once.
 	_sweepBatch = 100
+
+	// _quotaLockWait bounds how long an operation waits for the per-account
+	// quota lock. The holder renews its lease, so a stuck holder could
+	// otherwise stall the caller, and the sweep behind it, without end.
+	_quotaLockWait = 10 * time.Second
+
+	// _completionTTL is how long the marker of a finished upload answers a
+	// retried completion. A retry follows a lost response, so seconds matter
+	// and hours are plenty.
+	_completionTTL = time.Hour
+
+	// _startLimit is how many uploads one account may open per _startWindow.
+	// A whole folder of small files still fits, while a flood cannot reserve
+	// the quota in one burst.
+	_startLimit = 20
+
+	// _startWindow is the window the start counter of an account covers.
+	_startWindow = time.Minute
+
+	// _staleUploadAge is how long a multipart upload the app lost track of may
+	// sit in the bucket before the sweep aborts it. MinIO has no lifecycle
+	// action for this, so the app applies the wait itself.
+	_staleUploadAge = 24 * time.Hour
 )
 
 // StartUpload opens the multipart upload of one file, reserves its declared
@@ -57,6 +81,18 @@ func (uc *UseCase) StartUpload(
 
 	if size > uc.maxBytes {
 		return entity.UploadSession{}, entity.ErrFileTooLarge
+	}
+
+	allowed, err := uc.uploads.AllowStart(ctx, userID, _startLimit, _startWindow)
+	if err != nil {
+		return entity.UploadSession{}, fmt.Errorf(
+			"FileUseCase - StartUpload - uc.uploads.AllowStart: %w",
+			err,
+		)
+	}
+
+	if !allowed {
+		return entity.UploadSession{}, entity.ErrUploadRateLimited
 	}
 
 	_, err = uc.folders.Get(ctx, userID, folderID)
@@ -240,9 +276,9 @@ func (uc *UseCase) AbortUpload(ctx context.Context, userID, uploadID string) err
 		return entity.ErrUploadNotFound
 	}
 
-	release, err := uc.uploads.LockQuota(ctx, userID)
+	release, err := uc.lockQuota(ctx, userID, "AbortUpload")
 	if err != nil {
-		return fmt.Errorf("FileUseCase - AbortUpload - uc.uploads.LockQuota: %w", err)
+		return err
 	}
 
 	defer release()
@@ -250,13 +286,28 @@ func (uc *UseCase) AbortUpload(ctx context.Context, userID, uploadID string) err
 	return uc.discardSession(ctx, &session, "AbortUpload")
 }
 
-// SweepUploads releases the sessions an idle account left behind. Each pass
-// takes one page of expired sessions, aborts the multipart upload of each and
-// deletes the session, which releases the reservation it held. A pass that
-// deletes nothing stops the sweep: the same expired session would otherwise be
-// fetched forever. A session that survives a failed abort or delete is left for
-// the next sweep, and its error is joined into the result.
+// SweepUploads releases the sessions an idle account left behind and aborts
+// the multipart uploads the bucket still holds for sessions that are gone. The
+// session pass takes one page of expired sessions, aborts the multipart upload
+// of each and deletes the session, which releases the reservation it held. A
+// pass that deletes nothing stops the session sweep: the same expired session
+// would otherwise be fetched forever. A session that survives a failed abort or
+// delete is left for the next sweep, and its error is joined into the result.
 func (uc *UseCase) SweepUploads(ctx context.Context) (int, error) {
+	swept, errs := uc.sweepExpiredSessions(ctx)
+
+	stale, staleErrs := uc.sweepStaleUploads(ctx)
+
+	swept += stale
+
+	errs = append(errs, staleErrs...)
+
+	return swept, errors.Join(errs...)
+}
+
+// sweepExpiredSessions removes the sessions due by now and reports how many it
+// released, together with the failures of the ones it kept.
+func (uc *UseCase) sweepExpiredSessions(ctx context.Context) (int, []error) {
 	swept := 0
 
 	var errs []error
@@ -283,7 +334,77 @@ func (uc *UseCase) SweepUploads(ctx context.Context) (int, error) {
 		}
 	}
 
-	return swept, errors.Join(errs...)
+	return swept, errs
+}
+
+// sweepStaleUploads aborts the multipart uploads past the stale age that no
+// session claims any more. A slow upload with a live session stays, because the
+// session sweep already owns every upload the app knows about.
+func (uc *UseCase) sweepStaleUploads(ctx context.Context) (int, []error) {
+	uploads, err := uc.storage.ListIncompleteUploads(ctx, uc.bucket)
+	if err != nil {
+		return 0, []error{
+			fmt.Errorf("FileUseCase - SweepUploads - uc.storage.ListIncompleteUploads: %w", err),
+		}
+	}
+
+	deadline := time.Now().Add(-_staleUploadAge)
+
+	aborted := 0
+
+	var errs []error
+
+	for i := range uploads {
+		if uploads[i].Initiated.After(deadline) {
+			continue
+		}
+
+		live, sessionErr := uc.uploadHasSession(ctx, uploads[i].UploadID)
+		if sessionErr != nil {
+			errs = append(errs, sessionErr)
+
+			continue
+		}
+
+		if live {
+			continue
+		}
+
+		err := uc.storage.AbortMultipartUpload(
+			ctx,
+			uc.bucket,
+			uploads[i].Key,
+			uploads[i].UploadID,
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf(
+				"FileUseCase - SweepUploads - uc.storage.AbortMultipartUpload: %w",
+				err,
+			))
+
+			continue
+		}
+
+		aborted++
+	}
+
+	return aborted, errs
+}
+
+// uploadHasSession reports whether the store still knows an upload. A store
+// failure is returned as an error, and the caller keeps the multipart: aborting
+// an upload that may still be active is worse than waiting one pass.
+func (uc *UseCase) uploadHasSession(ctx context.Context, uploadID string) (bool, error) {
+	_, err := uc.uploads.Get(ctx, uploadID)
+	if err == nil {
+		return true, nil
+	}
+
+	if errors.Is(err, entity.ErrUploadNotFound) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("FileUseCase - SweepUploads - uc.uploads.Get: %w", err)
 }
 
 // sweepBatch aborts and deletes one page of expired sessions and reports how
@@ -313,9 +434,9 @@ func (uc *UseCase) sweepBatch(
 // sweepSession releases one expired session while holding the quota lock of its
 // owner, so a concurrent start cannot measure the quota mid-release.
 func (uc *UseCase) sweepSession(ctx context.Context, session *entity.UploadSession) error {
-	release, err := uc.uploads.LockQuota(ctx, session.UserID)
+	release, err := uc.lockQuota(ctx, session.UserID, "SweepUploads")
 	if err != nil {
-		return fmt.Errorf("FileUseCase - SweepUploads - uc.uploads.LockQuota: %w", err)
+		return err
 	}
 
 	defer release()
@@ -368,8 +489,19 @@ func (uc *UseCase) slideSession(ctx context.Context, uploadID string, partNumber
 // records the file that points at it. The size reserved at start becomes stored
 // usage, so the per-account quota lock is held from the join until the row is
 // written. A completion that cannot record the row removes the joined object
-// and ends the session, so no phantom reservation is left behind.
+// and ends the session, so no phantom reservation is left behind. A completion
+// retried after its response was lost answers with the file the first call
+// stored.
 func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) (entity.File, error) {
+	file, done, err := uc.completedUpload(ctx, userID, uploadID)
+	if err != nil {
+		return entity.File{}, err
+	}
+
+	if done {
+		return file, nil
+	}
+
 	session, err := uc.ownedSession(ctx, userID, uploadID, "CompleteUpload")
 	if err != nil {
 		return entity.File{}, err
@@ -379,19 +511,21 @@ func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) 
 		return entity.File{}, err
 	}
 
-	release, err := uc.uploads.LockQuota(ctx, userID)
+	release, err := uc.lockQuota(ctx, userID, "CompleteUpload")
 	if err != nil {
-		return entity.File{}, fmt.Errorf("FileUseCase - CompleteUpload - uc.uploads.LockQuota: %w", err)
+		return entity.File{}, err
 	}
 
 	defer release()
 
 	// Re-read under the lock: a concurrent completion or abort can delete the
 	// session while this request waits, and using the stale copy would let the
-	// loser remove the object the winner already stored.
+	// loser remove the object the winner already stored. A session that is gone
+	// now may have been completed while this request waited, so the marker is
+	// checked again before the request gives up.
 	session, err = uc.ownedSession(ctx, userID, uploadID, "CompleteUpload")
 	if err != nil {
-		return entity.File{}, err
+		return uc.retryCompletion(ctx, userID, uploadID, err)
 	}
 
 	parts, err := uc.sessionParts(ctx, &session)
@@ -407,7 +541,7 @@ func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) 
 		return entity.File{}, err
 	}
 
-	file := fileFromSession(&session)
+	file = fileFromSession(&session)
 
 	err = uc.storeRow(ctx, session.UserID, session.FolderID, session.Name, &file)
 	if err != nil {
@@ -417,9 +551,73 @@ func (uc *UseCase) CompleteUpload(ctx context.Context, userID, uploadID string) 
 		return entity.File{}, fmt.Errorf("FileUseCase - CompleteUpload - uc.storeRow: %w", finalErr)
 	}
 
+	uc.markCompleted(ctx, session.ID, file.ID)
 	uc.endSession(ctx, session.ID)
 
 	return file, nil
+}
+
+// completedUpload returns the file an earlier completion of this upload
+// stored. A missing marker, or one whose file was deleted afterwards, reports
+// false so the caller falls back to the session.
+func (uc *UseCase) completedUpload(
+	ctx context.Context,
+	userID, uploadID string,
+) (entity.File, bool, error) {
+	fileID, err := uc.uploads.Completion(ctx, uploadID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUploadNotFound) {
+			return entity.File{}, false, nil
+		}
+
+		return entity.File{}, false, fmt.Errorf(
+			"FileUseCase - CompleteUpload - uc.uploads.Completion: %w",
+			err,
+		)
+	}
+
+	file, err := uc.files.Get(ctx, userID, fileID)
+	if err != nil {
+		if errors.Is(err, entity.ErrFileNotFound) {
+			return entity.File{}, false, nil
+		}
+
+		return entity.File{}, false, fmt.Errorf("FileUseCase - CompleteUpload - uc.files.Get: %w", err)
+	}
+
+	return file, true, nil
+}
+
+// retryCompletion answers a completion whose session disappeared while it
+// waited for the quota lock. A marker written by the completion that won the
+// race turns the retry into a success; without one the original failure stands.
+func (uc *UseCase) retryCompletion(
+	ctx context.Context,
+	userID, uploadID string,
+	sessionErr error,
+) (entity.File, error) {
+	file, done, err := uc.completedUpload(ctx, userID, uploadID)
+	if err != nil {
+		return entity.File{}, err
+	}
+
+	if done {
+		return file, nil
+	}
+
+	return entity.File{}, sessionErr
+}
+
+// markCompleted records which file the upload produced. A failed marker only
+// costs a retried completion its answer, so it never fails the completion that
+// already stored the row.
+func (uc *UseCase) markCompleted(ctx context.Context, uploadID, fileID string) {
+	err := uc.uploads.MarkCompleted(context.WithoutCancel(ctx), uploadID, fileID, _completionTTL)
+	if err != nil {
+		// The upload itself stays successful: only a retried completion loses
+		// its answer, and the log explains the later 404.
+		log.Printf("FileUseCase - markCompleted - uc.uploads.MarkCompleted: %v", err)
+	}
 }
 
 // sessionParts returns the ETags of a session in part order and refuses a
@@ -529,6 +727,33 @@ func (uc *UseCase) endSession(ctx context.Context, uploadID string) {
 	uc.uploads.Delete(context.WithoutCancel(ctx), uploadID)
 }
 
+// lockQuota takes the per-account quota lock under a bounded wait. A wait that
+// runs out reports the busy sentinel, so a request can answer 503 and the sweep
+// can move on to the next account.
+func (uc *UseCase) lockQuota(ctx context.Context, userID, op string) (func(), error) {
+	waitCtx, cancel := context.WithTimeout(ctx, _quotaLockWait)
+
+	release, err := uc.uploads.LockQuota(waitCtx, userID)
+	if err != nil {
+		cancel()
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf(
+				"FileUseCase - %s - uc.uploads.LockQuota: %w",
+				op,
+				entity.ErrUploadQuotaBusy,
+			)
+		}
+
+		return nil, fmt.Errorf("FileUseCase - %s - uc.uploads.LockQuota: %w", op, err)
+	}
+
+	return func() {
+		cancel()
+		release()
+	}, nil
+}
+
 // ownedSession loads a session for one account and refuses a missing one, one
 // of another account, and one whose idle window has passed. The three refusals
 // share one sentinel, so a caller cannot tell an expired upload from one it
@@ -602,9 +827,9 @@ func (uc *UseCase) reserveUploadQuota(
 		return func() {}, nil
 	}
 
-	release, err := uc.uploads.LockQuota(ctx, userID)
+	release, err := uc.lockQuota(ctx, userID, "StartUpload")
 	if err != nil {
-		return nil, fmt.Errorf("FileUseCase - StartUpload - uc.uploads.LockQuota: %w", err)
+		return nil, err
 	}
 
 	used, err := uc.storageUsed(ctx, userID)

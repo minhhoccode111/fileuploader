@@ -100,6 +100,9 @@ type (
 		ListByUser(ctx context.Context, userID string) ([]entity.UploadSession, error)
 		Expired(ctx context.Context, now time.Time, limit int) ([]entity.UploadSession, error)
 		Delete(ctx context.Context, uploadID string) error
+		MarkCompleted(ctx context.Context, uploadID, fileID string, ttl time.Duration) error
+		Completion(ctx context.Context, uploadID string) (string, error)
+		AllowStart(ctx context.Context, userID string, limit int, window time.Duration) (bool, error)
 		LockQuota(ctx context.Context, userID string) (func(), error)
 	}
 
@@ -145,5 +148,6 @@ type (
 		) (string, error)
 		CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []multipart.Part) error
 		AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
+		ListIncompleteUploads(ctx context.Context, bucket string) ([]multipart.IncompleteUpload, error)
 	}
 )

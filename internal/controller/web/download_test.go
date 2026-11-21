@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -127,5 +129,56 @@ func TestFileDownloadKeepsTheStreamOpen(t *testing.T) {
 
 	if got := res.Header.Get(fiber.HeaderContentLength); got != "5" {
 		t.Errorf("Content-Length = %q, want %q", got, "5")
+	}
+
+	checkDownloadHeaders(t, res, "note.txt")
+}
+
+// checkDownloadHeaders asserts what every attachment must carry: the exact
+// name in filename* and the no-sniff guard.
+func checkDownloadHeaders(t *testing.T, res *http.Response, name string) {
+	t.Helper()
+
+	if got := res.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want %q", got, "nosniff")
+	}
+
+	disposition := res.Header.Get(fiber.HeaderContentDisposition)
+	if !strings.Contains(disposition, "filename*=UTF-8''"+name) {
+		t.Errorf("Content-Disposition = %q, want the exact name %q in filename*", disposition, name)
+	}
+}
+
+// A streamed body without a positive length is sent chunked, so an empty file
+// carries no Content-Length rather than a zero one.
+func TestStreamLengthRefusesNonPositiveSizes(t *testing.T) {
+	t.Parallel()
+
+	for _, size := range []int64{0, -1} {
+		if length, ok := streamLength(size); ok {
+			t.Errorf("streamLength(%d) = %d, true; want false", size, length)
+		}
+	}
+}
+
+// A size that fits the int Fiber takes comes back unchanged. A size beyond
+// that range is refused, so a 32-bit build streams chunked instead of sending
+// a negative or truncated Content-Length.
+func TestStreamLengthKeepsASizeThatFits(t *testing.T) {
+	t.Parallel()
+
+	const size = int64(5) << 30
+
+	length, ok := streamLength(size)
+	if strconv.IntSize == 64 {
+		if !ok || int64(length) != size {
+			t.Errorf("streamLength(%d) = %d, %v; want the size back", size, length, ok)
+		}
+
+		return
+	}
+
+	if ok {
+		t.Errorf("streamLength(%d) = %d, true; want false over the int range", size, length)
 	}
 }

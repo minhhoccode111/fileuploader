@@ -134,7 +134,7 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 		return c.renderErrors(
 			ctx,
 			http.StatusUnprocessableEntity,
-			[]string{"Enter a name without slashes, up to 255 characters."},
+			[]string{"Enter a name without slashes or reserved characters, up to 255 characters."},
 		)
 
 	case errors.Is(err, entity.ErrFileTooLarge):

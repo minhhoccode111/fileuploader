@@ -552,7 +552,19 @@ async function copyShareLink(button) {
   }, 1500);
 }
 
-async function downloadWithProgress(url, filename) {
+// A download above this size goes straight to the browser: buffering it as a
+// Blob would hold the whole file in memory first. A folder archive carries no
+// size at all, because it is written as it streams, so it takes the same path
+// and the browser shows its own real progress instead of a made-up bar.
+const directDownloadBytes = 32 * 1024 * 1024;
+
+async function downloadWithProgress(url, filename, size) {
+  const bytes = Number(size) || 0;
+  if (!bytes || bytes > directDownloadBytes) {
+    window.location.href = url;
+    return false;
+  }
+
   const progress = document.getElementById("download-progress");
   if (progress) {
     progress.classList.remove("hidden");

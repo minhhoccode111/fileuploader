@@ -298,12 +298,13 @@ func (c *Controller) sharedFileDownload(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
 	}
 
-	ctx.Set(fiber.HeaderContentType, opened.ContentType)
-	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", opened.Name))
+	setDownloadHeaders(ctx, opened.ContentType, opened.Name)
 
-	// The size keeps the response determinate while the body still streams.
-	if opened.Size > 0 {
-		return ctx.SendStream(reader, int(opened.Size))
+	// The size keeps the response determinate while the body still streams. A
+	// size an int cannot carry falls back to a chunked body rather than a
+	// truncated header.
+	if length, ok := streamLength(opened.Size); ok {
+		return ctx.SendStream(reader, length)
 	}
 
 	// The server closes the stream after it writes the response. Closing it

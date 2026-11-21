@@ -71,12 +71,14 @@ type Drive struct {
 }
 
 // FileInfo is the file drawer: what the file is, and the two actions it
-// offers.
+// offers. Bytes is the raw size, so the download link can choose between the
+// progress bar and the browser's own download without parsing the worded size.
 type FileInfo struct {
 	ID      string
 	Name    string
 	Type    string
 	Size    string
+	Bytes   int64
 	Updated string
 }
 
@@ -140,6 +142,7 @@ func NewFileInfo(file *entity.File) FileInfo {
 		Name:    file.Name,
 		Type:    file.ContentType,
 		Size:    ByteLabel(file.Size),
+		Bytes:   file.Size,
 		Updated: file.UpdatedAt.Format(_driveDateLayout),
 	}
 }

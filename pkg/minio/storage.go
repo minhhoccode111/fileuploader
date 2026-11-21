@@ -184,6 +184,38 @@ func (m *MinIO) AbortMultipartUpload(ctx context.Context, bucket, key, uploadID 
 	return fmt.Errorf("minio - AbortMultipartUpload - core.AbortMultipartUpload: %w", err)
 }
 
+// ListIncompleteUploads returns the multipart uploads the bucket still holds.
+func (m *MinIO) ListIncompleteUploads(
+	ctx context.Context,
+	bucket string,
+) ([]multipart.IncompleteUpload, error) {
+	return collectIncomplete(m.Client.ListIncompleteUploads(ctx, bucket, "", true))
+}
+
+// collectIncomplete drains the SDK listing into the neutral uploads the sweep
+// reads. A failed listing is refused as a whole, so a partial page is never
+// mistaken for the bucket.
+func collectIncomplete(infos <-chan miniogo.ObjectMultipartInfo) ([]multipart.IncompleteUpload, error) {
+	var uploads []multipart.IncompleteUpload
+
+	for info := range infos {
+		if info.Err != nil {
+			return nil, fmt.Errorf(
+				"minio - ListIncompleteUploads - m.Client.ListIncompleteUploads: %w",
+				info.Err,
+			)
+		}
+
+		uploads = append(uploads, multipart.IncompleteUpload{
+			Key:       info.Key,
+			UploadID:  info.UploadID,
+			Initiated: info.Initiated,
+		})
+	}
+
+	return uploads, nil
+}
+
 // core exposes the low level multipart calls of the SDK client.
 func (m *MinIO) core() miniogo.Core {
 	return miniogo.Core{Client: m.Client}

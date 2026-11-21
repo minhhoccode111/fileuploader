@@ -136,10 +136,16 @@ type FolderView struct {
 }
 
 // CleanName normalizes a name a caller typed and rejects the ones the drive
-// cannot store: an empty name, one longer than the column, a path separator,
-// and a control character. The name is what the visitor sees, so it keeps the
-// case and the spaces inside it.
+// cannot store: an empty name, one longer than the column, one that is not
+// valid UTF-8, a path separator, a character Windows forbids, a control or
+// invisible format character, a trailing dot, and a name Windows would open as
+// a device. The name is what the visitor sees, so it keeps the case and the
+// spaces inside it.
 func CleanName(raw string) (string, error) {
+	if !utf8.ValidString(raw) {
+		return "", ErrInvalidName
+	}
+
 	name := strings.TrimSpace(raw)
 	if name == "" || utf8.RuneCountInString(name) > _maxNameLength {
 		return "", ErrInvalidName
@@ -149,13 +155,66 @@ func CleanName(raw string) (string, error) {
 		return "", ErrInvalidName
 	}
 
-	if strings.ContainsAny(name, `/\`) || strings.IndexByte(name, 0) >= 0 {
-		return "", ErrInvalidName
-	}
-
-	if strings.ContainsFunc(name, unicode.IsControl) {
+	if forbiddenNameRune(name) || strings.HasSuffix(name, ".") || windowsDeviceName(name) {
 		return "", ErrInvalidName
 	}
 
 	return name, nil
+}
+
+// forbiddenNameRune reports whether the name holds a path separator, a
+// character Windows forbids, or a control or invisible format character.
+func forbiddenNameRune(name string) bool {
+	if strings.ContainsAny(name, `/\<>:"|?*`) || strings.IndexByte(name, 0) >= 0 {
+		return true
+	}
+
+	return strings.ContainsFunc(name, func(r rune) bool {
+		return unicode.IsControl(r) || isInvisibleFormat(r)
+	})
+}
+
+// isInvisibleFormat reports whether r is a format character that reorders,
+// hides or joins the text around it without showing up as a character of its
+// own. A displayed name could then read differently from the one that is
+// stored. The zero-width joiner and non-joiner stay allowed: emoji sequences
+// and several living scripts need them.
+func isInvisibleFormat(r rune) bool {
+	switch {
+	case r >= '\u202A' && r <= '\u202E':
+		return true
+	case r >= '\u2066' && r <= '\u2069':
+		return true
+	case r == '\u200B', r == '\u200E', r == '\u200F':
+		return true
+	case r >= '\u2060' && r <= '\u2064':
+		return true
+	case r == '\u2028', r == '\u2029', r == '\uFEFF':
+		return true
+	}
+
+	return false
+}
+
+// windowsDeviceName reports whether the name would open a Windows device
+// instead of a file. The rule reads the part before the first dot, so
+// "NUL.txt" is a device too, and it compares the names in any case.
+func windowsDeviceName(name string) bool {
+	base := name
+	if i := strings.IndexByte(base, '.'); i >= 0 {
+		base = base[:i]
+	}
+
+	base = strings.ToUpper(base)
+
+	switch base {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return true
+	}
+
+	if len(base) != 4 || (!strings.HasPrefix(base, "COM") && !strings.HasPrefix(base, "LPT")) {
+		return false
+	}
+
+	return base[3] >= '1' && base[3] <= '9'
 }

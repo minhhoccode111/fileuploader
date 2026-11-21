@@ -16,6 +16,12 @@ import (
 
 const _testIdleTTL = time.Hour
 
+// Upload start limit the rate tests use: a short window keeps the test fast.
+const (
+	_testStartLimit  = 3
+	_testStartWindow = time.Minute
+)
+
 // newTestRepo starts an in-memory Redis and returns the repository under test
 // together with the client, so a test can look at the keys the repository
 // leaves behind.
@@ -647,4 +653,113 @@ func TestReleaseLeavesForeignLock(t *testing.T) {
 	if holder != "another-holder" {
 		t.Errorf("lock holder = %q, want %q", holder, "another-holder")
 	}
+}
+
+// A completion marker says which file an upload produced, outlives the session
+// it belongs to, and expires on its own, so a retried completion can answer
+// with the stored file after the session is gone.
+func TestMarkCompletedRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	sessions, rdb := newTestRepo(t)
+	ctx := context.Background()
+	session := testSession()
+
+	_, err := sessions.Completion(ctx, session.ID)
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("Completion() before completion error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if err := sessions.Create(ctx, session, _testIdleTTL); err != nil {
+		t.Fatalf("Create() error = %v, want nil", err)
+	}
+
+	err = sessions.MarkCompleted(ctx, session.ID, "file-one", _testIdleTTL)
+	if err != nil {
+		t.Fatalf("MarkCompleted() error = %v, want nil", err)
+	}
+
+	fileID, err := sessions.Completion(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("Completion() error = %v, want nil", err)
+	}
+
+	if fileID != "file-one" {
+		t.Errorf("Completion() = %q, want %q", fileID, "file-one")
+	}
+
+	assertTTL(t, rdb, completedKey(session.ID), _testIdleTTL)
+
+	if err := sessions.Delete(ctx, session.ID); err != nil {
+		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+
+	fileID, err = sessions.Completion(ctx, session.ID)
+	if err != nil {
+		t.Fatalf("Completion() after Delete error = %v, want the marker kept", err)
+	}
+
+	if fileID != "file-one" {
+		t.Errorf("Completion() after Delete = %q, want %q", fileID, "file-one")
+	}
+}
+
+// An account may open only a few uploads per window, so a flood of starts
+// cannot reserve the whole quota in a moment. Another account has its own
+// window, and the count drops once the window passes.
+func TestAllowStartRefusesOverTheLimit(t *testing.T) {
+	t.Parallel()
+
+	mr := miniredis.RunT(t)
+
+	rdb, err := redis.New(mr.Addr())
+	if err != nil {
+		t.Fatalf("redis.New() error = %v, want nil", err)
+	}
+
+	t.Cleanup(rdb.Close)
+
+	sessions := New(rdb)
+
+	for i := range _testStartLimit {
+		if !allowStart(t, sessions, "user", _testStartLimit) {
+			t.Fatalf("AllowStart() refused start %d of %d", i+1, _testStartLimit)
+		}
+	}
+
+	if allowStart(t, sessions, "user", _testStartLimit) {
+		t.Error("AllowStart() admitted an upload over the limit")
+	}
+
+	if !allowStart(t, sessions, "other", _testStartLimit) {
+		t.Error("AllowStart() charged one account the window of another")
+	}
+
+	if !allowStart(t, sessions, "unlimited", 0) {
+		t.Error("AllowStart(limit=0) refused an unlimited account")
+	}
+
+	mr.FastForward(_testStartWindow + time.Second)
+
+	if !allowStart(t, sessions, "user", _testStartLimit) {
+		t.Error("AllowStart() kept the count after the window passed")
+	}
+}
+
+// allowStart asks the repository for one start and fails the test on a store
+// error.
+func allowStart(
+	t *testing.T,
+	sessions repo.UploadSessionRepo,
+	userID string,
+	limit int,
+) bool {
+	t.Helper()
+
+	allowed, err := sessions.AllowStart(context.Background(), userID, limit, _testStartWindow)
+	if err != nil {
+		t.Fatalf("AllowStart() error = %v, want nil", err)
+	}
+
+	return allowed
 }

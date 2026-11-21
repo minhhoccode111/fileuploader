@@ -259,6 +259,13 @@ func (f *fakeStorage) AbortMultipartUpload(_ context.Context, _, _, _ string) er
 	return nil
 }
 
+func (f *fakeStorage) ListIncompleteUploads(
+	_ context.Context,
+	_ string,
+) ([]multipart.IncompleteUpload, error) {
+	return nil, nil
+}
+
 func TestCreateStoresTheFolder(t *testing.T) {
 	t.Parallel()
 

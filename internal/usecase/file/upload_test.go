@@ -27,6 +27,7 @@ const (
 	_testSlowRate   = int64(100) * 1024
 	_testSlowPartSz = int64(9_216_000)
 	_testFiveMiB    = int64(5) << 20
+	_testLockWait   = 50 * time.Millisecond
 )
 
 // fakeUploadRepo keeps the sessions the use case stores and answers the
@@ -36,11 +37,14 @@ type fakeUploadRepo struct {
 	reserved     []entity.UploadSession
 	parts        map[string]map[int]string
 	expired      []entity.UploadSession
+	completed    map[string]string
 	createErr    error
 	getErr       error
 	listErr      error
 	lockErr      error
 	deleteErr    error
+	blockLock    bool
+	startBlocked bool
 	created      []entity.UploadSession
 	lastTTL      time.Duration
 	partExpiry   time.Time
@@ -129,14 +133,60 @@ func (f *fakeUploadRepo) Expired(_ context.Context, _ time.Time, _ int) ([]entit
 func (f *fakeUploadRepo) Delete(_ context.Context, uploadID string) error {
 	f.deleted = append(f.deleted, uploadID)
 
+	for i := range f.sessions {
+		if f.sessions[i].ID == uploadID {
+			f.sessions = append(f.sessions[:i], f.sessions[i+1:]...)
+
+			break
+		}
+	}
+
 	return f.deleteErr
 }
 
-func (f *fakeUploadRepo) LockQuota(_ context.Context, _ string) (func(), error) {
+func (f *fakeUploadRepo) MarkCompleted(
+	_ context.Context,
+	uploadID, fileID string,
+	_ time.Duration,
+) error {
+	if f.completed == nil {
+		f.completed = make(map[string]string)
+	}
+
+	f.completed[uploadID] = fileID
+
+	return nil
+}
+
+func (f *fakeUploadRepo) Completion(_ context.Context, uploadID string) (string, error) {
+	fileID, ok := f.completed[uploadID]
+	if !ok {
+		return "", entity.ErrUploadNotFound
+	}
+
+	return fileID, nil
+}
+
+func (f *fakeUploadRepo) AllowStart(
+	_ context.Context,
+	_ string,
+	_ int,
+	_ time.Duration,
+) (bool, error) {
+	return !f.startBlocked, nil
+}
+
+func (f *fakeUploadRepo) LockQuota(ctx context.Context, _ string) (func(), error) {
 	f.lockCalls++
 
 	if f.lockErr != nil {
 		return nil, f.lockErr
+	}
+
+	if f.blockLock {
+		<-ctx.Done()
+
+		return nil, ctx.Err()
 	}
 
 	if f.onLock != nil {
@@ -413,6 +463,68 @@ func TestStartUploadRejectsWhenReservedHeadroomIsGone(t *testing.T) {
 
 	if uploads.releases != 1 {
 		t.Errorf("quota releases = %d, want 1", uploads.releases)
+	}
+}
+
+// A start that cannot take the quota lock within its wait reports the busy
+// sentinel, so the handler answers 503 and the browser can retry instead of
+// hanging on the request.
+func TestStartUploadReportsQuotaBusyWhileTheLockIsHeld(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{blockLock: true}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 100}},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), _testLockWait)
+	defer cancel()
+
+	_, err := uc.StartUpload(ctx, "user", "folder", "big.iso", "text/plain", 10)
+	if !errors.Is(err, entity.ErrUploadQuotaBusy) {
+		t.Fatalf("StartUpload() error = %v, want %v", err, entity.ErrUploadQuotaBusy)
+	}
+
+	if len(uploads.created) != 0 {
+		t.Errorf("created sessions = %d, want 0 while the quota lock is busy", len(uploads.created))
+	}
+
+	if storage.createCalls != 0 {
+		t.Errorf("multipart creates = %d, want 0 while the quota lock is busy", storage.createCalls)
+	}
+}
+
+// A start over the per-account limit is refused before anything is reserved or
+// opened, so a flood of starts costs one Redis count each.
+func TestStartUploadRejectsWhenTheStartLimitIsReached(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{startBlocked: true}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: 100}},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	_, err := uc.StartUpload(context.Background(), "user", "folder", "big.iso", "text/plain", 10)
+	if !errors.Is(err, entity.ErrUploadRateLimited) {
+		t.Fatalf("StartUpload() error = %v, want %v", err, entity.ErrUploadRateLimited)
+	}
+
+	if len(uploads.created) != 0 {
+		t.Errorf("created sessions = %d, want 0 over the limit", len(uploads.created))
+	}
+
+	if storage.createCalls != 0 {
+		t.Errorf("multipart creates = %d, want 0 over the limit", storage.createCalls)
 	}
 }
 
@@ -995,6 +1107,98 @@ func TestCompleteUploadAssemblesPartsAndStoresRow(t *testing.T) {
 	checkCompletedRow(t, files, uploads, users, &session)
 }
 
+// A browser that retries a completion whose response was lost gets the file
+// back instead of a 404: the completion marker outlives the session, and the
+// row is already there.
+func TestCompleteUploadRetryReturnsTheStoredFile(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: _testGiB}}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(users, files, storage, uploads)
+
+	first, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("CompleteUpload() error = %v, want nil", err)
+	}
+
+	// The row is in the database now, so a retry can read it back.
+	files.file = first
+
+	second, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("CompleteUpload() retry error = %v, want nil", err)
+	}
+
+	if second.ID != first.ID || second.StorageKey != first.StorageKey {
+		t.Errorf(
+			"retry returned %q/%q, want %q/%q",
+			second.ID,
+			second.StorageKey,
+			first.ID,
+			first.StorageKey,
+		)
+	}
+
+	if storage.completeCalls != 1 {
+		t.Errorf("completion calls = %d, want 1: the retry must not join again", storage.completeCalls)
+	}
+
+	if users.user.StorageUsedBytes != session.Size {
+		t.Errorf(
+			"storage used = %d, want %d counted once",
+			users.user.StorageUsedBytes,
+			session.Size,
+		)
+	}
+
+	if uploads.lockCalls != 1 {
+		t.Errorf("quota lock calls = %d, want 1: the retry must not take the lock", uploads.lockCalls)
+	}
+}
+
+// A completion marker does not resurrect a file that was deleted after the
+// upload finished: the retry answers with the missing-upload sentinel.
+func TestCompleteUploadRetryFailsWhenTheFileIsGone(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: _testGiB}}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+	uc := completeUseCase(users, files, storage, uploads)
+
+	_, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("CompleteUpload() error = %v, want nil", err)
+	}
+
+	files.getErr = entity.ErrFileNotFound
+
+	_, err = uc.CompleteUpload(context.Background(), "user", "upload")
+	if !errors.Is(err, entity.ErrUploadNotFound) {
+		t.Fatalf("CompleteUpload() retry error = %v, want %v", err, entity.ErrUploadNotFound)
+	}
+
+	if storage.completeCalls != 1 {
+		t.Errorf("completion calls = %d, want 1: the retry must not join again", storage.completeCalls)
+	}
+}
+
 func TestCompleteUploadRechecksTheSessionAfterWinningTheQuotaLock(t *testing.T) {
 	t.Parallel()
 
@@ -1030,6 +1234,58 @@ func TestCompleteUploadRechecksTheSessionAfterWinningTheQuotaLock(t *testing.T) 
 
 	if storage.removeKey != "" {
 		t.Errorf("removed object %q after losing the race, want no removal", storage.removeKey)
+	}
+}
+
+// A completion that loses the race to a concurrent completion answers with the
+// file the winner stored, because the marker appears while it waits for the
+// lock.
+func TestCompleteUploadReturnsTheWinnersFileAfterLosingTheRace(t *testing.T) {
+	t.Parallel()
+
+	session := completeSession()
+	users := &fakeUserRepoForFile{user: entity.User{StorageQuotaBytes: _testGiB}}
+	files := &fakeFileRepo{}
+	storage := &fakeUploadStorage{}
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{session},
+		parts: map[string]map[int]string{
+			"upload": {1: "one", 2: "two"},
+		},
+	}
+
+	winner := entity.File{
+		ID:         session.FileID,
+		UserID:     session.UserID,
+		FolderID:   session.FolderID,
+		Name:       session.Name,
+		StorageKey: session.StorageKey,
+		Size:       session.Size,
+	}
+
+	uploads.onLock = func() {
+		uploads.sessions = nil
+		uploads.completed = map[string]string{session.ID: winner.ID}
+		files.file = winner
+	}
+
+	uc := completeUseCase(users, files, storage, uploads)
+
+	got, err := uc.CompleteUpload(context.Background(), "user", "upload")
+	if err != nil {
+		t.Fatalf("CompleteUpload() error = %v, want the winner's file", err)
+	}
+
+	if got.ID != winner.ID || got.StorageKey != winner.StorageKey {
+		t.Errorf("CompleteUpload() = %q/%q, want %q/%q", got.ID, got.StorageKey, winner.ID, winner.StorageKey)
+	}
+
+	if storage.completeCalls != 0 {
+		t.Errorf("completion calls = %d, want 0 for the loser", storage.completeCalls)
+	}
+
+	if users.user.StorageUsedBytes != 0 {
+		t.Errorf("storage used = %d, want 0 counted by the loser", users.user.StorageUsedBytes)
 	}
 }
 
@@ -1694,5 +1950,178 @@ func TestSweepUploadsWithoutExpiredSessions(t *testing.T) {
 			storage.abortCalls,
 			len(uploads.deleted),
 		)
+	}
+}
+
+// A sweep that cannot take the quota lock moves on and keeps the session for
+// the next pass, so one busy account cannot stall every other account.
+func TestSweepUploadsKeepsSessionsWhenTheQuotaLockIsBusy(t *testing.T) {
+	t.Parallel()
+
+	uploads := &fakeUploadRepo{
+		expired:   []entity.UploadSession{expiredSession("upload", "user")},
+		blockLock: true,
+	}
+	storage := &fakeUploadStorage{}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), _testLockWait)
+	defer cancel()
+
+	count, err := uc.SweepUploads(ctx)
+	if !errors.Is(err, entity.ErrUploadQuotaBusy) {
+		t.Fatalf("SweepUploads() error = %v, want %v", err, entity.ErrUploadQuotaBusy)
+	}
+
+	if count != 0 {
+		t.Errorf("swept sessions = %d, want 0 while the lock is busy", count)
+	}
+
+	if len(uploads.deleted) != 0 {
+		t.Errorf("deleted sessions = %v, want the session kept for the next pass", uploads.deleted)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0 while the lock is busy", storage.abortCalls)
+	}
+
+	if uploads.expiredCalls != 1 {
+		t.Errorf("expired queries = %d, want 1 so the sweep stops at the busy account", uploads.expiredCalls)
+	}
+}
+
+// The session sweep only knows the uploads the app started. A multipart upload
+// whose session is gone still holds its parts, so the bucket pass aborts the
+// ones past the stale age. A slow upload with a live session and a fresh upload
+// are left alone.
+func TestSweepUploadsAbortsStaleMultipartUploads(t *testing.T) {
+	t.Parallel()
+
+	const (
+		staleID = "stale-upload"
+		liveID  = "live-upload"
+	)
+
+	now := time.Now()
+
+	storage := &fakeUploadStorage{}
+	storage.incomplete = []multipart.IncompleteUpload{
+		{
+			Key:       "users/user/files/stale",
+			UploadID:  staleID,
+			Initiated: now.Add(-_staleUploadAge - time.Minute),
+		},
+		{
+			Key:       "users/user/files/live",
+			UploadID:  liveID,
+			Initiated: now.Add(-_staleUploadAge - time.Minute),
+		},
+		{
+			Key:       "users/user/files/fresh",
+			UploadID:  "fresh-upload",
+			Initiated: now.Add(-time.Minute),
+		},
+	}
+
+	uploads := &fakeUploadRepo{
+		sessions: []entity.UploadSession{{ID: liveID, UserID: "user"}},
+	}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	count, err := uc.SweepUploads(context.Background())
+	if err != nil {
+		t.Fatalf("SweepUploads() error = %v, want nil", err)
+	}
+
+	if count != 1 {
+		t.Errorf("swept uploads = %d, want the one stale multipart", count)
+	}
+
+	if storage.abortCalls != 1 {
+		t.Fatalf("abort calls = %d, want 1", storage.abortCalls)
+	}
+
+	if storage.abortID != staleID {
+		t.Errorf("aborted upload = %q, want %q", storage.abortID, staleID)
+	}
+
+	if storage.abortKey != "users/user/files/stale" {
+		t.Errorf("aborted key = %q, want the stale key", storage.abortKey)
+	}
+
+	if storage.incompleteCalls != 1 {
+		t.Errorf("listing calls = %d, want 1", storage.incompleteCalls)
+	}
+}
+
+// A bucket listing that fails is reported and leaves the multiparts in place:
+// the next pass retries instead of guessing which uploads are dead.
+func TestSweepUploadsReportsAListingFailure(t *testing.T) {
+	t.Parallel()
+
+	storage := &fakeUploadStorage{}
+	storage.incompleteErr = errUploadStore
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		&fakeUploadRepo{},
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	count, err := uc.SweepUploads(context.Background())
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("SweepUploads() error = %v, want %v", err, errUploadStore)
+	}
+
+	if count != 0 {
+		t.Errorf("swept uploads = %d, want 0", count)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0", storage.abortCalls)
+	}
+}
+
+// When the session store cannot say whether an old upload is still active, the
+// sweep keeps the multipart: aborting a live upload is worse than waiting.
+func TestSweepUploadsKeepsAStaleUploadWhoseSessionCannotBeRead(t *testing.T) {
+	t.Parallel()
+
+	storage := &fakeUploadStorage{}
+	storage.incomplete = []multipart.IncompleteUpload{{
+		Key:       "users/user/files/stale",
+		UploadID:  "stale-upload",
+		Initiated: time.Now().Add(-_staleUploadAge - time.Minute),
+	}}
+
+	uploads := &fakeUploadRepo{getErr: errUploadStore}
+	uc := newUploadUseCase(
+		&fakeUserRepoForFile{},
+		storage,
+		uploads,
+		&fakePacer{},
+		usecase.UploadSettings{MaxBytes: _testMaxBytes, PartBytes: _testPartBytes},
+	)
+
+	_, err := uc.SweepUploads(context.Background())
+	if !errors.Is(err, errUploadStore) {
+		t.Fatalf("SweepUploads() error = %v, want %v", err, errUploadStore)
+	}
+
+	if storage.abortCalls != 0 {
+		t.Errorf("abort calls = %d, want 0 when the session cannot be read", storage.abortCalls)
 	}
 }

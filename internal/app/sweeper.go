@@ -51,5 +51,5 @@ func sweepUploads(ctx context.Context, files uploadSweeper, l logger.Interface) 
 		return
 	}
 
-	l.Info("app - sweepUploads: released %d upload sessions", count)
+	l.Info("app - sweepUploads: released %d uploads", count)
 }

@@ -185,8 +185,11 @@ calling it buffers the whole file and delays every header until the last byte.
 
 A background sweeper (`internal/app/sweeper.go`) runs one sweep at startup and then every five
 minutes: it aborts multipart uploads whose session expired and never finished, which is the backstop
-for a browser that never sends the abort beacon. There is no single-request upload path — the
-`/htmx/files` route and `usecase.File.Upload` are gone.
+for a browser that never sends the abort beacon. It also asks the bucket for multipart uploads older
+than 24 hours that no session claims and aborts them, so an upload whose Redis session was lost does
+not hold its parts forever. MinIO rejects the S3 lifecycle action for incomplete multipart uploads,
+so the app enforces the wait itself. There is no single-request upload path — the `/htmx/files` route
+and `usecase.File.Upload` are gone.
 
 ## Conventions that will bite you
 

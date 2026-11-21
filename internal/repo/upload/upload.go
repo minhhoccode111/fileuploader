@@ -19,13 +19,16 @@ import (
 
 // Key prefixes. The first two namespace a session and the parts it has
 // received, the third the index of the sessions of one account, the fourth the
-// sorted set that says which session is due for a sweep, and the last the
-// per-account lock a start takes while it measures the quota.
+// sorted set that says which session is due for a sweep, the fifth the marker
+// of a finished upload, the sixth the per-account start counter, and the last
+// the per-account lock a start takes while it measures the quota.
 const (
 	_uploadPrefix    = "upload:"
 	_partsPrefix     = "upload-parts:"
 	_userPrefix      = "user-uploads:"
 	_expiryKey       = "upload-expiry"
+	_completedPrefix = "upload-completed:"
+	_startRatePrefix = "upload-start-rate:"
 	_quotaLockPrefix = "upload-quota-lock:"
 )
 
@@ -64,6 +67,17 @@ if redis.call("get", KEYS[1]) == ARGV[1] then
 	return redis.call("pexpire", KEYS[1], ARGV[2])
 end
 return 0
+`
+
+// _startRateScript counts one upload start of an account and opens the window
+// on the first count. The count and the expiry are one step, so two starts
+// cannot both open a window for the same key.
+const _startRateScript = `
+local count = redis.call("incr", KEYS[1])
+if count == 1 then
+	redis.call("pexpire", KEYS[1], ARGV[1])
+end
+return count
 `
 
 // Repo -.
@@ -320,6 +334,64 @@ func (r *Repo) Delete(ctx context.Context, uploadID string) error {
 	return nil
 }
 
+// MarkCompleted records which file a finished upload produced. The marker
+// outlives the session, so a completion retried after its response was lost
+// can answer with the stored file instead of reporting the session gone.
+func (r *Repo) MarkCompleted(
+	ctx context.Context,
+	uploadID, fileID string,
+	ttl time.Duration,
+) error {
+	err := r.rdb.Client.Set(ctx, completedKey(uploadID), fileID, ttl).Err()
+	if err != nil {
+		return fmt.Errorf("upload - MarkCompleted - r.rdb.Client.Set: %w", err)
+	}
+
+	return nil
+}
+
+// Completion returns the file a finished upload produced. A missing marker maps
+// to ErrUploadNotFound, which is the same answer a missing session gives.
+func (r *Repo) Completion(ctx context.Context, uploadID string) (string, error) {
+	fileID, err := r.rdb.Client.Get(ctx, completedKey(uploadID)).Result()
+	if err != nil {
+		if errors.Is(err, goredis.Nil) {
+			return "", entity.ErrUploadNotFound
+		}
+
+		return "", fmt.Errorf("upload - Completion - r.rdb.Client.Get: %w", err)
+	}
+
+	return fileID, nil
+}
+
+// AllowStart counts one upload start of an account and refuses the ones over
+// limit within window. The counter starts with the first start of the window
+// and expires on its own, so an idle account leaves nothing behind. A limit or
+// window of zero disables the check.
+func (r *Repo) AllowStart(
+	ctx context.Context,
+	userID string,
+	limit int,
+	window time.Duration,
+) (bool, error) {
+	if limit <= 0 || window <= 0 {
+		return true, nil
+	}
+
+	count, err := goredis.NewScript(_startRateScript).Run(
+		ctx,
+		r.rdb.Client,
+		[]string{startRateKey(userID)},
+		window.Milliseconds(),
+	).Int64()
+	if err != nil {
+		return false, fmt.Errorf("upload - AllowStart - script run: %w", err)
+	}
+
+	return count <= int64(limit), nil
+}
+
 // LockQuota takes the per-account lock a start holds while it measures the
 // quota, so two starts cannot both see the same free space. The returned
 // release gives the lock back; it is safe to call more than once.
@@ -480,6 +552,16 @@ func partsKey(uploadID string) string {
 // userKey builds the Redis key for the index of the sessions of an account.
 func userKey(userID string) string {
 	return _userPrefix + userID
+}
+
+// completedKey builds the Redis key for the marker of a finished upload.
+func completedKey(uploadID string) string {
+	return _completedPrefix + uploadID
+}
+
+// startRateKey builds the Redis key for the start counter of an account.
+func startRateKey(userID string) string {
+	return _startRatePrefix + userID
 }
 
 // quotaLockKey builds the Redis key for the quota lock of an account.

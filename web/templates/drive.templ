@@ -1,6 +1,10 @@
 package templates
 
-import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+import (
+	"strconv"
+
+	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+)
 
 // filePickerState backs the upload drawer: choosing a file fills the name
 // field with the file name and shows the size and the extension before the
@@ -462,7 +466,8 @@ templ FileDrawerContent(file response.FileInfo) {
 			class="btn btn-primary"
 			href={ templ.URL("/files/" + file.ID + "/download") }
 			data-download-name={ file.Name }
-			onclick="downloadWithProgress(this.href, this.dataset.downloadName); return false;"
+			data-download-size={ strconv.FormatInt(file.Bytes, 10) }
+			onclick="downloadWithProgress(this.href, this.dataset.downloadName, this.dataset.downloadSize); return false;"
 		>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4">
 				<path d="M12 3v12"></path>

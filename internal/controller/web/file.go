@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/a-h/templ"
@@ -260,6 +261,18 @@ func (c *Controller) fileDelete(ctx *fiber.Ctx) error {
 	return c.renderEntries(ctx, userID, file.FolderID)
 }
 
+// streamLength returns the length Fiber takes for a streamed body. It reports
+// false when the size is not a positive length or does not fit an int on this
+// build, so the caller streams without a length instead of sending a truncated
+// or negative Content-Length.
+func streamLength(size int64) (int, bool) {
+	if size <= 0 || size > int64(math.MaxInt) {
+		return 0, false
+	}
+
+	return int(size), true
+}
+
 // fileDownload streams the bytes of one file through the app, so the per-user
 // download speed limit applies. The browser saves it under the file's name.
 func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
@@ -282,13 +295,13 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 		return middleware.Redirect(ctx, _homePath)
 	}
 
-	ctx.Set(fiber.HeaderContentType, file.ContentType)
-	ctx.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", file.Name))
+	setDownloadHeaders(ctx, file.ContentType, file.Name)
 
 	// The size keeps the response determinate, so the browser can show real
-	// download progress while the body still streams.
-	if file.Size > 0 {
-		return ctx.SendStream(reader, int(file.Size))
+	// download progress while the body still streams. A size an int cannot
+	// carry falls back to a chunked body rather than a truncated header.
+	if length, ok := streamLength(file.Size); ok {
+		return ctx.SendStream(reader, length)
 	}
 
 	// The server closes the stream after it writes the response. Closing it
