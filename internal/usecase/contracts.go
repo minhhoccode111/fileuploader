@@ -34,11 +34,20 @@ type (
 	}
 
 	// Folder is the drive's folder logic: listing one folder with its path,
-	// creating a folder inside it, renaming it, and deleting a folder with
-	// everything it holds.
+	// searching the drive by name, creating a folder inside it, renaming it,
+	// and deleting a folder with everything it holds.
 	Folder interface {
 		Get(ctx context.Context, userID, folderID string) (entity.Folder, error)
-		List(ctx context.Context, userID, folderID string) (entity.FolderView, error)
+		List(
+			ctx context.Context,
+			userID, folderID, search string,
+			after *entity.EntryCursor,
+		) (entity.FolderView, error)
+		Search(
+			ctx context.Context,
+			userID, search, from string,
+			after *entity.EntryCursor,
+		) (entity.SearchView, error)
 		Create(ctx context.Context, userID, parentID, name string) (entity.Folder, error)
 		Rename(ctx context.Context, userID, folderID, name string) (entity.Folder, error)
 		Move(ctx context.Context, userID, folderID, destinationID string) (entity.Folder, error)

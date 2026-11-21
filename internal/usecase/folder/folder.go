@@ -26,6 +26,17 @@ const (
 	// _maxDuplicateAttempts is how many numbered names a duplicate tries
 	// before falling back to a timestamp.
 	_maxDuplicateAttempts = 99
+
+	// _pageSize is how many entries one listing page holds. There is no
+	// client-supplied size, so a page is always the same weight. The merge
+	// asks each repository for one row more than the page holds, so it never
+	// has to guess whether a next page exists.
+	_pageSize = 100
+
+	// _globalSearchMinRunes is the shortest term a whole-drive search runs
+	// with. A shorter substring cannot use the trigram index, so the search
+	// page shows a prompt instead of scanning the drive.
+	_globalSearchMinRunes = 3
 )
 
 // UseCase -.
@@ -103,9 +114,17 @@ func (uc *UseCase) Get(ctx context.Context, userID, folderID string) (entity.Fol
 }
 
 // List returns one folder of the account with the path that leads to it and
-// the folders and files directly inside it. An empty identifier means the root
-// folder, which is what the home page asks for.
-func (uc *UseCase) List(ctx context.Context, userID, folderID string) (entity.FolderView, error) {
+// the first page of the folders and files directly inside it. An empty
+// identifier means the root folder, which is what the home page asks for. An
+// empty search lists every entry; a term narrows the page to the names that
+// hold it.
+func (uc *UseCase) List(
+	ctx context.Context,
+	userID, folderID, rawSearch string,
+	after *entity.EntryCursor,
+) (entity.FolderView, error) {
+	search := entity.CleanSearch(rawSearch)
+
 	folder, err := uc.read(ctx, userID, folderID)
 	if err != nil {
 		return entity.FolderView{}, err
@@ -116,14 +135,9 @@ func (uc *UseCase) List(ctx context.Context, userID, folderID string) (entity.Fo
 		return entity.FolderView{}, fmt.Errorf("FolderUseCase - List - uc.folders.Breadcrumb: %w", err)
 	}
 
-	folders, err := uc.folders.List(ctx, userID, folder.ID)
+	folders, files, next, err := uc.browse(ctx, userID, folder.ID, search, after, _pageSize)
 	if err != nil {
-		return entity.FolderView{}, fmt.Errorf("FolderUseCase - List - uc.folders.List: %w", err)
-	}
-
-	files, err := uc.files.List(ctx, userID, folder.ID)
-	if err != nil {
-		return entity.FolderView{}, fmt.Errorf("FolderUseCase - List - uc.files.List: %w", err)
+		return entity.FolderView{}, fmt.Errorf("FolderUseCase - List - uc.browse: %w", err)
 	}
 
 	return entity.FolderView{
@@ -131,7 +145,191 @@ func (uc *UseCase) List(ctx context.Context, userID, folderID string) (entity.Fo
 		Breadcrumb: breadcrumb,
 		Folders:    folders,
 		Files:      files,
+		Search:     search,
+		Next:       next,
 	}, nil
+}
+
+// Search returns one page of the folders and files of the whole own drive
+// whose name holds the term, each with the path that leads to it. A term
+// shorter than three runes does not run: it would match most of the drive and
+// cannot use the trigram index, so the view says so and the page shows a
+// prompt.
+func (uc *UseCase) Search(
+	ctx context.Context,
+	userID, rawSearch, from string,
+	after *entity.EntryCursor,
+) (entity.SearchView, error) {
+	search := entity.CleanSearch(rawSearch)
+
+	view := entity.SearchView{Search: search, From: from}
+	if utf8.RuneCountInString(search) < _globalSearchMinRunes {
+		view.TooShort = true
+
+		return view, nil
+	}
+
+	folders, files, next, err := uc.browse(ctx, userID, "", search, after, _pageSize)
+	if err != nil {
+		return entity.SearchView{}, fmt.Errorf("FolderUseCase - Search - uc.browse: %w", err)
+	}
+
+	err = uc.fillPaths(ctx, userID, folders, files)
+	if err != nil {
+		return entity.SearchView{}, err
+	}
+
+	view.Folders = folders
+	view.Files = files
+	view.Next = next
+
+	return view, nil
+}
+
+// browse returns one page of the entries directly inside a folder, folders
+// first and then files, each in name order. A cursor resumes after the last row
+// of the previous page. Each repository page asks for one row more than the
+// page holds, so the merge learns whether a next page exists without ever
+// loading a whole folder.
+func (uc *UseCase) browse(
+	ctx context.Context,
+	userID, folderID, search string,
+	after *entity.EntryCursor,
+	limit int,
+) ([]entity.FolderItem, []entity.FileItem, *entity.EntryCursor, error) {
+	folders := make([]entity.FolderItem, 0, limit)
+
+	if !folderPassDone(after) {
+		page, err := uc.folders.ListPage(ctx, userID, folderID, search, folderStart(after), limit+1)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("FolderUseCase - browse - uc.folders.ListPage: %w", err)
+		}
+
+		if len(page) > limit {
+			last := page[limit-1]
+
+			return page[:limit], nil, &entity.EntryCursor{
+				Kind: entity.EntryKindFolder,
+				Name: last.Name,
+				ID:   last.ID,
+			}, nil
+		}
+
+		folders = page
+	}
+
+	room := limit - len(folders)
+
+	page, err := uc.files.ListPage(ctx, userID, folderID, search, fileStart(after), room+1)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("FolderUseCase - browse - uc.files.ListPage: %w", err)
+	}
+
+	if len(page) > room {
+		if room == 0 {
+			last := folders[len(folders)-1]
+
+			return folders, nil, &entity.EntryCursor{
+				Kind:        entity.EntryKindFolder,
+				Name:        last.Name,
+				ID:          last.ID,
+				FoldersDone: true,
+			}, nil
+		}
+
+		shown := page[:room]
+		last := shown[len(shown)-1]
+
+		return folders, shown, &entity.EntryCursor{
+			Kind:        entity.EntryKindFile,
+			Name:        last.Name,
+			ID:          last.ID,
+			FoldersDone: true,
+		}, nil
+	}
+
+	return folders, page, nil, nil
+}
+
+// fillPaths copies the chain from the root to each result's folder onto the
+// rows, resolving them in one query after the page is known. A folder result
+// carries its own chain; a file result carries the chain of the folder that
+// holds it.
+func (uc *UseCase) fillPaths(
+	ctx context.Context,
+	userID string,
+	folders []entity.FolderItem,
+	files []entity.FileItem,
+) error {
+	ids := make([]string, 0, len(folders)+len(files))
+	seen := make(map[string]struct{}, len(folders)+len(files))
+
+	for i := range folders {
+		if _, ok := seen[folders[i].ID]; !ok {
+			seen[folders[i].ID] = struct{}{}
+
+			ids = append(ids, folders[i].ID)
+		}
+	}
+
+	for i := range files {
+		if _, ok := seen[files[i].FolderID]; ok || files[i].FolderID == "" {
+			continue
+		}
+
+		seen[files[i].FolderID] = struct{}{}
+
+		ids = append(ids, files[i].FolderID)
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	paths, err := uc.folders.Paths(ctx, userID, ids)
+	if err != nil {
+		return fmt.Errorf("FolderUseCase - fillPaths - uc.folders.Paths: %w", err)
+	}
+
+	for i := range folders {
+		folders[i].Path = paths[folders[i].ID]
+	}
+
+	for i := range files {
+		files[i].Path = paths[files[i].FolderID]
+	}
+
+	return nil
+}
+
+// folderPassDone reports whether the cursor already passed every folder row, so
+// the next page only asks the file repository.
+func folderPassDone(after *entity.EntryCursor) bool {
+	if after == nil {
+		return false
+	}
+
+	return after.Kind == entity.EntryKindFile || after.FoldersDone
+}
+
+// folderStart returns the cursor the folder page resumes after, or nil when the
+// page starts at the first folder.
+func folderStart(after *entity.EntryCursor) *entity.EntryCursor {
+	if after != nil && after.Kind == entity.EntryKindFolder {
+		return after
+	}
+
+	return nil
+}
+
+// fileStart returns the cursor the file page resumes after, or nil when the
+// folder pass just ended and the files start at the first row.
+func fileStart(after *entity.EntryCursor) *entity.EntryCursor {
+	if after != nil && after.Kind == entity.EntryKindFile {
+		return after
+	}
+
+	return nil
 }
 
 // ListAll returns every folder of the account. Roots come first, then children

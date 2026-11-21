@@ -48,6 +48,15 @@ func (f *fakeFileRepo) List(_ context.Context, _, _ string) ([]entity.FileItem, 
 	return nil, nil
 }
 
+func (f *fakeFileRepo) ListPage(
+	_ context.Context,
+	_, _, _ string,
+	_ *entity.EntryCursor,
+	_ int,
+) ([]entity.FileItem, error) {
+	return nil, nil
+}
+
 func (f *fakeFileRepo) Rename(_ context.Context, file *entity.File) error {
 	if f.renameErr != nil {
 		return f.renameErr
@@ -109,7 +118,20 @@ func (f *fakeFolderRepo) LockSubtree(_ context.Context, _, _ string) error {
 	return f.getErr
 }
 
-func (f *fakeFolderRepo) List(_ context.Context, _, _ string) ([]entity.FolderItem, error) {
+func (f *fakeFolderRepo) ListPage(
+	_ context.Context,
+	_, _, _ string,
+	_ *entity.EntryCursor,
+	_ int,
+) ([]entity.FolderItem, error) {
+	return nil, nil
+}
+
+func (f *fakeFolderRepo) Paths(
+	_ context.Context,
+	_ string,
+	_ []string,
+) (map[string][]entity.FolderRef, error) {
 	return nil, nil
 }
 

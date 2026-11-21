@@ -57,9 +57,15 @@ type (
 		Lock(ctx context.Context, userID, folderID string) (entity.Folder, error)
 		LockSubtree(ctx context.Context, userID, folderID string) error
 		GetRoot(ctx context.Context, userID string) (entity.Folder, error)
-		List(ctx context.Context, userID, folderID string) ([]entity.FolderItem, error)
+		ListPage(
+			ctx context.Context,
+			userID, parentID, search string,
+			after *entity.EntryCursor,
+			limit int,
+		) ([]entity.FolderItem, error)
 		ListAll(ctx context.Context, userID string) ([]entity.Folder, error)
 		Breadcrumb(ctx context.Context, userID, folderID string) ([]entity.FolderRef, error)
+		Paths(ctx context.Context, userID string, folderIDs []string) (map[string][]entity.FolderRef, error)
 		NameTaken(ctx context.Context, userID, parentID, name string) (bool, error)
 		Rename(ctx context.Context, folder *entity.Folder) error
 		Move(ctx context.Context, userID, folderID, parentID string) error
@@ -71,6 +77,12 @@ type (
 		Store(ctx context.Context, file *entity.File) error
 		Get(ctx context.Context, userID, fileID string) (entity.File, error)
 		List(ctx context.Context, userID, folderID string) ([]entity.FileItem, error)
+		ListPage(
+			ctx context.Context,
+			userID, folderID, search string,
+			after *entity.EntryCursor,
+			limit int,
+		) ([]entity.FileItem, error)
 		Rename(ctx context.Context, file *entity.File) error
 		Move(ctx context.Context, userID, fileID, folderID string) error
 		Delete(ctx context.Context, userID, fileID string) (entity.File, error)

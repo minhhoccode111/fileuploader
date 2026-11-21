@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"reflect"
 	"testing"
 	"time"
 
@@ -19,7 +21,7 @@ import (
 var errStorage = errors.New("storage failed")
 
 // fakeFolderRepo answers from the folders the test set up and records what the
-// use case asked it to store or delete.
+// use case asked it to store, delete or page through.
 type fakeFolderRepo struct {
 	byID       map[string]entity.Folder
 	root       entity.Folder
@@ -38,6 +40,21 @@ type fakeFolderRepo struct {
 	stored     *entity.Folder
 	renamed    *entity.Folder
 	deletedID  string
+
+	folderPage       func(parentID, search string, after *entity.EntryCursor, limit int) ([]entity.FolderItem, error)
+	pageErr          error
+	lastFolderUserID string
+	lastParentID     string
+	lastFolderSearch string
+	lastFolderAfter  *entity.EntryCursor
+	lastFolderLimit  int
+	folderCalls      int
+
+	paths       map[string][]entity.FolderRef
+	pathsErr    error
+	lastPathsID string
+	pathIDs     []string
+	pathCalls   int
 }
 
 func (f *fakeFolderRepo) Store(_ context.Context, folder *entity.Folder) error {
@@ -81,8 +98,48 @@ func (f *fakeFolderRepo) LockSubtree(ctx context.Context, userID, folderID strin
 	return err
 }
 
-func (f *fakeFolderRepo) List(_ context.Context, _, _ string) ([]entity.FolderItem, error) {
+func (f *fakeFolderRepo) ListPage(
+	_ context.Context,
+	userID, parentID, search string,
+	after *entity.EntryCursor,
+	limit int,
+) ([]entity.FolderItem, error) {
+	f.folderCalls++
+	f.lastFolderUserID = userID
+	f.lastParentID = parentID
+	f.lastFolderSearch = search
+	f.lastFolderAfter = after
+	f.lastFolderLimit = limit
+
+	if f.pageErr != nil {
+		return nil, f.pageErr
+	}
+
+	if f.folderPage != nil {
+		return f.folderPage(parentID, search, after, limit)
+	}
+
 	return f.items, nil
+}
+
+func (f *fakeFolderRepo) Paths(
+	_ context.Context,
+	userID string,
+	folderIDs []string,
+) (map[string][]entity.FolderRef, error) {
+	f.pathCalls++
+	f.lastPathsID = userID
+	f.pathIDs = append(f.pathIDs, folderIDs...)
+
+	if f.pathsErr != nil {
+		return nil, f.pathsErr
+	}
+
+	if f.paths != nil {
+		return f.paths, nil
+	}
+
+	return map[string][]entity.FolderRef{}, nil
 }
 
 func (f *fakeFolderRepo) Breadcrumb(_ context.Context, _, _ string) ([]entity.FolderRef, error) {
@@ -141,6 +198,15 @@ type fakeFileRepo struct {
 	filesErr  error
 	file      entity.File
 	fileErr   error
+
+	filePage       func(folderID, search string, after *entity.EntryCursor, limit int) ([]entity.FileItem, error)
+	pageErr        error
+	lastFileUserID string
+	lastFileFolder string
+	lastFileSearch string
+	lastFileAfter  *entity.EntryCursor
+	lastFileLimit  int
+	fileCalls      int
 }
 
 func (f *fakeFileRepo) Store(_ context.Context, _ *entity.File) error {
@@ -156,6 +222,30 @@ func (f *fakeFileRepo) Get(_ context.Context, _, _ string) (entity.File, error) 
 }
 
 func (f *fakeFileRepo) List(_ context.Context, _, _ string) ([]entity.FileItem, error) {
+	return f.items, nil
+}
+
+func (f *fakeFileRepo) ListPage(
+	_ context.Context,
+	userID, folderID, search string,
+	after *entity.EntryCursor,
+	limit int,
+) ([]entity.FileItem, error) {
+	f.fileCalls++
+	f.lastFileUserID = userID
+	f.lastFileFolder = folderID
+	f.lastFileSearch = search
+	f.lastFileAfter = after
+	f.lastFileLimit = limit
+
+	if f.pageErr != nil {
+		return nil, f.pageErr
+	}
+
+	if f.filePage != nil {
+		return f.filePage(folderID, search, after, limit)
+	}
+
 	return f.items, nil
 }
 
@@ -511,7 +601,7 @@ func TestListReadsTheRootWhenNoFolderCameIn(t *testing.T) {
 	files := &fakeFileRepo{items: []entity.FileItem{{ID: "file", Name: "note.txt"}}}
 	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
 
-	view, err := uc.List(context.Background(), "user", "")
+	view, err := uc.List(context.Background(), "user", "", "", nil)
 	if err != nil {
 		t.Fatalf("List() error = %v, want nil", err)
 	}
@@ -522,6 +612,419 @@ func TestListReadsTheRootWhenNoFolderCameIn(t *testing.T) {
 
 	if len(view.Folders) != 1 || len(view.Files) != 1 {
 		t.Errorf("List() returned %d folders and %d files, want 1 and 1", len(view.Folders), len(view.Files))
+	}
+}
+
+// pageFolders builds the folder page a fake returns: name-ordered items, as
+// many as the repository was asked for.
+func pageFolders(limit int) []entity.FolderItem {
+	items := make([]entity.FolderItem, 0, limit)
+
+	for i := range limit {
+		items = append(items, entity.FolderItem{
+			ID:   fmt.Sprintf("folder-%03d", i),
+			Name: fmt.Sprintf("folder %03d", i),
+		})
+	}
+
+	return items
+}
+
+// pageFiles builds the file page a fake returns.
+func pageFiles(limit int) []entity.FileItem {
+	items := make([]entity.FileItem, 0, limit)
+
+	for i := range limit {
+		items = append(items, entity.FileItem{
+			ID:       fmt.Sprintf("file-%03d", i),
+			FolderID: "folder",
+			Name:     fmt.Sprintf("file %03d", i),
+		})
+	}
+
+	return items
+}
+
+func TestListMergesFoldersBeforeFiles(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+		refs: []entity.FolderRef{{ID: "folder", Name: "Docs"}},
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+			return []entity.FolderItem{
+				{ID: "folder-b", Name: "Beta"},
+				{ID: "folder-a", Name: "Alpha"},
+			}, nil
+		},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+		return []entity.FileItem{
+			{ID: "file-b", Name: "b.txt"},
+			{ID: "file-a", Name: "a.txt"},
+		}, nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "note", nil)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if len(view.Folders) != 2 || view.Folders[0].Name != "Beta" || view.Folders[1].Name != "Alpha" {
+		t.Errorf("List() folders = %+v, want Beta then Alpha", view.Folders)
+	}
+
+	if len(view.Files) != 2 || view.Files[0].Name != "b.txt" || view.Files[1].Name != "a.txt" {
+		t.Errorf("List() files = %+v, want b.txt then a.txt", view.Files)
+	}
+
+	if view.Search != "note" {
+		t.Errorf("List() search = %q, want %q", view.Search, "note")
+	}
+
+	if view.Next != nil {
+		t.Errorf("List() next = %+v, want nil", view.Next)
+	}
+}
+
+func TestListStopsAtTheFolderLimit(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+		folderPage: func(_, _ string, _ *entity.EntryCursor, limit int) ([]entity.FolderItem, error) {
+			return pageFolders(limit), nil
+		},
+	}
+	files := &fakeFileRepo{}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "", nil)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if len(view.Folders) != 100 {
+		t.Fatalf("List() returned %d folders, want 100", len(view.Folders))
+	}
+
+	if files.fileCalls != 0 {
+		t.Errorf("List() asked for files %d times, want 0", files.fileCalls)
+	}
+
+	if view.Next == nil {
+		t.Fatal("List() next = nil, want a folder cursor")
+	}
+
+	if view.Next.Kind != entity.EntryKindFolder {
+		t.Errorf("next kind = %q, want %q", view.Next.Kind, entity.EntryKindFolder)
+	}
+
+	if view.Next.ID != "folder-099" {
+		t.Errorf("next id = %q, want %q", view.Next.ID, "folder-099")
+	}
+
+	if view.Next.FoldersDone {
+		t.Error("next FoldersDone = true, want false")
+	}
+}
+
+func TestListFillsTheRestWithFiles(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+			return pageFolders(3), nil
+		},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, limit int) ([]entity.FileItem, error) {
+		return pageFiles(limit), nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "", nil)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if len(view.Folders) != 3 {
+		t.Errorf("List() returned %d folders, want 3", len(view.Folders))
+	}
+
+	if len(view.Files) != 97 {
+		t.Fatalf("List() returned %d files, want 97", len(view.Files))
+	}
+
+	if files.lastFileLimit != 98 {
+		t.Errorf("file page limit = %d, want 98", files.lastFileLimit)
+	}
+
+	if files.lastFileAfter != nil {
+		t.Errorf("file page after = %+v, want the first file", files.lastFileAfter)
+	}
+
+	if view.Next == nil || view.Next.Kind != entity.EntryKindFile {
+		t.Fatalf("List() next = %+v, want a file cursor", view.Next)
+	}
+
+	if view.Next.ID != "file-096" {
+		t.Errorf("next id = %q, want %q", view.Next.ID, "file-096")
+	}
+}
+
+func TestListDetectsFilesBehindAFullFolderPage(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+			return pageFolders(100), nil
+		},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+		return pageFiles(1), nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "", nil)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if len(view.Folders) != 100 {
+		t.Errorf("List() returned %d folders, want 100", len(view.Folders))
+	}
+
+	if len(view.Files) != 0 {
+		t.Errorf("List() returned %d files, want 0", len(view.Files))
+	}
+
+	if files.lastFileLimit != 1 {
+		t.Errorf("file page limit = %d, want 1", files.lastFileLimit)
+	}
+
+	if view.Next == nil {
+		t.Fatal("List() next = nil, want a folder cursor")
+	}
+
+	if view.Next.Kind != entity.EntryKindFolder || !view.Next.FoldersDone {
+		t.Errorf("next = %+v, want a folder cursor with FoldersDone", view.Next)
+	}
+
+	if view.Next.ID != "folder-099" {
+		t.Errorf("next id = %q, want %q", view.Next.ID, "folder-099")
+	}
+}
+
+func TestListContinuesAFilePageWithoutFolders(t *testing.T) {
+	t.Parallel()
+
+	cursor := &entity.EntryCursor{Kind: entity.EntryKindFile, Name: "file 050", ID: "file-050"}
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, after *entity.EntryCursor, limit int) ([]entity.FileItem, error) {
+		if after != cursor {
+			t.Errorf("file page after = %+v, want the cursor handed in", after)
+		}
+
+		return pageFiles(limit), nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "", cursor)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if folders.folderCalls != 0 {
+		t.Errorf("List() asked for folders %d times, want 0", folders.folderCalls)
+	}
+
+	if len(view.Folders) != 0 {
+		t.Errorf("List() returned %d folders, want 0", len(view.Folders))
+	}
+
+	if len(view.Files) != 100 {
+		t.Errorf("List() returned %d files, want 100", len(view.Files))
+	}
+
+	if files.lastFileLimit != 101 {
+		t.Errorf("file page limit = %d, want 101", files.lastFileLimit)
+	}
+
+	if view.Next == nil || view.Next.Kind != entity.EntryKindFile {
+		t.Fatalf("List() next = %+v, want a file cursor", view.Next)
+	}
+}
+
+func TestListPassesTheFolderAndSearchToBothRepos(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		byID:       map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) { return nil, nil },
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+		return nil, nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.List(context.Background(), "user", "folder", "note", nil)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if folders.lastParentID != "folder" {
+		t.Errorf("folder parent = %q, want %q", folders.lastParentID, "folder")
+	}
+
+	if folders.lastFolderSearch != "note" {
+		t.Errorf("folder search = %q, want %q", folders.lastFolderSearch, "note")
+	}
+
+	if files.lastFileFolder != "folder" {
+		t.Errorf("file folder = %q, want %q", files.lastFileFolder, "folder")
+	}
+
+	if files.lastFileSearch != "note" {
+		t.Errorf("file search = %q, want %q", files.lastFileSearch, "note")
+	}
+}
+
+func TestSearchRequiresThreeCharacters(t *testing.T) {
+	t.Parallel()
+
+	for _, search := range []string{"", "a", "ab"} {
+		folders := &fakeFolderRepo{}
+		files := &fakeFileRepo{}
+		uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+		view, err := uc.Search(context.Background(), "user", search, "from", nil)
+		if err != nil {
+			t.Fatalf("Search(%q) error = %v, want nil", search, err)
+		}
+
+		if !view.TooShort {
+			t.Errorf("Search(%q) TooShort = false, want true", search)
+		}
+
+		if folders.folderCalls != 0 || files.fileCalls != 0 || folders.pathCalls != 0 {
+			t.Errorf(
+				"Search(%q) made %d folder, %d file and %d path calls, want none",
+				search,
+				folders.folderCalls,
+				files.fileCalls,
+				folders.pathCalls,
+			)
+		}
+	}
+}
+
+func TestSearchScopesTheWholeDriveToTheUser(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+		return []entity.FolderItem{{ID: "folder-1", Name: "Docs"}}, nil
+	}}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+		return []entity.FileItem{{ID: "file-1", FolderID: "folder-1", Name: "notes.txt"}}, nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	_, err := uc.Search(context.Background(), "alice", "nova", "", nil)
+	if err != nil {
+		t.Fatalf("Search() error = %v, want nil", err)
+	}
+
+	if folders.lastFolderUserID != "alice" {
+		t.Errorf("folder user = %q, want %q", folders.lastFolderUserID, "alice")
+	}
+
+	if folders.lastParentID != "" {
+		t.Errorf("folder parent = %q, want the whole drive", folders.lastParentID)
+	}
+
+	if files.lastFileUserID != "alice" {
+		t.Errorf("file user = %q, want %q", files.lastFileUserID, "alice")
+	}
+
+	if files.lastFileFolder != "" {
+		t.Errorf("file folder = %q, want the whole drive", files.lastFileFolder)
+	}
+}
+
+func TestSearchFillsPathsForFoldersAndFiles(t *testing.T) {
+	t.Parallel()
+
+	root := entity.FolderRef{ID: "root", Name: "/"}
+	folderPath := []entity.FolderRef{root, {ID: "folder-1", Name: "Docs"}}
+	filePath := []entity.FolderRef{root, {ID: "folder-2", Name: "Media"}}
+
+	folders := &fakeFolderRepo{
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+			return []entity.FolderItem{{ID: "folder-1", Name: "Docs"}}, nil
+		},
+		paths: map[string][]entity.FolderRef{
+			"folder-1": folderPath,
+			"folder-2": filePath,
+		},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+		return []entity.FileItem{{ID: "file-1", FolderID: "folder-2", Name: "clip.mp4"}}, nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.Search(context.Background(), "user", "docs", "", nil)
+	if err != nil {
+		t.Fatalf("Search() error = %v, want nil", err)
+	}
+
+	if folders.pathCalls != 1 {
+		t.Errorf("Paths called %d times, want 1", folders.pathCalls)
+	}
+
+	if folders.lastPathsID != "user" {
+		t.Errorf("Paths user = %q, want %q", folders.lastPathsID, "user")
+	}
+
+	if len(view.Folders) != 1 || !reflect.DeepEqual(view.Folders[0].Path, folderPath) {
+		t.Errorf("folder path = %+v, want %+v", view.Folders, folderPath)
+	}
+
+	if len(view.Files) != 1 || !reflect.DeepEqual(view.Files[0].Path, filePath) {
+		t.Errorf("file path = %+v, want %+v", view.Files, filePath)
+	}
+}
+
+func TestSearchLeavesLocalPathsEmpty(t *testing.T) {
+	t.Parallel()
+
+	folders := &fakeFolderRepo{
+		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
+		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
+			return []entity.FolderItem{{ID: "folder-1", Name: "Docs"}}, nil
+		},
+	}
+	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
+		return []entity.FileItem{{ID: "file-1", FolderID: "folder", Name: "notes.txt"}}, nil
+	}}
+	uc := New(folders, files, &fakeStorage{}, &fakeUnitOfWork{}, "bucket")
+
+	view, err := uc.List(context.Background(), "user", "folder", "", nil)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil", err)
+	}
+
+	if folders.pathCalls != 0 {
+		t.Errorf("Paths called %d times, want 0", folders.pathCalls)
+	}
+
+	if len(view.Folders[0].Path) != 0 || len(view.Files[0].Path) != 0 {
+		t.Errorf("local paths = %+v and %+v, want empty", view.Folders[0].Path, view.Files[0].Path)
 	}
 }
 

@@ -74,7 +74,7 @@ func (c *Controller) drive(ctx *fiber.Ctx, folderID string) error {
 
 // drivePage loads one folder of the account as the page the templates render.
 func (c *Controller) drivePage(ctx *fiber.Ctx, userID, folderID string) (response.Drive, error) {
-	view, err := c.folders.List(ctx.UserContext(), userID, folderID)
+	view, err := c.folders.List(ctx.UserContext(), userID, folderID, "", nil)
 	if err != nil {
 		return response.Drive{}, err
 	}

@@ -115,7 +115,11 @@ type fakeUploadFolder struct {
 	err  error
 }
 
-func (f *fakeUploadFolder) List(_ context.Context, _, _ string) (entity.FolderView, error) {
+func (f *fakeUploadFolder) List(
+	_ context.Context,
+	_, _, _ string,
+	_ *entity.EntryCursor,
+) (entity.FolderView, error) {
 	return f.view, f.err
 }
 

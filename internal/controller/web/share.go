@@ -264,7 +264,7 @@ func (c *Controller) sharedFolder(ctx *fiber.Ctx, shareID, folderID string) erro
 		return c.sharedError(ctx, shareID, err)
 	}
 
-	view, err := c.folders.List(ctx.UserContext(), share.UserID, folder.ID)
+	view, err := c.folders.List(ctx.UserContext(), share.UserID, folder.ID, "", nil)
 	if err != nil {
 		c.l.Error(fmt.Errorf("web - sharedFolder - uc.folders.List: %w", err))
 

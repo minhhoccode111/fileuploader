@@ -233,58 +233,6 @@ func (r *Repo) LockSubtree(ctx context.Context, userID, folderID string) error {
 	return nil
 }
 
-// List returns the folders directly inside a folder with the number of
-// entries each one holds, ordered by name. The modified time is the newest of
-// the folder itself and the entries inside it, so a listing shows when the
-// contents last changed and not only when the folder was made.
-func (r *Repo) List(ctx context.Context, userID, folderID string) ([]entity.FolderItem, error) {
-	sql, args, err := r.Builder.
-		Select(
-			"f.id",
-			"f.name",
-			"GREATEST("+
-				"f.updated_at,"+
-				" COALESCE((SELECT max(c.updated_at) FROM folders c WHERE c.parent_id = f.id AND c.user_id = f.user_id), f.updated_at),"+
-				" COALESCE((SELECT max(x.updated_at) FROM files x WHERE x.folder_id = f.id AND x.user_id = f.user_id), f.updated_at)"+
-				") AS updated_at",
-			"(SELECT count(*) FROM folders c WHERE c.parent_id = f.id AND c.user_id = f.user_id)"+
-				" + (SELECT count(*) FROM files x WHERE x.folder_id = f.id AND x.user_id = f.user_id) AS item_count",
-		).
-		From("folders f").
-		Where(sq.Eq{"f.user_id": userID, "f.parent_id": folderID}).
-		OrderBy("lower(f.name) ASC", "f.id ASC").
-		ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("FolderRepo - List - r.Builder: %w", err)
-	}
-
-	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
-	if err != nil {
-		return nil, fmt.Errorf("FolderRepo - List - r.Querier(ctx).Query: %w", err)
-	}
-
-	defer rows.Close()
-
-	items := make([]entity.FolderItem, 0)
-
-	for rows.Next() {
-		var item entity.FolderItem
-
-		err = rows.Scan(&item.ID, &item.Name, &item.UpdatedAt, &item.ItemCount)
-		if err != nil {
-			return nil, fmt.Errorf("FolderRepo - List - rows.Scan: %w", err)
-		}
-
-		items = append(items, item)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("FolderRepo - List - rows.Err: %w", err)
-	}
-
-	return items, nil
-}
-
 // ListPage returns at most limit folders directly inside a folder, in name
 // order, resuming after a cursor. An empty parentID covers the whole own drive,
 // which only global search uses, and an empty search matches every name. Path

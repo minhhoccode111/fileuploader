@@ -165,7 +165,20 @@ func (f *fakeFolderRepo) GetRoot(_ context.Context, _ string) (entity.Folder, er
 	return entity.Folder{}, f.err
 }
 
-func (f *fakeFolderRepo) List(_ context.Context, _, _ string) ([]entity.FolderItem, error) {
+func (f *fakeFolderRepo) ListPage(
+	_ context.Context,
+	_, _, _ string,
+	_ *entity.EntryCursor,
+	_ int,
+) ([]entity.FolderItem, error) {
+	return nil, f.err
+}
+
+func (f *fakeFolderRepo) Paths(
+	_ context.Context,
+	_ string,
+	_ []string,
+) (map[string][]entity.FolderRef, error) {
 	return nil, f.err
 }
 
