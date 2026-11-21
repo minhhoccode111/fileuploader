@@ -38,6 +38,9 @@ const (
 	// is how a handler learns who the visitor is and what role they hold.
 	_sessionLocal = "session"
 
+	// _accountPath is the self-service account page of a signed-in visitor.
+	_accountPath = "/account"
+
 	// _adminPath is the admin area. It holds no page of its own: it sends the
 	// visitor to the landing page of the area.
 	_adminPath = "/admin"

@@ -68,6 +68,7 @@ func NewRouter(
 	app.Get("/folders/:folder", middleware.RequireAuth(u), c.folderPage)
 	app.Get(_searchPath, middleware.RequireAuth(u), c.searchPage)
 	app.Get("/share", middleware.RequireAuth(u), c.shareIndex)
+	app.Get(_accountPath, middleware.RequireAuth(u), c.accountPage)
 	app.Get("/share/:share", c.sharedRoot)
 	app.Get("/share/:share/folders/:folder", c.sharedFolderRoute)
 	app.Get("/share/:share/files/:file/download", c.sharedFileDownload)
@@ -85,6 +86,8 @@ func NewRouter(
 	app.Post("/htmx/login", c.loginSubmit)
 	app.Post("/htmx/register", c.registerSubmit)
 	app.Post("/htmx/logout", c.logoutSubmit)
+	app.Post("/htmx/account/profile", middleware.RequireAuth(u), c.accountProfileSubmit)
+	app.Post("/htmx/account/password", middleware.RequireAuth(u), c.accountPasswordSubmit)
 	app.Post("/htmx/admin/role", middleware.RequireAdmin(u), c.roleSubmit)
 
 	// Shares

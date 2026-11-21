@@ -496,6 +496,9 @@ func (f *fakeUserRepoForFile) Update(_ context.Context, user *entity.User) error
 	return nil
 }
 
+func (f *fakeUserRepoForFile) UpdateProfile(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeUserRepoForFile) UpdatePassword(_ context.Context, _, _ string) error   { return nil }
+
 func (f *fakeUserRepoForFile) SetUserLimits(_ context.Context, _ string, _, _, _ int64) error {
 	return nil
 }

@@ -323,6 +323,86 @@ func (uc *UseCase) SetUserLimits(
 	return user, nil
 }
 
+// UpdateProfile rewrites the name and the email of an account, which are the
+// two fields its holder owns. The role, the status and the password stay as
+// they are, so a profile save never changes what the account may do.
+func (uc *UseCase) UpdateProfile(
+	ctx context.Context,
+	userID, username, email string,
+) (entity.User, error) {
+	user, err := uc.repo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.User{}, entity.ErrUserNotFound
+		}
+
+		return entity.User{}, fmt.Errorf("UserUseCase - UpdateProfile - uc.repo.GetByID: %w", err)
+	}
+
+	updatedAt := time.Now().UTC()
+
+	err = uc.repo.UpdateProfile(ctx, userID, username, email)
+	if err != nil {
+		return entity.User{}, fmt.Errorf("UserUseCase - UpdateProfile - uc.repo.UpdateProfile: %w", err)
+	}
+
+	user.Username = username
+	user.Email = email
+	user.UpdatedAt = updatedAt
+
+	return user, nil
+}
+
+// ChangePassword replaces the password of an account after checking the one it
+// holds now. A wrong current password is a rejected sign-in, not a server
+// fault. The change ends every other session of the account and keeps the one
+// that asked, so the browser on screen stays signed in while a stolen cookie
+// on another device stops working.
+func (uc *UseCase) ChangePassword(
+	ctx context.Context,
+	userID, currentPassword, newPassword, currentSessionID string,
+) error {
+	user, err := uc.repo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUserNotFound) {
+			return entity.ErrUserNotFound
+		}
+
+		return fmt.Errorf("UserUseCase - ChangePassword - uc.repo.GetByID: %w", err)
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword))
+	if err != nil {
+		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			return entity.ErrInvalidCredentials
+		}
+
+		return fmt.Errorf("UserUseCase - ChangePassword - bcrypt.CompareHashAndPassword: %w", err)
+	}
+
+	hash, err := newPasswordHash(newPassword)
+	if err != nil {
+		return err
+	}
+
+	// Revoke the other sessions before the hash is written. Revocation is
+	// idempotent and safe to retry, while a hash that lands before a failed
+	// revocation would leave a changed password with live sessions the
+	// account meant to end. A hash write that fails afterwards leaves the old
+	// password with the extra sessions gone, which is the safe direction.
+	err = uc.sessions.DeleteUserSessionsExcept(ctx, userID, currentSessionID)
+	if err != nil {
+		return fmt.Errorf("UserUseCase - ChangePassword - uc.sessions.DeleteUserSessionsExcept: %w", err)
+	}
+
+	err = uc.repo.UpdatePassword(ctx, userID, hash)
+	if err != nil {
+		return fmt.Errorf("UserUseCase - ChangePassword - uc.repo.UpdatePassword: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateUser rewrites an account: its name, its email, its role and, when the
 // caller brings one, its password. It reports whether the live sessions were
 // ended, which only happens when the role or the password changed, because

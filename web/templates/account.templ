@@ -1,0 +1,150 @@
+package templates
+
+import "github.com/minhhoccode111/fileuploader/internal/controller/web/response"
+
+// Account is the page where a signed-in visitor manages their own account.
+templ Account(view View, account response.UserRow) {
+	@Layout(AccountTitle, view) {
+		@AccountContent(account)
+	}
+}
+
+// AccountContent is the fragment htmx swaps into <main> on client-side
+// navigation. Each card holds a panel the matching form replaces on a save.
+templ AccountContent(account response.UserRow) {
+	@PageColumn() {
+		<div class="flex flex-col gap-6">
+			<div>
+				<h1 class="text-3xl font-bold tracking-tight">Account</h1>
+				<p class="text-base-content/70">Manage the name, the email and the password of your account.</p>
+			</div>
+			<section class="card bg-base-100 shadow">
+				<div id="account-profile-panel" class="card-body gap-4">
+					@AccountProfilePanel(account, "")
+				</div>
+			</section>
+			<section class="card bg-base-100 shadow">
+				<div id="account-password-panel" class="card-body gap-4">
+					@AccountPasswordPanel("")
+				</div>
+			</section>
+		</div>
+	}
+}
+
+// AccountProfilePanel is the profile card: the name and the email the account
+// carries now, and the note of the last save above the form.
+templ AccountProfilePanel(account response.UserRow, note string) {
+	<h2 class="text-xl font-bold">Profile</h2>
+	<p class="text-base-content/70">Signed up { account.Joined }.</p>
+	@accountNote(note)
+	<form
+		id="account-profile-form"
+		class="flex flex-col gap-4"
+		novalidate
+		hx-post="/htmx/account/profile"
+		hx-target="#account-profile-panel"
+		hx-swap="innerHTML"
+		hx-status:4xx="target:#account-profile-error"
+		hx-status:5xx="target:#account-profile-error"
+	>
+		<label class="flex flex-col gap-1">
+			<span class="text-sm font-medium">Username</span>
+			<input
+				class="input input-bordered w-full"
+				type="text"
+				name="username"
+				value={ account.Username }
+				required
+				minlength="3"
+				maxlength="255"
+				autocomplete="username"
+			/>
+		</label>
+		<label class="flex flex-col gap-1">
+			<span class="text-sm font-medium">Email</span>
+			<input
+				class="input input-bordered w-full"
+				type="email"
+				name="email"
+				value={ account.Email }
+				required
+				maxlength="255"
+				autocomplete="email"
+			/>
+		</label>
+		<div id="account-profile-error" class="text-sm text-error" role="alert"></div>
+		<button class="btn btn-primary" type="submit">Save profile</button>
+	</form>
+}
+
+// AccountPasswordPanel is the password card. The current password proves the
+// visitor at the keyboard is the holder, and a save ends every other session
+// of the account.
+templ AccountPasswordPanel(note string) {
+	<h2 class="text-xl font-bold">Password</h2>
+	<p class="text-base-content/70">Changing your password signs out every other device. This one stays signed in.</p>
+	@accountNote(note)
+	<form
+		id="account-password-form"
+		class="flex flex-col gap-4"
+		novalidate
+		hx-post="/htmx/account/password"
+		hx-target="#account-password-panel"
+		hx-swap="innerHTML"
+		hx-status:4xx="target:#account-password-error"
+		hx-status:5xx="target:#account-password-error"
+	>
+		<label class="flex flex-col gap-1">
+			<span class="text-sm font-medium">Current password</span>
+			<input
+				class="input input-bordered w-full"
+				type="password"
+				name="current_password"
+				required
+				maxlength="72"
+				autocomplete="current-password"
+			/>
+		</label>
+		<label class="flex flex-col gap-1">
+			<span class="text-sm font-medium">New password</span>
+			<input
+				class="input input-bordered w-full"
+				type="password"
+				name="new_password"
+				required
+				minlength="6"
+				maxlength="72"
+				autocomplete="new-password"
+			/>
+			<span class="text-xs text-base-content/60">At least 6 characters, with an uppercase letter, a lowercase letter, a digit and a special character.</span>
+		</label>
+		<label class="flex flex-col gap-1">
+			<span class="text-sm font-medium">Confirm new password</span>
+			<input
+				class="input input-bordered w-full"
+				type="password"
+				name="confirm_password"
+				required
+				minlength="6"
+				maxlength="72"
+				autocomplete="new-password"
+			/>
+		</label>
+		<div id="account-password-error" class="text-sm text-error" role="alert"></div>
+		<button class="btn btn-primary" type="submit">Change password</button>
+	</form>
+}
+
+// accountNote reports that a panel was saved, and stays out of the layout
+// while there is nothing to say.
+templ accountNote(note string) {
+	if note != "" {
+		<div role="alert" class="alert alert-success">
+			<svg xmlns="http://www.w3.org/2000/svg" class="size-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+			</svg>
+			<span>{ note }</span>
+		</div>
+	}
+}

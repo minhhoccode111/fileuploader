@@ -16,7 +16,9 @@ to run, read and extend.
 
 - **Accounts.** Registration is a request: anyone can fill the form, but the
   account stays `pending` until an administrator approves it. Disabling an
-  account ends its live sessions immediately.
+  account ends its live sessions immediately. A signed-in account can change
+  its own username, email and password from `/account`; a password change keeps
+  the current browser signed in and ends every other session.
 - **Drive.** Nested folders and files per account: upload, download, rename,
   move, duplicate, delete. A folder downloads as a zip. The default ceiling is
   10 GiB per file.
@@ -178,7 +180,8 @@ forever.
 ## Notes and rough edges
 
 - This is a learning project, not a deployment template. There is no email
-  verification or self-service password reset; an admin resets a password.
+  verification or self-service password reset; a signed-in account changes its
+  own password from `/account`, and an admin can reset one for it.
 - The app speaks HTML. The `/htmx` endpoints are fragments for the page, not a
   public JSON API.
 - The admin settings page (`/admin/settings`) is still a placeholder.

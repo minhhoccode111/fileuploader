@@ -1270,6 +1270,10 @@ func (f *fakeUserRepoForFolder) Update(_ context.Context, user *entity.User) err
 	return nil
 }
 
+func (f *fakeUserRepoForFolder) UpdateProfile(_ context.Context, _, _, _ string) error { return nil }
+
+func (f *fakeUserRepoForFolder) UpdatePassword(_ context.Context, _, _ string) error { return nil }
+
 func (f *fakeUserRepoForFolder) SetUserLimits(_ context.Context, _ string, _, _, _ int64) error {
 	return nil
 }

@@ -11,6 +11,7 @@ const (
 	SharedTitle              = "Shared folder"
 	SearchTitle              = "Search"
 	LogoutTitle              = "Logout"
+	AccountTitle             = "Account"
 	AdminUsersTitle          = "Admin · Users"
 	AdminSettingsTitle       = "Admin · Settings"
 	AdminAccessRequestsTitle = "Admin · Access requests"

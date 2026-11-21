@@ -24,7 +24,7 @@ Runs locally through Docker Compose (Postgres on 5433, Redis, MinIO on 9000/9001
 
 ## Capabilities and Constraints
 
-- Accounts: register (always role `user`), sign in/out, session TTL 24h; first admin is granted with `UPDATE users SET role = 'admin'`.
+- Accounts: register (always role `user`), sign in/out, session TTL 24h; first admin is granted with `UPDATE users SET role = 'admin'`. A signed-in account changes its own username, email and password at `/account`; a password change requires the current password, keeps the current session and ends the others.
 - Drive: nested folders and files per account; root folder `/` is created with the account and cannot be deleted or renamed; create/rename/delete folders; upload (default max 100 MiB), download, rename, move, duplicate, delete files.
 - Admin: filter/search/sort/paginate accounts; edit username, email, role, password; changing a role or password ends all of that account's live sessions.
 - Storage: private bucket; browser reaches objects through presigned URLs; storage keys are derived from identifiers, so renames never touch stored objects.

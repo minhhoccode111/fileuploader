@@ -358,6 +358,23 @@ templ sidebarNav(view View, oob bool) {
 			<ul class="menu w-full px-2 pb-2">
 				<li>
 					<a
+						href="/account"
+						hx-get="/account"
+						hx-target="#page-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						class="is-drawer-close:tooltip is-drawer-close:tooltip-right"
+						data-tip="Account"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+							<circle cx="12" cy="8" r="4"></circle>
+							<path d="M4 21a8 8 0 0 1 16 0"></path>
+						</svg>
+						<span class="is-drawer-close:hidden">Account</span>
+					</a>
+				</li>
+				<li>
+					<a
 						href="/logout"
 						hx-get="/logout"
 						hx-target="#page-content"

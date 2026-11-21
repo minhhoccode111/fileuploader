@@ -25,6 +25,11 @@ type (
 		EnableUser(ctx context.Context, userID string) error
 		UpdateStatus(ctx context.Context, userID string, status entity.UserStatus) error
 		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) (entity.User, error)
+		UpdateProfile(ctx context.Context, userID, username, email string) (entity.User, error)
+		ChangePassword(
+			ctx context.Context,
+			userID, currentPassword, newPassword, currentSessionID string,
+		) error
 		UpdateUser(
 			ctx context.Context,
 			userID, username, email string,

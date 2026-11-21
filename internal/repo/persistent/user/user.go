@@ -148,6 +148,60 @@ func (r *Repo) Update(ctx context.Context, user *entity.User) error {
 	return nil
 }
 
+// UpdateProfile writes only the two fields an account holder owns, so a
+// concurrent password or role change is not reverted with a stale copy of the
+// account. A name or an email another account already holds maps to the
+// sentinel uniqueViolation names, a missing account to ErrUserNotFound.
+func (r *Repo) UpdateProfile(ctx context.Context, userID, username, email string) error {
+	builder := r.Builder.
+		Update("users").
+		Set("username", username).
+		Set("email", email).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: userID})
+
+	return r.updateEditable(ctx, builder, "UpdateProfile")
+}
+
+// UpdatePassword writes only the password hash, so a concurrent profile or
+// role change survives a password save. A missing account maps to
+// ErrUserNotFound.
+func (r *Repo) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	builder := r.Builder.
+		Update("users").
+		Set("password_hash", passwordHash).
+		Set("updated_at", time.Now().UTC()).
+		Where(sq.Eq{_idColumn: userID})
+
+	return r.updateEditable(ctx, builder, "UpdatePassword")
+}
+
+// updateEditable runs an account update and maps the failures the account
+// editor can cause: a unique name or email to the sentinel for the column, a
+// missing account to ErrUserNotFound.
+func (r *Repo) updateEditable(ctx context.Context, builder sq.UpdateBuilder, op string) error {
+	sql, args, err := builder.ToSql()
+	if err != nil {
+		return fmt.Errorf("UserRepo - %s - r.Builder: %w", op, err)
+	}
+
+	tag, err := r.Querier(ctx).Exec(ctx, sql, args...)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return uniqueViolation(pgErr)
+		}
+
+		return fmt.Errorf("UserRepo - %s - r.Querier(ctx).Exec: %w", op, err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return entity.ErrUserNotFound
+	}
+
+	return nil
+}
+
 // SetUserLimits updates the per-account storage and transfer limits. A missing
 // account maps to ErrUserNotFound.
 func (r *Repo) SetUserLimits(

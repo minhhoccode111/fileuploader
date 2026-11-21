@@ -103,29 +103,49 @@ func (r *Repo) Delete(ctx context.Context, id string) error {
 // calls it, so the account picks up its new role on the next sign-in instead
 // of keeping the role its session was created with.
 func (r *Repo) DeleteUserSessions(ctx context.Context, userID string) error {
+	return r.DeleteUserSessionsExcept(ctx, userID, "")
+}
+
+// DeleteUserSessionsExcept ends every live session of an account but the one
+// named, so the caller that asked for a password change stays signed in. An
+// empty identifier ends every session, which is what a caller without a
+// session of its own asks for.
+func (r *Repo) DeleteUserSessionsExcept(
+	ctx context.Context,
+	userID, keepSessionID string,
+) error {
 	index := userKey(userID)
 
 	ids, err := r.rdb.Client.SMembers(ctx, index).Result()
 	if err != nil {
-		return fmt.Errorf("SessionRepo - DeleteUserSessions - r.rdb.Client.SMembers: %w", err)
+		return fmt.Errorf("SessionRepo - DeleteUserSessionsExcept - r.rdb.Client.SMembers: %w", err)
 	}
 
-	if len(ids) == 0 {
-		return nil
-	}
+	stale := make([]any, 0, len(ids))
 
 	keys := make([]string, 0, len(ids))
+
 	for _, id := range ids {
+		if id == keepSessionID {
+			continue
+		}
+
+		stale = append(stale, id)
+
 		keys = append(keys, key(id))
+	}
+
+	if len(stale) == 0 {
+		return nil
 	}
 
 	pipe := r.rdb.Client.TxPipeline()
 	pipe.Del(ctx, keys...)
-	pipe.Del(ctx, index)
+	pipe.SRem(ctx, index, stale...)
 
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("SessionRepo - DeleteUserSessions - pipe.Exec: %w", err)
+		return fmt.Errorf("SessionRepo - DeleteUserSessionsExcept - pipe.Exec: %w", err)
 	}
 
 	return nil

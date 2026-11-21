@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,15 @@ type fakeUserRepo struct {
 	roleSet bool
 	updated *entity.User
 	err     error
+
+	profileCalled   bool
+	profileUserID   string
+	profileUsername string
+	profileEmail    string
+
+	passwordCalled bool
+	passwordUserID string
+	passwordHash   string
 
 	limitsSet    bool
 	limitsUserID string
@@ -85,6 +95,31 @@ func (f *fakeUserRepo) Update(_ context.Context, user *entity.User) error {
 	return nil
 }
 
+func (f *fakeUserRepo) UpdateProfile(_ context.Context, userID, username, email string) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.profileCalled = true
+	f.profileUserID = userID
+	f.profileUsername = username
+	f.profileEmail = email
+
+	return nil
+}
+
+func (f *fakeUserRepo) UpdatePassword(_ context.Context, userID, passwordHash string) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.passwordCalled = true
+	f.passwordUserID = userID
+	f.passwordHash = passwordHash
+
+	return nil
+}
+
 func (f *fakeUserRepo) SetUserLimits(_ context.Context, userID string, quota, uploadRate, downloadRate int64) error {
 	if f.err != nil {
 		return f.err
@@ -103,10 +138,16 @@ func (f *fakeUserRepo) AdjustStorageUsed(_ context.Context, _ string, _ int64) e
 	return f.err
 }
 
-// fakeSessionRepo records the session it was asked to store.
+// fakeSessionRepo records the session it was asked to store and the sessions
+// it was asked to end.
 type fakeSessionRepo struct {
 	stored *entity.Session
 	ended  []string
+
+	exceptCalled    bool
+	exceptUserID    string
+	exceptSessionID string
+	exceptErr       error
 }
 
 func (f *fakeSessionRepo) Store(_ context.Context, _ string, session entity.Session, _ time.Duration) error {
@@ -127,6 +168,17 @@ func (f *fakeSessionRepo) DeleteUserSessions(_ context.Context, userID string) e
 	f.ended = append(f.ended, userID)
 
 	return nil
+}
+
+func (f *fakeSessionRepo) DeleteUserSessionsExcept(
+	_ context.Context,
+	userID, keepSessionID string,
+) error {
+	f.exceptCalled = true
+	f.exceptUserID = userID
+	f.exceptSessionID = keepSessionID
+
+	return f.exceptErr
 }
 
 // fakeFolderRepo records the root folder Register was asked to create.
@@ -598,5 +650,227 @@ func TestUpdateUserReplacesThePassword(t *testing.T) {
 	err = bcrypt.CompareHashAndPassword([]byte(repo.updated.PasswordHash), []byte("newpass1"))
 	if err != nil {
 		t.Errorf("bcrypt.CompareHashAndPassword() error = %v, want nil", err)
+	}
+}
+
+// UpdateProfile rewrites the two fields the account holder owns and leaves the
+// role, the status and the password where they were.
+func TestUpdateProfileSavesTheEditableFields(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Username:     "john",
+		Email:        "john@example.com",
+		PasswordHash: "hash",
+		Role:         entity.UserRoleAdmin,
+		Status:       entity.UserStatusActive,
+	}}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	user, err := uc.UpdateProfile(context.Background(), "1", "johndoe", "doe@example.com")
+	if err != nil {
+		t.Fatalf("UpdateProfile() error = %v, want nil", err)
+	}
+
+	if !repo.profileCalled {
+		t.Fatal("UpdateProfile() did not store the profile")
+	}
+
+	fields := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{name: "account", got: repo.profileUserID, want: "1"},
+		{name: "username", got: repo.profileUsername, want: "johndoe"},
+		{name: "email", got: repo.profileEmail, want: "doe@example.com"},
+		{name: "returned role", got: user.Role, want: entity.UserRoleAdmin},
+		{name: "returned status", got: user.Status, want: entity.UserStatusActive},
+		{name: "returned password hash", got: user.PasswordHash, want: "hash"},
+	}
+
+	for _, field := range fields {
+		if field.got != field.want {
+			t.Errorf("%s = %v, want %v", field.name, field.got, field.want)
+		}
+	}
+
+	// A profile save must not write the whole row: the role and the password
+	// belong to other changes and may have moved since the account was read.
+	if repo.updated != nil {
+		t.Error("UpdateProfile() wrote the whole account instead of the profile fields")
+	}
+
+	if user.UpdatedAt.IsZero() {
+		t.Error("UpdateProfile() left the update time at zero")
+	}
+}
+
+func TestUpdateProfileReportsAnUnknownAccount(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, err := uc.UpdateProfile(context.Background(), "1", "johndoe", "doe@example.com")
+	if !errors.Is(err, entity.ErrUserNotFound) {
+		t.Fatalf("UpdateProfile() error = %v, want %v", err, entity.ErrUserNotFound)
+	}
+
+	if repo.profileCalled {
+		t.Error("UpdateProfile() stored a profile it could not read")
+	}
+}
+
+// ChangePassword replaces the hash and ends every session but the one that
+// asked, so the browser on screen stays signed in.
+func TestChangePasswordReplacesTheHashAndEndsOtherSessions(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass1!"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err = uc.ChangePassword(context.Background(), "1", "oldpass1!", "newpass1!", "keep")
+	if err != nil {
+		t.Fatalf("ChangePassword() error = %v, want nil", err)
+	}
+
+	if !repo.passwordCalled {
+		t.Fatal("ChangePassword() did not store the password")
+	}
+
+	if !sessions.exceptCalled {
+		t.Fatal("ChangePassword() did not end the other sessions")
+	}
+
+	fields := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{name: "updated account", got: repo.passwordUserID, want: "1"},
+		{name: "ended sessions of user", got: sessions.exceptUserID, want: "1"},
+		{name: "kept session", got: sessions.exceptSessionID, want: "keep"},
+	}
+
+	for _, field := range fields {
+		if field.got != field.want {
+			t.Errorf("%s = %v, want %v", field.name, field.got, field.want)
+		}
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(repo.passwordHash), []byte("newpass1!")) != nil {
+		t.Error("ChangePassword() did not store the new password")
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(repo.passwordHash), []byte("oldpass1!")) == nil {
+		t.Error("ChangePassword() kept the old password")
+	}
+
+	// The role, the name and the email belong to other changes; a password
+	// save writes only the hash.
+	if repo.updated != nil {
+		t.Error("ChangePassword() wrote the whole account instead of the password")
+	}
+}
+
+func TestChangePasswordRejectsAWrongCurrentPassword(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass1!"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err = uc.ChangePassword(context.Background(), "1", "wrongpass1!", "newpass1!", "keep")
+	if !errors.Is(err, entity.ErrInvalidCredentials) {
+		t.Fatalf("ChangePassword() error = %v, want %v", err, entity.ErrInvalidCredentials)
+	}
+
+	if repo.passwordCalled {
+		t.Error("ChangePassword() stored a password the current one did not unlock")
+	}
+
+	if sessions.exceptCalled {
+		t.Error("ChangePassword() ended sessions of a rejected change")
+	}
+}
+
+func TestChangePasswordReportsAnUnknownAccount(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err := uc.ChangePassword(context.Background(), "1", "oldpass1!", "newpass1!", "keep")
+	if !errors.Is(err, entity.ErrUserNotFound) {
+		t.Fatalf("ChangePassword() error = %v, want %v", err, entity.ErrUserNotFound)
+	}
+}
+
+func TestChangePasswordRejectsATooLongPassword(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass1!"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err = uc.ChangePassword(
+		context.Background(),
+		"1",
+		"oldpass1!",
+		strings.Repeat("a", 73),
+		"keep",
+	)
+	if !errors.Is(err, entity.ErrPasswordTooLong) {
+		t.Fatalf("ChangePassword() error = %v, want %v", err, entity.ErrPasswordTooLong)
+	}
+
+	if repo.passwordCalled {
+		t.Error("ChangePassword() stored a password bcrypt cannot read")
+	}
+}
+
+// The other sessions go before the new hash: a revocation that fails leaves
+// the old password in place instead of a changed password with live sessions
+// the account meant to end.
+func TestChangePasswordKeepsTheOldPasswordWhenTheSessionsCannotBeEnded(t *testing.T) {
+	t.Parallel()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("oldpass1!"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
+	sessions := &fakeSessionRepo{exceptErr: errStoreFailed}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err = uc.ChangePassword(context.Background(), "1", "oldpass1!", "newpass1!", "keep")
+	if !errors.Is(err, errStoreFailed) {
+		t.Fatalf("ChangePassword() error = %v, want %v", err, errStoreFailed)
+	}
+
+	if !sessions.exceptCalled {
+		t.Fatal("ChangePassword() did not try to end the other sessions")
+	}
+
+	if repo.passwordCalled || repo.updated != nil {
+		t.Error("ChangePassword() stored the new password after the revocation failed")
 	}
 }

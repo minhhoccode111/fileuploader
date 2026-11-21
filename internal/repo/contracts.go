@@ -37,6 +37,8 @@ type (
 		UpdateRole(ctx context.Context, userID string, role entity.UserRole) error
 		UpdateStatus(ctx context.Context, userID string, status entity.UserStatus) error
 		Update(ctx context.Context, user *entity.User) error
+		UpdateProfile(ctx context.Context, userID, username, email string) error
+		UpdatePassword(ctx context.Context, userID, passwordHash string) error
 		AdjustStorageUsed(ctx context.Context, userID string, delta int64) error
 		SetUserLimits(ctx context.Context, userID string, quota, uploadRate, downloadRate int64) error
 	}
@@ -47,6 +49,7 @@ type (
 		Get(ctx context.Context, id string) (entity.Session, error)
 		Delete(ctx context.Context, id string) error
 		DeleteUserSessions(ctx context.Context, userID string) error
+		DeleteUserSessionsExcept(ctx context.Context, userID, keepSessionID string) error
 	}
 
 	// FolderRepo -.
