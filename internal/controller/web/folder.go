@@ -85,7 +85,9 @@ func (c *Controller) folderEdit(ctx *fiber.Ctx) error {
 
 // folderRename saves the name the drawer submitted and reloads the folder that
 // holds it, so the row comes back under the new name. A direct rename of the
-// folder on the screen lands on its parent, which is where the row lives.
+// folder on the screen lands on its parent, which is where the row lives. The
+// active local search rides along, so a renamed row that no longer matches the
+// term leaves the filtered view instead of the filter leaving with the row.
 func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 	folderID := ctx.Params("folder")
 	if !c.validID(folderID) {
@@ -128,7 +130,7 @@ func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 		path = _foldersPath + parent.ID
 	}
 
-	return middleware.Redirect(ctx, path)
+	return middleware.Redirect(ctx, withSearch(path, c.entrySearch(ctx)))
 }
 
 // folderDestinationForm runs the shared boilerplate of folder destination
@@ -359,8 +361,9 @@ func (c *Controller) folderTree(ctx *fiber.Ctx) error {
 }
 
 // folderDelete removes a folder with everything inside it and sends the
-// visitor to the folder that held it. The root folder is refused by the use
-// case, so a hand-made request cannot wipe the drive.
+// visitor to the folder that held it, under the search the page was showing.
+// The root folder is refused by the use case, so a hand-made request cannot
+// wipe the drive.
 func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 	folderID := ctx.Params("folder")
 	if !c.validID(folderID) {
@@ -386,7 +389,7 @@ func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 		path = _foldersPath + parent.ID
 	}
 
-	return middleware.Redirect(ctx, path)
+	return middleware.Redirect(ctx, withSearch(path, c.entrySearch(ctx)))
 }
 
 // folderDownloadZip streams a zip archive of the folder and everything under

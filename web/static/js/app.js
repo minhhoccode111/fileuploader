@@ -334,11 +334,14 @@ function retryDelay(attempt) {
 // completeUpload joins the parts. The answer carries the folder the file
 // landed in, so a page that still shows that folder swaps the new row in. Any
 // other page gets the toast: a late answer never rewrites rows the visitor is
-// not looking at.
+// not looking at. The completion is a plain fetch, so the active local search
+// rides in the query string and the refreshed rows match the visible input.
 async function completeUpload(id, run) {
   const pageFolder = activeUpload?.pageFolder ?? "";
+  const q = new URLSearchParams(window.location.search).get("q") ?? "";
+  const suffix = q === "" ? "" : "?q=" + encodeURIComponent(q);
 
-  const response = await fetch("/htmx/uploads/" + id + "/complete", {
+  const response = await fetch("/htmx/uploads/" + id + "/complete" + suffix, {
     method: "POST",
   });
 

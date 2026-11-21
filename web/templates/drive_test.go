@@ -105,6 +105,56 @@ func TestEntryRowsRendersRowsWithoutTheTable(t *testing.T) {
 	}
 }
 
+// The local search form carries the term and the scope choice, so submitting
+// it either narrows the folder on the screen or leaves for the whole drive.
+func TestEntrySearchFormCarriesTheTermAndTheScopes(t *testing.T) {
+	t.Parallel()
+
+	page := response.Drive{Search: "note", SearchAction: "/folders/folder-1"}
+
+	html := renderTemplate(t, EntrySearchForm(page))
+
+	for _, part := range []string{
+		`name="q"`,
+		`value="note"`,
+		`maxlength="100"`,
+		`name="scope"`,
+		`value="folder"`,
+		`This folder`,
+		`value="all"`,
+		`All files`,
+		`action="/folders/folder-1"`,
+		`hx-get="/folders/folder-1"`,
+		`hx-target="#page-content"`,
+		`hx-swap="innerHTML"`,
+		`hx-push-url="true"`,
+	} {
+		if !strings.Contains(html, part) {
+			t.Errorf("EntrySearchForm() = %s, want it to contain %q", html, part)
+		}
+	}
+}
+
+// A filtered folder with no hits is not an empty folder, so the two states say
+// different things to the visitor.
+func TestDriveEntriesWordsTheEmptyStateOfAFilteredFolder(t *testing.T) {
+	t.Parallel()
+
+	filtered := renderTemplate(t, DriveEntries(response.Drive{Search: "note"}))
+	if !strings.Contains(filtered, "No matches in this folder.") {
+		t.Errorf("DriveEntries(filtered) = %s, want the no-match copy", filtered)
+	}
+
+	if strings.Contains(filtered, "This folder is empty.") {
+		t.Errorf("DriveEntries(filtered) = %s, want no empty-folder copy", filtered)
+	}
+
+	unfiltered := renderTemplate(t, DriveEntries(response.Drive{}))
+	if !strings.Contains(unfiltered, "This folder is empty.") {
+		t.Errorf("DriveEntries(unfiltered) = %s, want the empty-folder copy", unfiltered)
+	}
+}
+
 // renderTemplate renders one component into its HTML text.
 func renderTemplate(t *testing.T, component templ.Component) string {
 	t.Helper()

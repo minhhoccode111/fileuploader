@@ -61,18 +61,20 @@ type FileRow struct {
 }
 
 // Drive is everything the drive page renders for one folder. Search is the
-// term the listing was filtered with, and NextURL is the partial route that
-// answers the load-more sentinel, empty when the listing is complete.
+// term the listing was filtered with, SearchAction is where the search form of
+// the page submits, and NextURL is the partial route that answers the
+// load-more sentinel, empty when the listing is complete.
 type Drive struct {
-	Title      string
-	FolderID   string
-	FolderName string
-	IsRoot     bool
-	Breadcrumb []Crumb
-	Folders    []FolderRow
-	Files      []FileRow
-	Search     string
-	NextURL    string
+	Title        string
+	FolderID     string
+	FolderName   string
+	IsRoot       bool
+	Breadcrumb   []Crumb
+	Folders      []FolderRow
+	Files        []FileRow
+	Search       string
+	SearchAction string
+	NextURL      string
 }
 
 // FileInfo is the file drawer: what the file is, and the two actions it
@@ -131,15 +133,28 @@ func NewDrive(view *entity.FolderView) Drive {
 	}
 
 	return Drive{
-		FolderID:   view.Folder.ID,
-		FolderName: view.Folder.Name,
-		IsRoot:     view.Folder.IsRoot(),
-		Breadcrumb: crumbs,
-		Folders:    folders,
-		Files:      files,
-		Search:     view.Search,
-		NextURL:    nextEntryURL(view.Folder.ID, view.Search, view.Next),
+		FolderID:     view.Folder.ID,
+		FolderName:   view.Folder.Name,
+		IsRoot:       view.Folder.IsRoot(),
+		Breadcrumb:   crumbs,
+		Folders:      folders,
+		Files:        files,
+		Search:       view.Search,
+		SearchAction: searchAction(&view.Folder),
+		NextURL:      nextEntryURL(view.Folder.ID, view.Search, view.Next),
 	}
+}
+
+// searchAction is where the search form of a page submits: the folder route of
+// the page, or Home for the root folder, which keeps its own address. The scope
+// control of the form decides whether the submit stays on this page or leaves
+// for the whole-drive search.
+func searchAction(folder *entity.Folder) string {
+	if folder.IsRoot() {
+		return "/"
+	}
+
+	return "/folders/" + folder.ID
 }
 
 // nextEntryURL is the partial route that answers the load-more sentinel of a

@@ -68,6 +68,7 @@ templ DriveContent(page response.Drive) {
 					<div class="card-body gap-4">
 						@DriveToolbar(page)
 						<progress id="download-progress" class="progress progress-primary w-full hidden" value="0" max="100"></progress>
+						@EntrySearchForm(page)
 						<div
 							id="drive-entries"
 							class="overflow-x-auto"
@@ -170,12 +171,50 @@ templ DriveToolbar(page response.Drive) {
 	</div>
 }
 
+// EntrySearchForm narrows the entries of the page on screen. It is a plain GET
+// form, so it works without JavaScript, and htmx swaps only the page content
+// when it is available. The scope control decides whether the term narrows this
+// folder or leaves for the whole-drive search; the folder route answers the
+// latter with a redirect, so no second rendering path exists here.
+templ EntrySearchForm(page response.Drive) {
+	<form
+		class="flex w-full flex-wrap items-center gap-2"
+		method="get"
+		action={ page.SearchAction }
+		hx-get={ page.SearchAction }
+		hx-target="#page-content"
+		hx-swap="innerHTML"
+		hx-push-url="true"
+	>
+		<input
+			class="input w-full flex-1"
+			type="search"
+			name="q"
+			value={ page.Search }
+			placeholder="Search this folder"
+			aria-label="Search this folder"
+			maxlength="100"
+			autocomplete="off"
+		/>
+		<select class="select select-bordered" name="scope" aria-label="Search scope">
+			<option value="folder" selected>This folder</option>
+			<option value="all">All files</option>
+		</select>
+		<button type="submit" class="btn">Search</button>
+	</form>
+}
+
 // DriveEntries is the table of the folder, and the target every action
-// refreshes. Folders come before files, both ordered by name.
+// refreshes. Folders come before files, both ordered by name. A filtered empty
+// list is not an empty folder, so the two states say different things.
 templ DriveEntries(page response.Drive) {
 	if len(page.Folders) == 0 && len(page.Files) == 0 {
 		<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
-			<p class="text-base-content/70 text-sm">This folder is empty.</p>
+			if page.Search != "" {
+				<p class="text-base-content/70 text-sm">No matches in this folder.</p>
+			} else {
+				<p class="text-base-content/70 text-sm">This folder is empty.</p>
+			}
 		</div>
 	} else {
 		<table class="table table-zebra table-fixed w-full">

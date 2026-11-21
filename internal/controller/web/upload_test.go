@@ -107,19 +107,24 @@ func (f *fakeUploadFile) AbortUpload(_ context.Context, _, uploadID string) erro
 	return f.abortErr
 }
 
-// fakeUploadFolder answers the folder listing the entries fragment needs.
+// fakeUploadFolder answers the folder listing the entries fragment needs and
+// records the search the write path asked for.
 type fakeUploadFolder struct {
 	usecase.Folder
 
-	view entity.FolderView
-	err  error
+	view   entity.FolderView
+	err    error
+	search string
 }
 
 func (f *fakeUploadFolder) List(
 	_ context.Context,
-	_, _, _ string,
+	_, _, search string,
 	_ *entity.EntryCursor,
 ) (entity.FolderView, error) {
+	f.search = search
+	f.view.Search = search
+
 	return f.view, f.err
 }
 
@@ -421,6 +426,59 @@ func TestUploadCompleteSetsTheFolderHeader(t *testing.T) {
 
 	if !strings.Contains(string(body), "note.txt") {
 		t.Errorf("body = %q, want the entries fragment", body)
+	}
+}
+
+// Upload completion is a plain fetch, so the page puts the active term in the
+// query string; the refreshed rows have to follow the same filter.
+func TestUploadCompleteKeepsTheSearch(t *testing.T) {
+	t.Parallel()
+
+	const fileID = "9f5d0a3e-4c22-4bb3-9a49-41b2c3d4e5f6"
+
+	files := &fakeUploadFile{
+		file: entity.File{
+			ID:          fileID,
+			Name:        "note.txt",
+			FolderID:    _uploadTestFolder,
+			ContentType: "text/plain",
+			Size:        104857600,
+		},
+	}
+	folders := &fakeUploadFolder{
+		view: entity.FolderView{
+			Folder: entity.Folder{ID: _uploadTestFolder, Name: "documents"},
+			Files: []entity.FileItem{{
+				ID:          fileID,
+				Name:        "note.txt",
+				ContentType: "text/plain",
+				Size:        104857600,
+			}},
+		},
+	}
+
+	app := uploadApp(files, folders)
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/htmx/uploads/"+_uploadTestID+"/complete?q=note",
+		http.NoBody,
+	)
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v, want nil", err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusOK)
+	}
+
+	if folders.search != "note" {
+		t.Errorf("search = %q, want %q", folders.search, "note")
 	}
 }
 
