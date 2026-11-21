@@ -132,6 +132,61 @@ func (r *Repo) List(ctx context.Context, userID, folderID string) ([]entity.File
 	return items, nil
 }
 
+// ListPage returns at most limit files directly inside a folder, in name
+// order, resuming after a cursor. An empty folderID covers the whole own drive,
+// which only global search uses, and an empty search matches every name. Path
+// stays empty here: the caller fills it for a global search.
+func (r *Repo) ListPage(
+	ctx context.Context,
+	userID, folderID, search string,
+	after *entity.EntryCursor,
+	limit int,
+) ([]entity.FileItem, error) {
+	sql, args, err := r.Builder.
+		Select("id", "folder_id", "name", "content_type", "size", "updated_at").
+		From("files").
+		Where(filePageWhere(userID, folderID, search, after)).
+		OrderBy("lower(name) ASC", "id ASC").
+		Limit(uint64(max(limit, 1))).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("FileRepo - ListPage - r.Builder: %w", err)
+	}
+
+	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("FileRepo - ListPage - r.Querier(ctx).Query: %w", err)
+	}
+
+	defer rows.Close()
+
+	items := make([]entity.FileItem, 0)
+
+	for rows.Next() {
+		var item entity.FileItem
+
+		err = rows.Scan(
+			&item.ID,
+			&item.FolderID,
+			&item.Name,
+			&item.ContentType,
+			&item.Size,
+			&item.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("FileRepo - ListPage - rows.Scan: %w", err)
+		}
+
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("FileRepo - ListPage - rows.Err: %w", err)
+	}
+
+	return items, nil
+}
+
 // Rename stores the name a use case already resolved. A missing file maps to
 // ErrFileNotFound.
 func (r *Repo) Rename(ctx context.Context, file *entity.File) error {
@@ -276,6 +331,38 @@ func (r *Repo) DeleteByFolderSubtree(
 	}
 
 	return files, nil
+}
+
+// filePageWhere builds the conditions a paged file read filters by, in a fixed
+// order: the account, the folder when one is named, the search term when one is
+// typed, and the cursor row when the page resumes.
+func filePageWhere(
+	userID, folderID, search string,
+	after *entity.EntryCursor,
+) sq.Sqlizer {
+	conds := []sq.Sqlizer{sq.Eq{_userIDColumn: userID}}
+
+	if folderID != "" {
+		conds = append(conds, sq.Eq{"folder_id": folderID})
+	}
+
+	if search != "" {
+		conds = append(conds, sq.Expr(
+			"lower(name) LIKE lower(?) ESCAPE '\\'",
+			entity.SearchPattern(search),
+		))
+	}
+
+	if after != nil {
+		conds = append(conds, sq.Expr(
+			"(lower(name) > lower(?) OR (lower(name) = lower(?) AND id > ?::uuid))",
+			after.Name,
+			after.Name,
+			after.ID,
+		))
+	}
+
+	return sq.And(conds)
 }
 
 // scanFile reads one file row.

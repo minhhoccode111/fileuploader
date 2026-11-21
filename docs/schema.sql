@@ -40,12 +40,16 @@ CREATE TABLE "public"."folders" (
   CONSTRAINT "folders_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "public"."folders" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "folders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
 );
+-- Create index "folders_name_trgm_idx" to table: "folders"
+CREATE INDEX "folders_name_trgm_idx" ON "public"."folders" USING GIN ((lower((name)::text)) public.gin_trgm_ops);
 -- Create index "folders_parent_idx" to table: "folders"
 CREATE INDEX "folders_parent_idx" ON "public"."folders" ("parent_id");
 -- Create index "folders_root_key" to table: "folders"
 CREATE UNIQUE INDEX "folders_root_key" ON "public"."folders" ("user_id") WHERE (parent_id IS NULL);
 -- Create index "folders_sibling_name_key" to table: "folders"
 CREATE UNIQUE INDEX "folders_sibling_name_key" ON "public"."folders" ("user_id", "parent_id", (lower((name)::text)));
+-- Create index "folders_user_name_idx" to table: "folders"
+CREATE INDEX "folders_user_name_idx" ON "public"."folders" ("user_id", (lower((name)::text)), "id");
 -- Create "files" table
 CREATE TABLE "public"."files" (
   "id" uuid NOT NULL,
@@ -66,6 +70,10 @@ CREATE TABLE "public"."files" (
 CREATE INDEX "files_folder_idx" ON "public"."files" ("folder_id");
 -- Create index "files_folder_name_key" to table: "files"
 CREATE UNIQUE INDEX "files_folder_name_key" ON "public"."files" ("folder_id", (lower((name)::text)));
+-- Create index "files_name_trgm_idx" to table: "files"
+CREATE INDEX "files_name_trgm_idx" ON "public"."files" USING GIN ((lower((name)::text)) public.gin_trgm_ops);
+-- Create index "files_user_name_idx" to table: "files"
+CREATE INDEX "files_user_name_idx" ON "public"."files" ("user_id", (lower((name)::text)), "id");
 -- Create "shares" table
 CREATE TABLE "public"."shares" (
   "id" uuid NOT NULL,

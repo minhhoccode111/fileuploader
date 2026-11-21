@@ -8,8 +8,10 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/repo"
 	"github.com/minhhoccode111/fileuploader/pkg/postgres"
@@ -33,6 +35,24 @@ WITH RECURSIVE ancestors AS (
     WHERE parent.user_id = $1
 )
 SELECT id, name FROM ancestors ORDER BY depth DESC`
+
+// _pathsQuery resolves many folders in one walk to the root. The anchor is the
+// set of folders the caller named and every row keeps the folder it started
+// from, so one statement returns every chain root first.
+const _pathsQuery = `
+WITH RECURSIVE chains AS (
+    SELECT id AS leaf, id, parent_id, name, 0 AS depth
+    FROM folders
+    WHERE id = ANY($2) AND user_id = $1
+    UNION ALL
+    SELECT child.leaf, parent.id, parent.parent_id, parent.name, child.depth + 1
+    FROM folders parent
+    JOIN chains child ON parent.id = child.parent_id
+    WHERE parent.user_id = $1
+)
+SELECT leaf, id, name, depth
+FROM chains
+ORDER BY leaf, depth DESC`
 
 // _userIDColumn is the column every query of the repository scopes by.
 const _userIDColumn = "user_id"
@@ -265,6 +285,54 @@ func (r *Repo) List(ctx context.Context, userID, folderID string) ([]entity.Fold
 	return items, nil
 }
 
+// ListPage returns at most limit folders directly inside a folder, in name
+// order, resuming after a cursor. An empty parentID covers the whole own drive,
+// which only global search uses, and an empty search matches every name. Path
+// stays empty here: the caller fills it for a global search.
+func (r *Repo) ListPage(
+	ctx context.Context,
+	userID, parentID, search string,
+	after *entity.EntryCursor,
+	limit int,
+) ([]entity.FolderItem, error) {
+	sql, args, err := r.Builder.
+		Select("id", "name", "updated_at").
+		From("folders").
+		Where(folderPageWhere(userID, parentID, search, after)).
+		OrderBy("lower(name) ASC", "id ASC").
+		Limit(uint64(max(limit, 1))).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("FolderRepo - ListPage - r.Builder: %w", err)
+	}
+
+	rows, err := r.Querier(ctx).Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("FolderRepo - ListPage - r.Querier(ctx).Query: %w", err)
+	}
+
+	defer rows.Close()
+
+	items := make([]entity.FolderItem, 0)
+
+	for rows.Next() {
+		var item entity.FolderItem
+
+		err = rows.Scan(&item.ID, &item.Name, &item.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("FolderRepo - ListPage - rows.Scan: %w", err)
+		}
+
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("FolderRepo - ListPage - rows.Err: %w", err)
+	}
+
+	return items, nil
+}
+
 // ListAll returns every folder of the account. Roots come first, then
 // children in name order. Callers use it to build a destination picker.
 func (r *Repo) ListAll(ctx context.Context, userID string) ([]entity.Folder, error) {
@@ -349,6 +417,61 @@ func (r *Repo) Breadcrumb(ctx context.Context, userID, folderID string) ([]entit
 	}
 
 	return refs, nil
+}
+
+// Paths returns the chain from the root to each named folder, root first. The
+// answer is keyed by the folder the caller named. An identifier the account
+// does not own has no entry, so a caller renders it as Home instead of failing
+// the page.
+func (r *Repo) Paths(
+	ctx context.Context,
+	userID string,
+	folderIDs []string,
+) (map[string][]entity.FolderRef, error) {
+	paths := make(map[string][]entity.FolderRef, len(folderIDs))
+	if len(folderIDs) == 0 {
+		return paths, nil
+	}
+
+	ids := make([]pgtype.UUID, 0, len(folderIDs))
+
+	for _, folderID := range folderIDs {
+		parsed, err := uuid.Parse(folderID)
+		if err != nil {
+			return nil, fmt.Errorf("FolderRepo - Paths - uuid.Parse: %w", err)
+		}
+
+		ids = append(ids, pgtype.UUID{Bytes: parsed, Valid: true})
+	}
+
+	rows, err := r.Querier(ctx).Query(ctx, _pathsQuery, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("FolderRepo - Paths - r.Querier(ctx).Query: %w", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			leaf string
+			ref  entity.FolderRef
+			// depth only takes part in the SQL order that puts the root first.
+			depth int
+		)
+
+		err = rows.Scan(&leaf, &ref.ID, &ref.Name, &depth)
+		if err != nil {
+			return nil, fmt.Errorf("FolderRepo - Paths - rows.Scan: %w", err)
+		}
+
+		paths[leaf] = append(paths[leaf], ref)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("FolderRepo - Paths - rows.Err: %w", err)
+	}
+
+	return paths, nil
 }
 
 // NameTaken reports whether a folder of the account already carries the name
@@ -468,6 +591,38 @@ func (r *Repo) Delete(ctx context.Context, userID, folderID string) error {
 	}
 
 	return nil
+}
+
+// folderPageWhere builds the conditions a paged folder read filters by, in a
+// fixed order: the account, the parent when one is named, the search term when
+// one is typed, and the cursor row when the page resumes.
+func folderPageWhere(
+	userID, parentID, search string,
+	after *entity.EntryCursor,
+) sq.Sqlizer {
+	conds := []sq.Sqlizer{sq.Eq{_userIDColumn: userID}}
+
+	if parentID != "" {
+		conds = append(conds, sq.Eq{"parent_id": parentID})
+	}
+
+	if search != "" {
+		conds = append(conds, sq.Expr(
+			"lower(name) LIKE lower(?) ESCAPE '\\'",
+			entity.SearchPattern(search),
+		))
+	}
+
+	if after != nil {
+		conds = append(conds, sq.Expr(
+			"(lower(name) > lower(?) OR (lower(name) = lower(?) AND id > ?::uuid))",
+			after.Name,
+			after.Name,
+			after.ID,
+		))
+	}
+
+	return sq.And(conds)
 }
 
 // scanFolder reads one folder row and rebuilds the nullable parent after the
