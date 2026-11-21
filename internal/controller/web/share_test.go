@@ -50,7 +50,7 @@ func TestNewSharedDriveBuildsRootNextHref(t *testing.T) {
 		ID:   _shareTestFile,
 	}
 
-	page := response.NewSharedDrive(_shareTestShare, &entity.FolderView{
+	page := response.NewSharedDrive(_shareTestShare, _shareTestRoot, &entity.FolderView{
 		Folder: entity.Folder{ID: _shareTestRoot, Name: "/"},
 		Next:   &next,
 	})
@@ -90,7 +90,7 @@ func TestNewSharedDriveBuildsNestedNextHref(t *testing.T) {
 		ID:   _shareTestFolder,
 	}
 
-	page := response.NewSharedDrive(_shareTestShare, &entity.FolderView{
+	page := response.NewSharedDrive(_shareTestShare, _shareTestRoot, &entity.FolderView{
 		Folder: entity.Folder{ID: _shareTestFolder, ParentID: &parent, Name: "docs"},
 		Next:   &next,
 	})
@@ -106,6 +106,48 @@ func TestNewSharedDriveBuildsNestedNextHref(t *testing.T) {
 	}
 }
 
+// A share usually opens a folder below the owner's drive root. The page on that
+// folder is still the share root, so its search form and load-more link keep the
+// canonical share routes instead of naming the folder twice.
+func TestNewSharedDriveKeepsTheRootNextHrefForANonRootShare(t *testing.T) {
+	t.Parallel()
+
+	parent := _shareTestRoot
+	next := entity.EntryCursor{
+		Kind: entity.EntryKindFile,
+		Name: "note.txt",
+		ID:   _shareTestFile,
+	}
+
+	page := response.NewSharedDrive(_shareTestShare, _shareTestFolder, &entity.FolderView{
+		Folder: entity.Folder{ID: _shareTestFolder, ParentID: &parent, Name: "docs"},
+		Next:   &next,
+	})
+
+	want := "/htmx/share/" + _shareTestShare + "/entries?"
+	if !strings.HasPrefix(page.NextURL, want) {
+		t.Errorf("NextURL = %q, want it to start with %q", page.NextURL, want)
+	}
+
+	if page.SearchAction != "/share/"+_shareTestShare {
+		t.Errorf("SearchAction = %q, want the share root page", page.SearchAction)
+	}
+
+	parsed, err := url.Parse(page.NextURL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v, want nil", err)
+	}
+
+	after, err := entity.DecodeEntryCursor(parsed.Query().Get("after"))
+	if err != nil {
+		t.Fatalf("DecodeEntryCursor() error = %v, want nil", err)
+	}
+
+	if after == nil || *after != next {
+		t.Errorf("after = %v, want %v", after, next)
+	}
+}
+
 // The partial has to run the same filter as the page it extends: a next link
 // without the term would append unfiltered rows under a filtered table.
 func TestNewSharedDriveKeepsTheSearch(t *testing.T) {
@@ -117,7 +159,7 @@ func TestNewSharedDriveKeepsTheSearch(t *testing.T) {
 		ID:   _shareTestFile,
 	}
 
-	page := response.NewSharedDrive(_shareTestShare, &entity.FolderView{
+	page := response.NewSharedDrive(_shareTestShare, _shareTestRoot, &entity.FolderView{
 		Folder: entity.Folder{ID: _shareTestRoot, Name: "/"},
 		Search: "note",
 		Next:   &next,

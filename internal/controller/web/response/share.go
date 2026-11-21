@@ -73,9 +73,11 @@ type SharedFileRow struct {
 	Download string
 }
 
-// NewSharedDrive maps a folder view to the public share page. The root crumb
+// NewSharedDrive maps a folder view to the public share page. rootFolderID is
+// the folder the share opens, so a page on it keeps the canonical share root
+// address even when that folder is not the owner's drive root. The root crumb
 // points back at the share root; folder rows point at nested share routes.
-func NewSharedDrive(shareID string, view *entity.FolderView) SharedDrive {
+func NewSharedDrive(shareID, rootFolderID string, view *entity.FolderView) SharedDrive {
 	crumbs := make([]Crumb, 0, len(view.Breadcrumb))
 
 	for i, ref := range view.Breadcrumb {
@@ -125,16 +127,16 @@ func NewSharedDrive(shareID string, view *entity.FolderView) SharedDrive {
 		Folders:      folders,
 		Files:        files,
 		Search:       view.Search,
-		SearchAction: sharedPagePath(shareID, &view.Folder),
-		NextURL:      sharedNextURL(shareID, &view.Folder, view.Search, view.Next),
+		SearchAction: sharedPagePath(shareID, rootFolderID, &view.Folder),
+		NextURL:      sharedNextURL(shareID, rootFolderID, &view.Folder, view.Search, view.Next),
 	}
 }
 
 // sharedPagePath is the page of a folder inside a share: the share root, or the
 // nested route of the folder on the screen. The local search form submits here,
 // so a term keeps the visitor on the page it narrows.
-func sharedPagePath(shareID string, folder *entity.Folder) string {
-	if folder.IsRoot() {
+func sharedPagePath(shareID, rootFolderID string, folder *entity.Folder) string {
+	if folder.ID == rootFolderID {
 		return "/share/" + shareID
 	}
 
@@ -143,8 +145,8 @@ func sharedPagePath(shareID string, folder *entity.Folder) string {
 
 // sharedEntriesPath is the partial route that answers the load-more sentinel of
 // a shared folder page.
-func sharedEntriesPath(shareID string, folder *entity.Folder) string {
-	if folder.IsRoot() {
+func sharedEntriesPath(shareID, rootFolderID string, folder *entity.Folder) string {
+	if folder.ID == rootFolderID {
 		return "/htmx/share/" + shareID + "/entries"
 	}
 
@@ -154,7 +156,12 @@ func sharedEntriesPath(shareID string, folder *entity.Folder) string {
 // sharedNextURL is the partial route of the batch after the cursor, under the
 // same search. Both values are escaped, and an empty search is left out, so the
 // link stays short.
-func sharedNextURL(shareID string, folder *entity.Folder, search string, after *entity.EntryCursor) string {
+func sharedNextURL(
+	shareID, rootFolderID string,
+	folder *entity.Folder,
+	search string,
+	after *entity.EntryCursor,
+) string {
 	if after == nil {
 		return ""
 	}
@@ -166,5 +173,5 @@ func sharedNextURL(shareID string, folder *entity.Folder, search string, after *
 		query.Set("q", search)
 	}
 
-	return sharedEntriesPath(shareID, folder) + "?" + query.Encode()
+	return sharedEntriesPath(shareID, rootFolderID, folder) + "?" + query.Encode()
 }

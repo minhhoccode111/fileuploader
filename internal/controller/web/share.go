@@ -271,7 +271,7 @@ func (c *Controller) sharedFolder(ctx *fiber.Ctx, shareID, folderID string) erro
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	page := response.NewSharedDrive(share.ID, &view)
+	page := response.NewSharedDrive(share.ID, share.FolderID, &view)
 
 	return c.render(ctx, templates.SharedDrive(c.view(ctx), page), templates.SharedDriveContent(page), templates.SharedTitle)
 }
@@ -310,7 +310,7 @@ func (c *Controller) sharedEntriesPage(ctx *fiber.Ctx, shareID, folderID string)
 		return c.sharedError(ctx, shareID, err)
 	}
 
-	return c.renderPage(ctx, templates.SharedEntryRows(response.NewSharedDrive(share.ID, &view)))
+	return c.renderPage(ctx, templates.SharedEntryRows(response.NewSharedDrive(share.ID, share.FolderID, &view)))
 }
 
 // sharedFileDownload sends a visitor of a shared folder to a presigned link
