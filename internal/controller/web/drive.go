@@ -102,7 +102,7 @@ func (c *Controller) folderEntries(ctx *fiber.Ctx) error {
 		return ctx.SendStatus(http.StatusBadRequest)
 	}
 
-	view, err := c.folders.List(ctx.UserContext(), userID, folderID, "", after)
+	view, err := c.folders.List(ctx.UserContext(), userID, folderID, ctx.Query("q"), after)
 	if err != nil {
 		if errors.Is(err, entity.ErrFolderNotFound) {
 			return middleware.Redirect(ctx, _homePath)

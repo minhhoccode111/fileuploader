@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
 )
 
@@ -67,7 +69,7 @@ func TestFolderEntriesRejectsAMalformedCursor(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			status, body := folderEntriesResponse(t, tc.path)
+			status, body := folderEntriesResponse(t, nil, tc.path)
 
 			if status != http.StatusBadRequest {
 				t.Errorf("status = %d, want %d", status, http.StatusBadRequest)
@@ -80,13 +82,93 @@ func TestFolderEntriesRejectsAMalformedCursor(t *testing.T) {
 	}
 }
 
+// The load-more link carries the search, so the partial must run the same
+// filter: unfiltered rows appended under a filtered table would be wrong.
+func TestFolderEntriesKeepsTheSearch(t *testing.T) {
+	t.Parallel()
+
+	const folderID = "550e8400-e29b-41d4-a716-446655440000"
+
+	cursor := entity.EntryCursor{
+		Kind: entity.EntryKindFile,
+		Name: "notes.txt",
+		ID:   "d9b1f4a6-4f5e-4b4a-9a39-2d8c7b6a5e44",
+	}
+	next := entity.EntryCursor{
+		Kind: entity.EntryKindFile,
+		Name: "zeta.txt",
+		ID:   "0f6a1c2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+	}
+
+	folders := &driveFolder{view: entity.FolderView{
+		Folder: entity.Folder{ID: folderID, Name: "/"},
+		Files: []entity.FileItem{{
+			ID:          "b1e2d3c4-5a6f-4b7c-8d9e-0f1a2b3c4d5e",
+			Name:        "note.txt",
+			ContentType: "text/plain",
+			Size:        5,
+		}},
+		Search: "note",
+		Next:   &next,
+	}}
+
+	path := "/htmx/folders/" + folderID + "/entries?q=note&after=" + cursor.Encode()
+
+	status, body := folderEntriesResponse(t, folders, path)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	if folders.search != "note" {
+		t.Errorf("search = %q, want %q", folders.search, "note")
+	}
+
+	if folders.folderID != folderID {
+		t.Errorf("folderID = %q, want %q", folders.folderID, folderID)
+	}
+
+	if folders.after == nil || *folders.after != cursor {
+		t.Errorf("after = %v, want %v", folders.after, cursor)
+	}
+
+	for _, part := range []string{"note.txt", "Load more"} {
+		if !strings.Contains(body, part) {
+			t.Errorf("body = %q, want it to contain %q", body, part)
+		}
+	}
+}
+
+// driveFolder records the listing call of the partial route and answers with
+// the canned view.
+type driveFolder struct {
+	usecase.Folder
+
+	view     entity.FolderView
+	folderID string
+	search   string
+	after    *entity.EntryCursor
+}
+
+func (f *driveFolder) List(
+	_ context.Context,
+	_, folderID, search string,
+	after *entity.EntryCursor,
+) (entity.FolderView, error) {
+	f.folderID = folderID
+	f.search = search
+	f.after = after
+
+	return f.view, nil
+}
+
 // folderEntriesResponse sends one request to the partial route and returns the
 // status and the body of the answer.
-func folderEntriesResponse(t *testing.T, path string) (status int, body string) {
+func folderEntriesResponse(t *testing.T, folders usecase.Folder, path string) (status int, body string) {
 	t.Helper()
 
 	app := fiber.New()
-	c := &Controller{l: logger.New("error"), v: validator.New()}
+	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders}
 
 	app.Get("/htmx/folders/:folder/entries", func(ctx *fiber.Ctx) error {
 		ctx.Locals(_sessionLocal, entity.Session{UserID: "550e8400-e29b-41d4-a716-446655440001"})
