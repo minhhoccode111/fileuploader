@@ -130,6 +130,31 @@ for a random duration between `HTTP_FAKE_LATENCY_MIN` and `HTTP_FAKE_LATENCY_MAX
 by default), so the pages can be checked against a slow network. A non-positive max turns the delay
 off. The liveness probe at `/healthz` waits for it too, so keep the range small in production.
 
+## Browsing and search
+
+Folder pages load one page of 100 entries: folders first, then files, each by `lower(name)` and
+`id`. The next page is a keyset cursor, not an offset. The `after` value is the last row of the
+batch, encoded by `entity.EntryCursor`, and the "Load more" row carries it to the matching partial
+route. The cursor lives in the link, never in the address bar, so a reload starts at the first batch
+again. An unusable cursor is a 400 on the partial and never a silent restart.
+
+`q` narrows a folder page to the direct children whose name holds the term, without changing the
+breadcrumb or the folder URL. `/search` is the own-drive search: it needs at least three characters
+(a shorter substring cannot use `pg_trgm`), never includes shared content, and every result carries
+the folder path that leads to it. Home is `/` and keeps that URL for its local search; it has no
+folder identifier, so a global search started from Home has no `This folder` scope and clearing it
+returns Home. Global results are read-only: a folder opens on its page, a file downloads, and a
+file's location links to the folder that contains it — actions stay on the folder page.
+
+Shared folder pages get the same page size and local `q`, but no global search: a share grants one
+subtree, not a drive. The share token is resolved on every partial request, and the owner identifier
+comes from the resolved share, never from the client.
+
+`pg_trgm` is a deployment requirement. The folder-browse migration installs it
+(`CREATE EXTENSION IF NOT EXISTS pg_trgm`) and the trigram indexes global search needs; a deployment
+without it fails at migration time. Rolling the migration back drops only the indexes it added and
+leaves the extension in place, because it may predate this change.
+
 ## The handler contract
 
 Every REST controller method does the same six things in the same order. Copy the shape from a

@@ -728,8 +728,10 @@ git commit -m "feat(web): search the current folder without losing context"
 - Produces:
   - `response.SharedDrive.Search string`, `response.SharedDrive.NextURL string`,
     `response.SharedDrive.SearchAction string`
-  - `func NewSharedDrive(shareID string, view *entity.FolderView) SharedDrive` builds
-    `NextURL` against the share partial routes.
+  - `func NewSharedDrive(shareID, rootFolderID string, view *entity.FolderView) SharedDrive`
+    builds `NextURL` against the share partial routes. `rootFolderID` is the folder
+    the share opens, so a page on it keeps the canonical `/share/:share` address
+    even when that folder is not the owner's drive root.
   - `func (c *Controller) sharedEntries(ctx *fiber.Ctx) error`
   - `func (c *Controller) sharedEntriesRoute(ctx *fiber.Ctx) error`
   - Routes:
@@ -762,8 +764,10 @@ Expected: build failure for missing fields and handlers.
 - [ ] **Step 3: Extend the shared page**
 
 Add `Search`, `NextURL`, and `SearchAction` to `response.SharedDrive`.
-`NewSharedDrive` builds `NextURL` from `view.Next` and `view.Search`, using the
-root or nested share partial path. `SearchAction` is the current share page path.
+`NewSharedDrive` builds `SearchAction` and `NextURL` from `view.Next` and
+`view.Search`, choosing the root share partial path when `view.Folder.ID` equals
+`rootFolderID` and the nested one otherwise. `SearchAction` is the current share
+page path.
 
 In `sharedFolder`, read `q` and pass it to `c.folders.List`. In
 `SharedDriveContent`, add a local search form (no scope select, no global link)
