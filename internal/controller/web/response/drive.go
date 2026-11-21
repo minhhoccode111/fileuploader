@@ -123,6 +123,7 @@ type FileInfo struct {
 	Type    string
 	Size    string
 	Bytes   int64
+	Created string
 	Updated string
 }
 
@@ -330,6 +331,7 @@ func NewFileInfo(file *entity.File) FileInfo {
 		Type:    file.ContentType,
 		Size:    ByteLabel(file.Size),
 		Bytes:   file.Size,
+		Created: file.CreatedAt.Format(_driveDateLayout),
 		Updated: file.UpdatedAt.Format(_driveDateLayout),
 	}
 }

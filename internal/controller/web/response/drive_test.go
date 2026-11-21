@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 )
@@ -28,6 +29,26 @@ func TestNewFileInfoKeepsTheRawByteCount(t *testing.T) {
 
 	if info.Size != ByteLabel(file.Size) {
 		t.Errorf("NewFileInfo() size = %q, want %q", info.Size, ByteLabel(file.Size))
+	}
+}
+
+// The drawer shows when the file first arrived, not only when it last
+// changed, because a rename or a move would otherwise hide the upload time.
+func TestNewFileInfoShowsTheUploadTime(t *testing.T) {
+	t.Parallel()
+
+	created := time.Date(2026, time.March, 4, 5, 6, 0, 0, time.UTC)
+	file := entity.File{
+		ID:        "file",
+		Name:      "notes.txt",
+		CreatedAt: created,
+		UpdatedAt: created.Add(24 * time.Hour),
+	}
+
+	info := NewFileInfo(&file)
+
+	if info.Created != "2026-03-04 05:06" {
+		t.Errorf("NewFileInfo() created = %q, want %q", info.Created, "2026-03-04 05:06")
 	}
 }
 

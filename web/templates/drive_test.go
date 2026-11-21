@@ -45,6 +45,29 @@ func TestFileDrawerPassesTheRawSizeToTheDownloadLink(t *testing.T) {
 	}
 }
 
+// The drawer tells an upload time from a change time, so the owner sees when
+// the file arrived even after a rename or a move.
+func TestFileDrawerShowsTheUploadTime(t *testing.T) {
+	t.Parallel()
+
+	info := response.FileInfo{
+		ID:      "file",
+		Name:    "notes.txt",
+		Type:    "text/plain",
+		Size:    "1 B",
+		Created: "2026-03-04 05:06",
+		Updated: "2026-03-05 09:10",
+	}
+
+	html := renderTemplate(t, FileDrawerContent(info))
+
+	for _, part := range []string{"Uploaded", "2026-03-04 05:06", "Modified", "2026-03-05 09:10"} {
+		if !strings.Contains(html, part) {
+			t.Errorf("FileDrawerContent() = %s, want it to contain %q", html, part)
+		}
+	}
+}
+
 // The table ends with a load-more sentinel only while a next page exists. The
 // sentinel names the partial route and replaces itself with the rows it loads.
 func TestDriveEntriesShowsLoadMoreOnlyWithANextURL(t *testing.T) {
