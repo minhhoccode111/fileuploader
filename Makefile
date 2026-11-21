@@ -221,7 +221,13 @@ schema: $(ATLAS) ### dump the current database schema to docs/schema.sql
 		echo "schema: database not reachable, skipping"; exit 0; \
 	fi; \
 	mkdir -p $(dir $(SCHEMA_FILE)) && \
-	$(ATLAS) schema inspect -u "$(PG_URL)?sslmode=disable" --format '{{ sql . }}' > $(SCHEMA_FILE).tmp && \
+	{ \
+		echo "-- pg_trgm is a deployment requirement: the trigram indexes below need it."; \
+		echo "-- Atlas does not dump extensions, so this line keeps the dump replayable."; \
+		echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;"; \
+		echo; \
+		$(ATLAS) schema inspect -u "$(PG_URL)?sslmode=disable" --format '{{ sql . }}'; \
+	} > $(SCHEMA_FILE).tmp && \
 	mv $(SCHEMA_FILE).tmp $(SCHEMA_FILE) || { rm -f $(SCHEMA_FILE).tmp; echo "schema: dump failed"; exit 1; }; \
 	echo "schema: wrote $(SCHEMA_FILE)"
 .PHONY: schema

@@ -1,3 +1,7 @@
+-- pg_trgm is a deployment requirement: the trigram indexes below need it.
+-- Atlas does not dump extensions, so this line keeps the dump replayable.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- Add new schema named "public"
 CREATE SCHEMA IF NOT EXISTS "public";
 -- Set comment to schema: "public"

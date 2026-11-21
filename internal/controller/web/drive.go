@@ -56,12 +56,12 @@ func (c *Controller) folderPage(ctx *fiber.Ctx) error {
 // becomes the way back. A malformed identifier cannot reach a UUID column, so
 // it looks like a folder that is gone and sends the visitor home.
 func (c *Controller) drive(ctx *fiber.Ctx, folderID string) error {
-	if path := wholeDrivePath(ctx, folderID); path != "" {
-		return middleware.Redirect(ctx, path)
-	}
-
 	if folderID != "" && !c.validID(folderID) {
 		return middleware.Redirect(ctx, _homePath)
+	}
+
+	if path := wholeDrivePath(ctx, folderID); path != "" {
+		return middleware.Redirect(ctx, path)
 	}
 
 	userID, ok := c.userID(ctx)

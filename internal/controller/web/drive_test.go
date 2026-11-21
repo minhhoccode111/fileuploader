@@ -285,6 +285,36 @@ func TestFolderScopeAllRedirectsToSearch(t *testing.T) {
 	})
 }
 
+// A malformed folder address names no folder, so it cannot lend itself to the
+// search page as a way back. The scope control still sends the visitor Home,
+// where the folder is treated as gone.
+func TestMalformedFolderWithScopeAllGoesHome(t *testing.T) {
+	t.Parallel()
+
+	folders := &driveFolder{}
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"/folders/not-a-uuid?q=note&scope=all",
+		http.NoBody,
+	)
+
+	status, header, _ := driveResponse(t, drivePageApp(folders), req)
+
+	if status != http.StatusFound {
+		t.Errorf("status = %d, want %d", status, http.StatusFound)
+	}
+
+	if got := header.Get(fiber.HeaderLocation); got != "/" {
+		t.Errorf("Location = %q, want %q", got, "/")
+	}
+
+	if folders.listCalls != 0 {
+		t.Errorf("List calls = %d, want 0", folders.listCalls)
+	}
+}
+
 // Home keeps no folder address, so its whole-drive search has no way back.
 func TestHomeScopeAllRedirectsToSearchWithoutFrom(t *testing.T) {
 	t.Parallel()
