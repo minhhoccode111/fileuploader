@@ -264,7 +264,7 @@ func (c *Controller) sharedFolder(ctx *fiber.Ctx, shareID, folderID string) erro
 		return c.sharedError(ctx, shareID, err)
 	}
 
-	view, err := c.folders.List(ctx.UserContext(), share.UserID, folder.ID, "", nil)
+	view, err := c.folders.List(ctx.UserContext(), share.UserID, folder.ID, ctx.Query("q"), nil)
 	if err != nil {
 		c.l.Error(fmt.Errorf("web - sharedFolder - uc.folders.List: %w", err))
 
@@ -274,6 +274,43 @@ func (c *Controller) sharedFolder(ctx *fiber.Ctx, shareID, folderID string) erro
 	page := response.NewSharedDrive(share.ID, &view)
 
 	return c.render(ctx, templates.SharedDrive(c.view(ctx), page), templates.SharedDriveContent(page), templates.SharedTitle)
+}
+
+// sharedEntries answers the load-more sentinel of the root of a shared folder.
+func (c *Controller) sharedEntries(ctx *fiber.Ctx) error {
+	return c.sharedEntriesPage(ctx, ctx.Params("share"), "")
+}
+
+// sharedEntriesRoute answers the load-more sentinel of a nested shared folder.
+func (c *Controller) sharedEntriesRoute(ctx *fiber.Ctx) error {
+	return c.sharedEntriesPage(ctx, ctx.Params("share"), ctx.Params("folder"))
+}
+
+// sharedEntriesPage lists the batch after the cursor of one shared folder. The
+// share token is resolved on every request, so the listing always runs under the
+// owner of the share and never under an identifier the caller sent. A missing or
+// tampered cursor is a client error and never a restart at the first page.
+func (c *Controller) sharedEntriesPage(ctx *fiber.Ctx, shareID, folderID string) error {
+	if !c.validID(shareID) || (folderID != "" && !c.validID(folderID)) {
+		return ctx.SendStatus(http.StatusNotFound)
+	}
+
+	after, err := entity.DecodeEntryCursor(ctx.Query("after"))
+	if err != nil || after == nil {
+		return ctx.SendStatus(http.StatusBadRequest)
+	}
+
+	share, folder, err := c.resolveSharedFolder(ctx, shareID, folderID)
+	if err != nil {
+		return c.sharedError(ctx, shareID, err)
+	}
+
+	view, err := c.folders.List(ctx.UserContext(), share.UserID, folder.ID, ctx.Query("q"), after)
+	if err != nil {
+		return c.sharedError(ctx, shareID, err)
+	}
+
+	return c.renderPage(ctx, templates.SharedEntryRows(response.NewSharedDrive(share.ID, &view)))
 }
 
 // sharedFileDownload sends a visitor of a shared folder to a presigned link

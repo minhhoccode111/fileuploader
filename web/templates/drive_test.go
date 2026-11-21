@@ -155,6 +155,91 @@ func TestDriveEntriesWordsTheEmptyStateOfAFilteredFolder(t *testing.T) {
 	}
 }
 
+// The shared table ends with a load-more sentinel only while a next page
+// exists. The sentinel names the share partial and spans its three columns.
+func TestSharedEntryRowsShowsLoadMoreOnlyWithANextURL(t *testing.T) {
+	t.Parallel()
+
+	page := response.SharedDrive{
+		ShareID: "share-1",
+		Folders: []response.SharedFolderRow{{
+			ID:      "folder-1",
+			Name:    "Docs",
+			Href:    "/share/share-1/folders/folder-1",
+			Items:   "0 items",
+			Updated: "now",
+		}},
+		Files: []response.SharedFileRow{{
+			ID:       "file-1",
+			Name:     "notes.txt",
+			Type:     "text/plain",
+			Size:     "1 B",
+			Updated:  "now",
+			Download: "/share/share-1/files/file-1/download",
+		}},
+		NextURL: "/htmx/share/share-1/entries?after=abc",
+	}
+
+	html := renderTemplate(t, SharedEntryRows(page))
+
+	for _, part := range []string{
+		"<tr",
+		"Docs",
+		"notes.txt",
+		"Load more",
+		`hx-get="/htmx/share/share-1/entries?after=abc"`,
+		`hx-target="closest tr"`,
+		`hx-swap="outerHTML"`,
+		`hx-trigger="click, revealed"`,
+		`colspan="3"`,
+	} {
+		if !strings.Contains(html, part) {
+			t.Errorf("SharedEntryRows() = %s, want it to contain %q", html, part)
+		}
+	}
+
+	page.NextURL = ""
+
+	if html := renderTemplate(t, SharedEntryRows(page)); strings.Contains(html, "Load more") {
+		t.Errorf("SharedEntryRows() = %s, want no load-more row at the end", html)
+	}
+}
+
+// The shared page narrows the folder on the screen only: its search form
+// carries the term on the address of the page, and offers no scope control
+// that could leave for the owner's drive.
+func TestSharedSearchFormCarriesTheTerm(t *testing.T) {
+	t.Parallel()
+
+	page := response.SharedDrive{
+		ShareID:      "share-1",
+		FolderID:     "folder-1",
+		Search:       "note",
+		SearchAction: "/share/share-1/folders/folder-1",
+	}
+
+	html := renderTemplate(t, SharedDriveContent(page))
+
+	for _, part := range []string{
+		`name="q"`,
+		`value="note"`,
+		`maxlength="100"`,
+		`action="/share/share-1/folders/folder-1"`,
+		`hx-get="/share/share-1/folders/folder-1"`,
+		`hx-target="#page-content"`,
+		`hx-swap="innerHTML"`,
+		`hx-push-url="true"`,
+	} {
+		if !strings.Contains(html, part) {
+			t.Errorf("SharedDriveContent() = %s, want it to contain %q", html, part)
+		}
+	}
+
+	if strings.Contains(html, `name="scope"`) {
+		t.Errorf("SharedDriveContent() = %s, want no scope control on a shared page", html)
+	}
+}
+
 // renderTemplate renders one component into its HTML text.
 func renderTemplate(t *testing.T, component templ.Component) string {
 	t.Helper()

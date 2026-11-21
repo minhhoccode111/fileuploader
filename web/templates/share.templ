@@ -160,7 +160,9 @@ templ SharedDrive(view View, page response.SharedDrive) {
 	}
 }
 
-// SharedDriveContent is the fragment htmx swaps into <main>.
+// SharedDriveContent is the fragment htmx swaps into <main>. A share exposes no
+// scope control: the local search only narrows the folder on the screen, so a
+// visitor never reaches the owner's drive.
 templ SharedDriveContent(page response.SharedDrive) {
 	@PageColumnWide() {
 		<section class="card bg-base-100 shadow">
@@ -178,6 +180,7 @@ templ SharedDriveContent(page response.SharedDrive) {
 						}
 					</ul>
 				</nav>
+				@SharedEntrySearchForm(page)
 				if len(page.Folders) == 0 && len(page.Files) == 0 {
 					<div class="rounded-box border-base-300 border border-dashed p-10 text-center">
 						<p class="text-base-content/70 text-sm">This shared folder is empty.</p>
@@ -192,40 +195,92 @@ templ SharedDriveContent(page response.SharedDrive) {
 							</tr>
 						</thead>
 						<tbody>
-							for _, folder := range page.Folders {
-								<tr class="cursor-pointer hover:bg-base-200/50" aria-label={ "Open folder " + folder.Name } hx-get={ folder.Href } hx-target="#page-content" hx-swap="innerHTML" hx-push-url="true">
-									<td class="font-medium">
-										<span class="flex items-center gap-2">
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-warning">
-												<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
-											</svg>
-											<span class="block min-w-0 flex-1 truncate" title={ folder.Name }>{ folder.Name }</span>
-										</span>
-									</td>
-									<td class="whitespace-nowrap">{ folder.Items }</td>
-									<td class="whitespace-nowrap">{ folder.Updated }</td>
-								</tr>
-							}
-							for _, file := range page.Files {
-								<tr>
-									<td class="font-medium">
-										<span class="flex items-center gap-2">
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
-												<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
-												<path d="M14 2v6h6"></path>
-											</svg>
-											<a href={ templ.URL(file.Download) } class="link">{ file.Name }</a>
-										</span>
-									</td>
-									<td class="whitespace-nowrap">{ file.Size }</td>
-									<td class="whitespace-nowrap">{ file.Updated }</td>
-								</tr>
-							}
+							@SharedEntryRows(page)
 						</tbody>
 					</table>
 				}
 			</div>
 		</section>
+	}
+}
+
+// SharedEntrySearchForm narrows the direct children of the shared folder on the
+// screen. It is a plain GET form, so it works without JavaScript, and htmx swaps
+// only the page content when it is available.
+templ SharedEntrySearchForm(page response.SharedDrive) {
+	<form
+		class="flex w-full flex-wrap items-center gap-2"
+		method="get"
+		action={ page.SearchAction }
+		hx-get={ page.SearchAction }
+		hx-target="#page-content"
+		hx-swap="innerHTML"
+		hx-push-url="true"
+	>
+		<input
+			class="input w-full flex-1"
+			type="search"
+			name="q"
+			value={ page.Search }
+			placeholder="Search this folder"
+			aria-label="Search this folder"
+			maxlength="100"
+			autocomplete="off"
+		/>
+		<button type="submit" class="btn">Search</button>
+	</form>
+}
+
+// SharedEntryRows renders the rows of a shared listing and the load-more
+// sentinel, without the table around them. It is the body of the partial
+// endpoint: htmx replaces the sentinel row with the rows it loaded and the
+// sentinel that follows them. The table has Name, Size and Modified, so the
+// sentinel cell spans three columns.
+templ SharedEntryRows(page response.SharedDrive) {
+	for _, folder := range page.Folders {
+		<tr class="cursor-pointer hover:bg-base-200/50" aria-label={ "Open folder " + folder.Name } hx-get={ folder.Href } hx-target="#page-content" hx-swap="innerHTML" hx-push-url="true">
+			<td class="font-medium">
+				<span class="flex items-center gap-2">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-warning">
+						<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
+					</svg>
+					<span class="block min-w-0 flex-1 truncate" title={ folder.Name }>{ folder.Name }</span>
+				</span>
+			</td>
+			<td class="whitespace-nowrap">{ folder.Items }</td>
+			<td class="whitespace-nowrap">{ folder.Updated }</td>
+		</tr>
+	}
+	for _, file := range page.Files {
+		<tr>
+			<td class="font-medium">
+				<span class="flex items-center gap-2">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+						<path d="M14 2v6h6"></path>
+					</svg>
+					<a href={ templ.URL(file.Download) } class="link">{ file.Name }</a>
+				</span>
+			</td>
+			<td class="whitespace-nowrap">{ file.Size }</td>
+			<td class="whitespace-nowrap">{ file.Updated }</td>
+		</tr>
+	}
+	if page.NextURL != "" {
+		<tr id="load-more">
+			<td colspan="3" class="text-center">
+				<button
+					type="button"
+					class="btn btn-ghost btn-sm"
+					hx-get={ page.NextURL }
+					hx-target="closest tr"
+					hx-swap="outerHTML"
+					hx-trigger="click, revealed"
+				>
+					Load more
+				</button>
+			</td>
+		</tr>
 	}
 }
 

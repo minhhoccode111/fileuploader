@@ -1,6 +1,7 @@
 package response
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
@@ -37,16 +38,22 @@ func NewShareRow(share *entity.Share, folderName string) ShareRow {
 }
 
 // SharedDrive is the read-only listing a public visitor sees. It reuses the
-// drive shape, but its links point at the share routes.
+// drive shape, but its links point at the share routes. Search is the term the
+// listing was narrowed with, SearchAction is where the local search form of the
+// page submits, and NextURL is the partial route that answers the load-more
+// sentinel, empty when the listing is complete.
 type SharedDrive struct {
-	ShareID    string
-	Title      string
-	FolderID   string
-	FolderName string
-	IsRoot     bool
-	Breadcrumb []Crumb
-	Folders    []SharedFolderRow
-	Files      []SharedFileRow
+	ShareID      string
+	Title        string
+	FolderID     string
+	FolderName   string
+	IsRoot       bool
+	Breadcrumb   []Crumb
+	Folders      []SharedFolderRow
+	Files        []SharedFileRow
+	Search       string
+	SearchAction string
+	NextURL      string
 }
 
 type SharedFolderRow struct {
@@ -110,12 +117,54 @@ func NewSharedDrive(shareID string, view *entity.FolderView) SharedDrive {
 	}
 
 	return SharedDrive{
-		ShareID:    shareID,
-		FolderID:   view.Folder.ID,
-		FolderName: view.Folder.Name,
-		IsRoot:     view.Folder.IsRoot(),
-		Breadcrumb: crumbs,
-		Folders:    folders,
-		Files:      files,
+		ShareID:      shareID,
+		FolderID:     view.Folder.ID,
+		FolderName:   view.Folder.Name,
+		IsRoot:       view.Folder.IsRoot(),
+		Breadcrumb:   crumbs,
+		Folders:      folders,
+		Files:        files,
+		Search:       view.Search,
+		SearchAction: sharedPagePath(shareID, &view.Folder),
+		NextURL:      sharedNextURL(shareID, &view.Folder, view.Search, view.Next),
 	}
+}
+
+// sharedPagePath is the page of a folder inside a share: the share root, or the
+// nested route of the folder on the screen. The local search form submits here,
+// so a term keeps the visitor on the page it narrows.
+func sharedPagePath(shareID string, folder *entity.Folder) string {
+	if folder.IsRoot() {
+		return "/share/" + shareID
+	}
+
+	return "/share/" + shareID + "/folders/" + folder.ID
+}
+
+// sharedEntriesPath is the partial route that answers the load-more sentinel of
+// a shared folder page.
+func sharedEntriesPath(shareID string, folder *entity.Folder) string {
+	if folder.IsRoot() {
+		return "/htmx/share/" + shareID + "/entries"
+	}
+
+	return "/htmx/share/" + shareID + "/folders/" + folder.ID + "/entries"
+}
+
+// sharedNextURL is the partial route of the batch after the cursor, under the
+// same search. Both values are escaped, and an empty search is left out, so the
+// link stays short.
+func sharedNextURL(shareID string, folder *entity.Folder, search string, after *entity.EntryCursor) string {
+	if after == nil {
+		return ""
+	}
+
+	query := url.Values{}
+	query.Set("after", after.Encode())
+
+	if search != "" {
+		query.Set("q", search)
+	}
+
+	return sharedEntriesPath(shareID, folder) + "?" + query.Encode()
 }
