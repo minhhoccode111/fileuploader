@@ -33,4 +33,5 @@ var (
 	ErrStorageCleanup        = errors.New("storage cleanup failed")
 	ErrShareNotFound         = errors.New("share not found")
 	ErrShareExpired          = errors.New("share expired")
+	ErrInvalidCursor         = errors.New("invalid cursor")
 )

@@ -108,31 +108,54 @@ type FolderRef struct {
 }
 
 // FolderItem is one folder in a listing: its name, the number of entries
-// directly inside it, and when it last changed.
+// directly inside it, and when it last changed. Path is the chain from the
+// root to this folder: a local listing leaves it empty, a global search fills
+// it.
 type FolderItem struct {
 	ID        string
 	Name      string
 	ItemCount int
 	UpdatedAt time.Time
+	Path      []FolderRef
 }
 
 // FileItem is one file in a listing. The storage key stays in the database:
-// a listing never needs it, and it is not the caller's business.
+// a listing never needs it, and it is not the caller's business. Path is the
+// chain from the root to the folder that holds the file, filled by a global
+// search only.
 type FileItem struct {
 	ID          string
+	FolderID    string
 	Name        string
 	ContentType string
 	Size        int64
 	UpdatedAt   time.Time
+	Path        []FolderRef
 }
 
 // FolderView is everything the drive page renders for one folder: the folder
-// itself, the path that leads to it, the folders and the files inside it.
+// itself, the path that leads to it, the folders and the files inside it, the
+// search the visitor typed, and the cursor of the next page when there is one.
 type FolderView struct {
 	Folder     Folder
 	Breadcrumb []FolderRef
 	Folders    []FolderItem
 	Files      []FileItem
+	Search     string
+	Next       *EntryCursor
+}
+
+// SearchView is everything the global search page renders: the matching
+// folders and files, the search the visitor typed, the folder the search
+// started from, whether the search was too short to run, and the cursor of the
+// next page when there is one.
+type SearchView struct {
+	Folders  []FolderItem
+	Files    []FileItem
+	Search   string
+	From     string
+	TooShort bool
+	Next     *EntryCursor
 }
 
 // CleanName normalizes a name a caller typed and rejects the ones the drive
