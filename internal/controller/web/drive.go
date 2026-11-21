@@ -82,6 +82,40 @@ func (c *Controller) drivePage(ctx *fiber.Ctx, userID, folderID string) (respons
 	return response.NewDrive(&view), nil
 }
 
+// folderEntries answers the load-more sentinel of a folder listing: the next
+// batch after the cursor, as rows alone so htmx replaces the sentinel with
+// them. A missing or tampered cursor is a client error and never a restart at
+// the first page.
+func (c *Controller) folderEntries(ctx *fiber.Ctx) error {
+	folderID := ctx.Params("folder")
+	if !c.validID(folderID) {
+		return ctx.SendStatus(http.StatusBadRequest)
+	}
+
+	userID, ok := c.userID(ctx)
+	if !ok {
+		return middleware.Redirect(ctx, _loginPath)
+	}
+
+	after, err := entity.DecodeEntryCursor(ctx.Query("after"))
+	if err != nil || after == nil {
+		return ctx.SendStatus(http.StatusBadRequest)
+	}
+
+	view, err := c.folders.List(ctx.UserContext(), userID, folderID, "", after)
+	if err != nil {
+		if errors.Is(err, entity.ErrFolderNotFound) {
+			return middleware.Redirect(ctx, _homePath)
+		}
+
+		c.l.Error(fmt.Errorf("web - folderEntries - uc.folders.List: %w", err))
+
+		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	}
+
+	return c.renderPage(ctx, templates.EntryRows(response.NewDrive(&view)))
+}
+
 // renderEntries answers a successful drive action with the table of the
 // folder it changed, so htmx swaps the rows in place.
 func (c *Controller) renderEntries(

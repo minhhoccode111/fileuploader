@@ -94,6 +94,7 @@ func NewRouter(
 	// Drive
 	app.Get("/htmx/folders/tree", middleware.RequireAuth(u), c.folderTree)
 	app.Get("/htmx/folders/new", middleware.RequireAuth(u), c.folderNew)
+	app.Get("/htmx/folders/:folder/entries", middleware.RequireAuth(u), c.folderEntries)
 	app.Post("/htmx/folders", middleware.RequireAuth(u), c.folderCreate)
 	app.Get("/htmx/folders/:folder/edit", middleware.RequireAuth(u), c.folderEdit)
 	app.Get("/htmx/folders/:folder/move", middleware.RequireAuth(u), c.folderMoveForm)

@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,7 +60,9 @@ type FileRow struct {
 	Updated string
 }
 
-// Drive is everything the drive page renders for one folder.
+// Drive is everything the drive page renders for one folder. Search is the
+// term the listing was filtered with, and NextURL is the partial route that
+// answers the load-more sentinel, empty when the listing is complete.
 type Drive struct {
 	Title      string
 	FolderID   string
@@ -68,6 +71,8 @@ type Drive struct {
 	Breadcrumb []Crumb
 	Folders    []FolderRow
 	Files      []FileRow
+	Search     string
+	NextURL    string
 }
 
 // FileInfo is the file drawer: what the file is, and the two actions it
@@ -132,7 +137,27 @@ func NewDrive(view *entity.FolderView) Drive {
 		Breadcrumb: crumbs,
 		Folders:    folders,
 		Files:      files,
+		Search:     view.Search,
+		NextURL:    nextEntryURL(view.Folder.ID, view.Search, view.Next),
 	}
+}
+
+// nextEntryURL is the partial route that answers the load-more sentinel of a
+// folder listing: the batch after the cursor, under the same search. Both
+// values are escaped, and an empty search is left out, so the link stays short.
+func nextEntryURL(folderID, search string, after *entity.EntryCursor) string {
+	if after == nil {
+		return ""
+	}
+
+	query := url.Values{}
+	query.Set("after", after.Encode())
+
+	if search != "" {
+		query.Set("q", search)
+	}
+
+	return "/htmx/folders/" + folderID + "/entries?" + query.Encode()
 }
 
 // NewFileInfo maps the file behind a drawer to the type the template renders.

@@ -188,95 +188,119 @@ templ DriveEntries(page response.Drive) {
 				</tr>
 			</thead>
 			<tbody>
-				for _, folder := range page.Folders {
-					<tr
-						class="cursor-pointer hover:bg-base-200/50"
-						aria-label={ "Open folder " + folder.Name }
-						hx-get={ folder.Href }
-						hx-target="#page-content"
-						hx-swap="innerHTML"
-						hx-push-url="true"
-					>
-						<td class="font-medium">
-							<span class="flex items-center gap-2">
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-warning">
-									<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
-								</svg>
-								<span
-									class="block min-w-0 flex-1 truncate"
-									data-full-name={ folder.Name }
-									title={ folder.Name }
-								>{ folder.Name }</span>
-							</span>
-						</td>
-						<td class="whitespace-nowrap">{ folder.Items }</td>
-						<td class="whitespace-nowrap">{ folder.Updated }</td>
-						<td class="pe-0 text-right">
-							<button
-								type="button"
-								class="btn btn-square btn-ghost btn-sm"
-								aria-label={ "Actions for folder " + folder.Name }
-								@click.stop
-								hx-get={ "/htmx/folders/" + folder.ID + "/edit" }
-								hx-target="#entry-panel"
-								hx-swap="innerHTML"
-								hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
-									<circle cx="12" cy="5" r="1.7"></circle>
-									<circle cx="12" cy="12" r="1.7"></circle>
-									<circle cx="12" cy="19" r="1.7"></circle>
-								</svg>
-							</button>
-						</td>
-					</tr>
-				}
-				for _, file := range page.Files {
-					<tr
-						class="cursor-pointer hover:bg-base-200/50"
-						aria-label={ "Open " + file.Name }
-						hx-get={ "/htmx/files/" + file.ID }
-						hx-target="#entry-panel"
-						hx-swap="innerHTML"
-						hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
-					>
-						<td class="font-medium">
-							<span class="flex items-center gap-2">
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
-									<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
-									<path d="M14 2v6h6"></path>
-								</svg>
-								<span
-									class="block min-w-0 flex-1 truncate"
-									data-full-name={ file.Name }
-									title={ file.Name }
-								>{ file.Name }</span>
-							</span>
-						</td>
-						<td class="whitespace-nowrap">{ file.Size }</td>
-						<td class="whitespace-nowrap">{ file.Updated }</td>
-						<td class="pe-0 text-right">
-							<button
-								type="button"
-								class="btn btn-square btn-ghost btn-sm"
-								aria-label={ "Actions for " + file.Name }
-								@click.stop
-								hx-get={ "/htmx/files/" + file.ID }
-								hx-target="#entry-panel"
-								hx-swap="innerHTML"
-								hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
-									<circle cx="12" cy="5" r="1.7"></circle>
-									<circle cx="12" cy="12" r="1.7"></circle>
-									<circle cx="12" cy="19" r="1.7"></circle>
-								</svg>
-							</button>
-						</td>
-					</tr>
-				}
+				@EntryRows(page)
 			</tbody>
 		</table>
+	}
+}
+
+// EntryRows renders only the rows of a listing and the load-more sentinel,
+// without the table around them. It is the body of the partial endpoint: htmx
+// replaces the sentinel row with the rows it loaded and the sentinel that
+// follows them.
+templ EntryRows(page response.Drive) {
+	for _, folder := range page.Folders {
+		<tr
+			class="cursor-pointer hover:bg-base-200/50"
+			aria-label={ "Open folder " + folder.Name }
+			hx-get={ folder.Href }
+			hx-target="#page-content"
+			hx-swap="innerHTML"
+			hx-push-url="true"
+		>
+			<td class="font-medium">
+				<span class="flex items-center gap-2">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-warning">
+						<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"></path>
+					</svg>
+					<span
+						class="block min-w-0 flex-1 truncate"
+						data-full-name={ folder.Name }
+						title={ folder.Name }
+					>{ folder.Name }</span>
+				</span>
+			</td>
+			<td class="whitespace-nowrap">{ folder.Items }</td>
+			<td class="whitespace-nowrap">{ folder.Updated }</td>
+			<td class="pe-0 text-right">
+				<button
+					type="button"
+					class="btn btn-square btn-ghost btn-sm"
+					aria-label={ "Actions for folder " + folder.Name }
+					@click.stop
+					hx-get={ "/htmx/folders/" + folder.ID + "/edit" }
+					hx-target="#entry-panel"
+					hx-swap="innerHTML"
+					hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+						<circle cx="12" cy="5" r="1.7"></circle>
+						<circle cx="12" cy="12" r="1.7"></circle>
+						<circle cx="12" cy="19" r="1.7"></circle>
+					</svg>
+				</button>
+			</td>
+		</tr>
+	}
+	for _, file := range page.Files {
+		<tr
+			class="cursor-pointer hover:bg-base-200/50"
+			aria-label={ "Open " + file.Name }
+			hx-get={ "/htmx/files/" + file.ID }
+			hx-target="#entry-panel"
+			hx-swap="innerHTML"
+			hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+		>
+			<td class="font-medium">
+				<span class="flex items-center gap-2">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0 text-base-content/60">
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+						<path d="M14 2v6h6"></path>
+					</svg>
+					<span
+						class="block min-w-0 flex-1 truncate"
+						data-full-name={ file.Name }
+						title={ file.Name }
+					>{ file.Name }</span>
+				</span>
+			</td>
+			<td class="whitespace-nowrap">{ file.Size }</td>
+			<td class="whitespace-nowrap">{ file.Updated }</td>
+			<td class="pe-0 text-right">
+				<button
+					type="button"
+					class="btn btn-square btn-ghost btn-sm"
+					aria-label={ "Actions for " + file.Name }
+					@click.stop
+					hx-get={ "/htmx/files/" + file.ID }
+					hx-target="#entry-panel"
+					hx-swap="innerHTML"
+					hx-on:htmx:after:swap="document.getElementById('entry-drawer').checked = true"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+						<circle cx="12" cy="5" r="1.7"></circle>
+						<circle cx="12" cy="12" r="1.7"></circle>
+						<circle cx="12" cy="19" r="1.7"></circle>
+					</svg>
+				</button>
+			</td>
+		</tr>
+	}
+	if page.NextURL != "" {
+		<tr id="load-more">
+			<td colspan="4" class="text-center">
+				<button
+					type="button"
+					class="btn btn-ghost btn-sm"
+					hx-get={ page.NextURL }
+					hx-target="closest tr"
+					hx-swap="outerHTML"
+					hx-trigger="click, revealed"
+				>
+					Load more
+				</button>
+			</td>
+		</tr>
 	}
 }
 
