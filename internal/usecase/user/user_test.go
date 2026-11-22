@@ -144,24 +144,52 @@ type fakeSessionRepo struct {
 	stored *entity.Session
 	ended  []string
 
+	storeErr  error
+	getErr    error
+	deleteErr error
+	lastID    string
+	lastGetID string
+	lastTTL   time.Duration
+	got       entity.Session
+
 	exceptCalled    bool
 	exceptUserID    string
 	exceptSessionID string
 	exceptErr       error
 }
 
-func (f *fakeSessionRepo) Store(_ context.Context, _ string, session entity.Session, _ time.Duration) error {
+func (f *fakeSessionRepo) Store(
+	_ context.Context,
+	id string,
+	session entity.Session,
+	ttl time.Duration,
+) error {
+	f.lastID = id
+	f.lastTTL = ttl
+
+	if f.storeErr != nil {
+		return f.storeErr
+	}
+
 	f.stored = &session
 
 	return nil
 }
 
-func (f *fakeSessionRepo) Get(_ context.Context, _ string) (entity.Session, error) {
-	return entity.Session{}, nil
+func (f *fakeSessionRepo) Get(_ context.Context, id string) (entity.Session, error) {
+	f.lastGetID = id
+
+	if f.getErr != nil {
+		return entity.Session{}, f.getErr
+	}
+
+	return f.got, nil
 }
 
-func (f *fakeSessionRepo) Delete(_ context.Context, _ string) error {
-	return nil
+func (f *fakeSessionRepo) Delete(_ context.Context, id string) error {
+	f.lastID = id
+
+	return f.deleteErr
 }
 
 func (f *fakeSessionRepo) DeleteUserSessions(_ context.Context, userID string) error {
@@ -278,6 +306,18 @@ func (f *fakeUnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) er
 	f.committed = true
 
 	return nil
+}
+
+// passwordHash returns a bcrypt hash for one test password.
+func passwordHash(t *testing.T, password string) string {
+	t.Helper()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("bcrypt.GenerateFromPassword() error = %v, want nil", err)
+	}
+
+	return string(hash)
 }
 
 func TestListUsersClampsTheFilterBeforeItLists(t *testing.T) {
@@ -403,6 +443,188 @@ func TestLoginStoresTheRoleInTheSession(t *testing.T) {
 
 	if sessions.stored.UserID != "1" {
 		t.Errorf("stored user ID = %q, want %q", sessions.stored.UserID, "1")
+	}
+}
+
+func TestLoginRejectsAWrongPassword(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "rightpass1!"),
+	}}
+
+	assertLoginRejected(t, repo, "wrongpass1!", entity.ErrInvalidCredentials)
+}
+
+func TestLoginRejectsAnUnknownEmail(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "missing@example.com", "password")
+	if !errors.Is(err, entity.ErrInvalidCredentials) {
+		t.Fatalf("Login() error = %v, want ErrInvalidCredentials", err)
+	}
+
+	if sessions.stored != nil {
+		t.Error("Login() stored a session for an unknown email")
+	}
+}
+
+func TestLoginRejectsAPendingAccount(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusPending,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+
+	assertLoginRejected(t, repo, "password", entity.ErrUserPending)
+}
+
+func TestLoginRejectsADisabledAccount(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusDisabled,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+
+	assertLoginRejected(t, repo, "password", entity.ErrUserDisabled)
+}
+
+// assertLoginRejected sends one login and asserts the sentinel and that no
+// session was stored.
+func assertLoginRejected(t *testing.T, repo *fakeUserRepo, password string, wantErr error) {
+	t.Helper()
+
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", password)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Login() error = %v, want %v", err, wantErr)
+	}
+
+	if sessions.stored != nil {
+		t.Error("Login() stored a session for a rejected login")
+	}
+}
+
+func TestLoginReportsASessionStoreFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+	sessions := &fakeSessionRepo{storeErr: errStoreFailed}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	sessionID, user, err := uc.Login(context.Background(), "john@example.com", "password")
+	if !errors.Is(err, errStoreFailed) {
+		t.Fatalf("Login() error = %v, want %v", err, errStoreFailed)
+	}
+
+	if sessionID != "" || user != (entity.User{}) {
+		t.Errorf("Login() = %q, %+v; want no session or user", sessionID, user)
+	}
+}
+
+func TestLoginStoresTheTTL(t *testing.T) {
+	t.Parallel()
+
+	const ttl = 90 * time.Minute
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, ttl)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", "password")
+	if err != nil {
+		t.Fatalf("Login() error = %v, want nil", err)
+	}
+
+	if sessions.lastTTL != ttl {
+		t.Errorf("stored TTL = %v, want %v", sessions.lastTTL, ttl)
+	}
+}
+
+func TestAuthenticatePassesTheSessionID(t *testing.T) {
+	t.Parallel()
+
+	sessions := &fakeSessionRepo{got: entity.Session{UserID: "1", Role: entity.UserRoleUser}}
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	session, err := uc.Authenticate(context.Background(), "session-1")
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v, want nil", err)
+	}
+
+	if sessions.lastGetID != "session-1" {
+		t.Errorf("Get() ID = %q, want session-1", sessions.lastGetID)
+	}
+
+	if session.UserID != "1" {
+		t.Errorf("session = %+v, want user 1", session)
+	}
+}
+
+func TestAuthenticateReportsAMissingSession(t *testing.T) {
+	t.Parallel()
+
+	sessions := &fakeSessionRepo{getErr: entity.ErrSessionNotFound}
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	_, err := uc.Authenticate(context.Background(), "missing")
+	if !errors.Is(err, entity.ErrSessionNotFound) {
+		t.Fatalf("Authenticate() error = %v, want ErrSessionNotFound", err)
+	}
+
+	if !strings.Contains(err.Error(), "UserUseCase - Authenticate") {
+		t.Errorf("Authenticate() error = %v, want the use-case step", err)
+	}
+}
+
+func TestLogoutDeletesTheSession(t *testing.T) {
+	t.Parallel()
+
+	sessions := &fakeSessionRepo{}
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	if err := uc.Logout(context.Background(), "session-1"); err != nil {
+		t.Fatalf("Logout() error = %v, want nil", err)
+	}
+
+	if sessions.lastID != "session-1" {
+		t.Errorf("Delete() ID = %q, want session-1", sessions.lastID)
+	}
+}
+
+func TestLogoutReportsADeleteFailure(t *testing.T) {
+	t.Parallel()
+
+	sessions := &fakeSessionRepo{deleteErr: errStoreFailed}
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err := uc.Logout(context.Background(), "session-1")
+	if !errors.Is(err, errStoreFailed) {
+		t.Fatalf("Logout() error = %v, want %v", err, errStoreFailed)
+	}
+
+	if !strings.Contains(err.Error(), "UserUseCase - Logout") {
+		t.Errorf("Logout() error = %v, want the use-case step", err)
 	}
 }
 
