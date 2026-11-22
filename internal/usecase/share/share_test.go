@@ -130,15 +130,17 @@ func (f *fakeShareRepo) Delete(_ context.Context, userID, shareID string) error 
 type fakeFolderRepo struct {
 	repo.FolderRepo
 
-	folder     entity.Folder
-	crumbs     []entity.FolderRef
-	lockErr    error
-	getErr     error
-	crumbErr   error
-	lastUserID string
-	lastFolder string
-	getCalls   int
-	crumbCalls int
+	folder           entity.Folder
+	crumbs           []entity.FolderRef
+	lockErr          error
+	getErr           error
+	crumbErr         error
+	lastUserID       string
+	lastFolder       string
+	getUserID        string
+	breadcrumbUserID string
+	getCalls         int
+	crumbCalls       int
 }
 
 func (f *fakeFolderRepo) LockUser(_ context.Context, _ string) error {
@@ -148,6 +150,7 @@ func (f *fakeFolderRepo) LockUser(_ context.Context, _ string) error {
 func (f *fakeFolderRepo) Get(_ context.Context, userID, folderID string) (entity.Folder, error) {
 	f.getCalls++
 	f.lastUserID = userID
+	f.getUserID = userID
 	f.lastFolder = folderID
 
 	if f.getErr != nil {
@@ -163,6 +166,7 @@ func (f *fakeFolderRepo) Breadcrumb(
 ) ([]entity.FolderRef, error) {
 	f.crumbCalls++
 	f.lastUserID = userID
+	f.breadcrumbUserID = userID
 	f.lastFolder = folderID
 
 	if f.crumbErr != nil {
@@ -524,8 +528,8 @@ func TestResolveFolderScopesEveryReadToTheOwner(t *testing.T) {
 		t.Fatalf("ResolveFolder() error = %v, want nil", err)
 	}
 
-	if folders.lastUserID != "owner-1" {
-		t.Errorf("last user = %q, want owner-1", folders.lastUserID)
+	if folders.getUserID != "owner-1" || folders.breadcrumbUserID != "owner-1" {
+		t.Errorf("read users = %q/%q, want owner-1/owner-1", folders.getUserID, folders.breadcrumbUserID)
 	}
 }
 
@@ -599,6 +603,38 @@ func TestResolveFileRejectsAnUnknownFile(t *testing.T) {
 	_, _, err := uc.ResolveFile(context.Background(), "share-1", "missing")
 	if !errors.Is(err, entity.ErrFileNotFound) {
 		t.Fatalf("ResolveFile() error = %v, want ErrFileNotFound", err)
+	}
+}
+
+func TestCreateReportsAnUpdateExpiryFailure(t *testing.T) {
+	t.Parallel()
+
+	shares := &fakeShareRepo{
+		active:    entity.Share{ID: "share-1", UserID: "user-1", FolderID: "folder-1"},
+		updateErr: errStore,
+	}
+	folders := &fakeFolderRepo{folder: entity.Folder{ID: "folder-1", UserID: "user-1"}}
+	uc := newShareUseCase(shares, folders, &fakeFileRepo{}, &fakeUnitOfWork{})
+
+	_, err := uc.Create(context.Background(), "user-1", "folder-1", nil)
+	if !errors.Is(err, errStore) {
+		t.Fatalf("Create() error = %v, want %v", err, errStore)
+	}
+
+	if shares.storeCalls != 0 {
+		t.Errorf("Store calls = %d, want 0 after a failed expiry update", shares.storeCalls)
+	}
+}
+
+func TestDeleteReportsARepositoryFailure(t *testing.T) {
+	t.Parallel()
+
+	shares := &fakeShareRepo{deleteErr: errStore}
+	uc := newShareUseCase(shares, &fakeFolderRepo{}, &fakeFileRepo{}, &fakeUnitOfWork{})
+
+	err := uc.Delete(context.Background(), "user-1", "share-1")
+	if !errors.Is(err, errStore) {
+		t.Fatalf("Delete() error = %v, want %v", err, errStore)
 	}
 }
 

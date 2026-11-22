@@ -76,13 +76,30 @@ func TestActiveShareFilter(t *testing.T) {
 		t.Fatalf("Store(expired) error = %v, want nil", err)
 	}
 
+	other := seedUser(t, uniqueName("other-active"), uniqueName("other-active")+"@example.com")
+	otherRoot := seedRoot(t, other.ID)
+	otherFolder := seedFolder(t, other.ID, otherRoot.ID, "Other")
+	otherExpiry := time.Now().UTC().Add(time.Hour)
+	otherShare := entity.Share{
+		ID:        uuid.NewString(),
+		UserID:    other.ID,
+		FolderID:  otherFolder.ID,
+		ExpiresAt: &otherExpiry,
+		CreatedAt: time.Now().UTC().Add(time.Minute),
+		UpdatedAt: time.Now().UTC().Add(time.Minute),
+	}
+
+	if err := repo.Store(context.Background(), &otherShare); err != nil {
+		t.Fatalf("Store(other) error = %v, want nil", err)
+	}
+
 	got, err := repo.GetActiveByUserAndFolder(context.Background(), owner.ID, activeFolder.ID)
 	if err != nil {
 		t.Fatalf("GetActiveByUserAndFolder() error = %v, want nil", err)
 	}
 
 	if got.ID != active.ID {
-		t.Errorf("active share = %q, want %q", got.ID, active.ID)
+		t.Errorf("active share = %q, want %q, not another account's share", got.ID, active.ID)
 	}
 
 	list, err := repo.ListByUser(context.Background(), owner.ID)
@@ -91,7 +108,7 @@ func TestActiveShareFilter(t *testing.T) {
 	}
 
 	if len(list) != 1 || list[0].ID != active.ID {
-		t.Errorf("ListByUser() = %+v, want only the active share", list)
+		t.Errorf("ListByUser() = %+v, want only the owner's active share", list)
 	}
 
 	oldGot, err := repo.GetByUserAndFolder(context.Background(), owner.ID, expiredFolder.ID)
@@ -99,8 +116,8 @@ func TestActiveShareFilter(t *testing.T) {
 		t.Fatalf("GetByUserAndFolder() error = %v, want nil", err)
 	}
 
-	if oldGot.ID != active.ID && oldGot.ID != old.ID {
-		t.Errorf("GetByUserAndFolder() = %q, want a share for the folder", oldGot.ID)
+	if oldGot.ID != old.ID {
+		t.Errorf("GetByUserAndFolder() = %q, want the expired share %q", oldGot.ID, old.ID)
 	}
 }
 

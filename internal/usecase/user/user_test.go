@@ -17,14 +17,16 @@ var errStoreFailed = errors.New("store failed")
 // fakeUserRepo records what it was asked to store and the filter it was
 // asked to list with.
 type fakeUserRepo struct {
-	stored  *entity.User
-	listed  entity.UserFilter
-	user    entity.User
-	items   []entity.UserListItem
-	role    entity.UserRole
-	roleSet bool
-	updated *entity.User
-	err     error
+	stored    *entity.User
+	listed    entity.UserFilter
+	user      entity.User
+	items     []entity.UserListItem
+	role      entity.UserRole
+	roleSet   bool
+	updated   *entity.User
+	err       error
+	statusSet bool
+	status    entity.UserStatus
 
 	profileCalled   bool
 	profileUserID   string
@@ -77,10 +79,13 @@ func (f *fakeUserRepo) UpdateRole(_ context.Context, _ string, role entity.UserR
 	return nil
 }
 
-func (f *fakeUserRepo) UpdateStatus(_ context.Context, _ string, _ entity.UserStatus) error {
+func (f *fakeUserRepo) UpdateStatus(_ context.Context, _ string, status entity.UserStatus) error {
 	if f.err != nil {
 		return f.err
 	}
+
+	f.statusSet = true
+	f.status = status
 
 	return nil
 }
@@ -156,6 +161,7 @@ type fakeSessionRepo struct {
 	exceptUserID    string
 	exceptSessionID string
 	exceptErr       error
+	deleteAllErr    error
 }
 
 func (f *fakeSessionRepo) Store(
@@ -193,6 +199,10 @@ func (f *fakeSessionRepo) Delete(_ context.Context, id string) error {
 }
 
 func (f *fakeSessionRepo) DeleteUserSessions(_ context.Context, userID string) error {
+	if f.deleteAllErr != nil {
+		return f.deleteAllErr
+	}
+
 	f.ended = append(f.ended, userID)
 
 	return nil
@@ -689,6 +699,63 @@ func TestSetRoleReportsAnUnknownAccount(t *testing.T) {
 
 // UpdateUser saves the fields it was given, and hashing the password only
 // happens when the caller brought a new one.
+func TestSetStatusEndsSessionsForANonActiveStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	if err := uc.SetStatus(context.Background(), "1", entity.UserStatusDisabled); err != nil {
+		t.Fatalf("SetStatus() error = %v, want nil", err)
+	}
+
+	if len(sessions.ended) != 1 || sessions.ended[0] != "1" {
+		t.Errorf("ended sessions = %v, want [1]", sessions.ended)
+	}
+
+	if !repo.statusSet || repo.status != entity.UserStatusDisabled {
+		t.Errorf("status = %v/%q, want disabled", repo.statusSet, repo.status)
+	}
+}
+
+func TestSetStatusKeepsSessionsForAnActiveStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	if err := uc.SetStatus(context.Background(), "1", entity.UserStatusActive); err != nil {
+		t.Fatalf("SetStatus() error = %v, want nil", err)
+	}
+
+	if len(sessions.ended) != 0 {
+		t.Errorf("ended sessions = %v, want none", sessions.ended)
+	}
+
+	if !repo.statusSet || repo.status != entity.UserStatusActive {
+		t.Errorf("status = %v/%q, want active", repo.statusSet, repo.status)
+	}
+}
+
+func TestSetStatusKeepsTheStatusWhenSessionsCannotBeEnded(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	sessions := &fakeSessionRepo{deleteAllErr: errStoreFailed}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+
+	err := uc.SetStatus(context.Background(), "1", entity.UserStatusDisabled)
+	if !errors.Is(err, errStoreFailed) {
+		t.Fatalf("SetStatus() error = %v, want %v", err, errStoreFailed)
+	}
+
+	if repo.statusSet {
+		t.Error("SetStatus() updated the status after session revocation failed")
+	}
+}
+
 func TestUpdateUserSavesTheFields(t *testing.T) {
 	t.Parallel()
 

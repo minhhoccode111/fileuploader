@@ -78,7 +78,7 @@ Open `/register` and create an account. It will be pending. The first
 administrator has to be promoted by hand:
 
 ```sh
-docker compose exec db psql -U user -d fileuploader -c \
+docker compose -p fileuploader exec db psql -U user -d fileuploader -c \
   "UPDATE users SET role = 'admin', status = 'active' WHERE email = 'you@example.com';"
 ```
 
