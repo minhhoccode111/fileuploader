@@ -71,7 +71,14 @@ jobs:
       - name: Start Postgres and MinIO
         run: docker compose -p fileuploader up -d db minio
       - name: Wait for Postgres
-        run: docker compose -p fileuploader exec -T db pg_isready -U user
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker compose -p fileuploader exec -T db pg_isready -U user; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
       - name: Run integration tests
         run: make test-integration
       - name: Stop services
