@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,10 +23,15 @@ import (
 	fileRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/file"
 	folderRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/folder"
 	userRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
+	"github.com/minhhoccode111/fileuploader/pkg/minio"
 	"github.com/minhhoccode111/fileuploader/pkg/postgres"
 )
 
-var testPG *postgres.Postgres
+var (
+	testPG            *postgres.Postgres
+	testStorageClient *minio.MinIO
+	testBucketName    string
+)
 
 func TestMain(m *testing.M) {
 	adminURL := os.Getenv("TEST_PG_ADMIN_URL")
@@ -50,8 +56,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("connect to the test database: %v", err)
 	}
 
+	testStorageClient, testBucketName = startStorage(ctx)
 	code := m.Run()
 
+	testStorageClient.Client.RemoveBucket(ctx, testBucketName)
+	testStorageClient.Close()
 	testPG.Close()
 	dropTestDatabase(ctx, admin)
 
@@ -199,4 +208,41 @@ func uniqueName(prefix string) string {
 
 func nowUTC() time.Time {
 	return time.Now().UTC()
+}
+
+func startStorage(ctx context.Context) (*minio.MinIO, string) {
+	endpoint := os.Getenv("TEST_MINIO_ENDPOINT")
+	accessKey := os.Getenv("TEST_MINIO_ACCESS_KEY")
+	secretKey := os.Getenv("TEST_MINIO_SECRET_KEY")
+	secure := os.Getenv("TEST_MINIO_USE_SSL") == "true"
+
+	if endpoint == "" || accessKey == "" || secretKey == "" {
+		log.Fatal("TEST_MINIO_ENDPOINT, TEST_MINIO_ACCESS_KEY and TEST_MINIO_SECRET_KEY must be set; run make test-integration")
+	}
+
+	storage, err := minio.New(endpoint, accessKey, secretKey, minio.UseSSL(secure))
+	if err != nil {
+		log.Fatalf("connect to MinIO: %v", err)
+	}
+
+	bucket := "fileuploader-test-" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := storage.EnsureBucket(ctx, bucket); err != nil {
+		log.Fatalf("create the test bucket: %v", err)
+	}
+
+	return storage, bucket
+}
+
+func testStorage(t *testing.T) *minio.MinIO {
+	t.Helper()
+
+	if testStorageClient == nil {
+		t.Fatal("test MinIO is not initialized")
+	}
+
+	return testStorageClient
+}
+
+func testBucket() string {
+	return testBucketName
 }
