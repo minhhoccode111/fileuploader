@@ -28,9 +28,18 @@ type fakeFileRepo struct {
 	stored    *entity.File
 	renamed   *entity.File
 	deleted   bool
+
+	lastUserID   string
+	lastFileID   string
+	lastFolderID string
+	lastName     string
 }
 
 func (f *fakeFileRepo) Store(_ context.Context, file *entity.File) error {
+	f.lastUserID = file.UserID
+	f.lastFolderID = file.FolderID
+	f.lastName = file.Name
+
 	if f.storeErr != nil {
 		return f.storeErr
 	}
@@ -40,24 +49,37 @@ func (f *fakeFileRepo) Store(_ context.Context, file *entity.File) error {
 	return nil
 }
 
-func (f *fakeFileRepo) Get(_ context.Context, _, _ string) (entity.File, error) {
+func (f *fakeFileRepo) Get(_ context.Context, userID, fileID string) (entity.File, error) {
+	f.lastUserID = userID
+	f.lastFileID = fileID
+
 	return f.file, f.getErr
 }
 
-func (f *fakeFileRepo) List(_ context.Context, _, _ string) ([]entity.FileItem, error) {
+func (f *fakeFileRepo) List(_ context.Context, userID, folderID string) ([]entity.FileItem, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return nil, nil
 }
 
 func (f *fakeFileRepo) ListPage(
 	_ context.Context,
-	_, _, _ string,
+	userID, folderID, _ string,
 	_ *entity.EntryCursor,
 	_ int,
 ) ([]entity.FileItem, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return nil, nil
 }
 
 func (f *fakeFileRepo) Rename(_ context.Context, file *entity.File) error {
+	f.lastUserID = file.UserID
+	f.lastFileID = file.ID
+	f.lastName = file.Name
+
 	if f.renameErr != nil {
 		return f.renameErr
 	}
@@ -67,21 +89,37 @@ func (f *fakeFileRepo) Rename(_ context.Context, file *entity.File) error {
 	return nil
 }
 
-func (f *fakeFileRepo) Move(_ context.Context, _, _, _ string) error {
+func (f *fakeFileRepo) Move(_ context.Context, userID, fileID, folderID string) error {
+	f.lastUserID = userID
+	f.lastFileID = fileID
+	f.lastFolderID = folderID
+
 	return nil
 }
 
-func (f *fakeFileRepo) Delete(_ context.Context, _, _ string) (entity.File, error) {
+func (f *fakeFileRepo) Delete(_ context.Context, userID, fileID string) (entity.File, error) {
+	f.lastUserID = userID
+	f.lastFileID = fileID
 	f.deleted = true
 
 	return f.file, f.deleteErr
 }
 
-func (f *fakeFileRepo) NameTaken(_ context.Context, _, _, _ string) (bool, error) {
+func (f *fakeFileRepo) NameTaken(_ context.Context, userID, folderID, name string) (bool, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+	f.lastName = name
+
 	return f.nameTaken, f.nameErr
 }
 
-func (f *fakeFileRepo) DeleteByFolderSubtree(_ context.Context, _, _ string) ([]entity.File, error) {
+func (f *fakeFileRepo) DeleteByFolderSubtree(
+	_ context.Context,
+	userID, folderID string,
+) ([]entity.File, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return nil, nil
 }
 
@@ -92,70 +130,126 @@ type fakeFolderRepo struct {
 	getErr    error
 	nameTaken bool
 	nameErr   error
+
+	lastUserID   string
+	lastFolderID string
+	lastParentID string
+	lastName     string
+	lastIDs      []string
 }
 
-func (f *fakeFolderRepo) Store(_ context.Context, _ *entity.Folder) error {
+func (f *fakeFolderRepo) Store(_ context.Context, folder *entity.Folder) error {
+	f.lastUserID = folder.UserID
+
+	if folder.ParentID != nil {
+		f.lastParentID = *folder.ParentID
+	}
+
+	f.lastName = folder.Name
+
 	return nil
 }
 
-func (f *fakeFolderRepo) Get(_ context.Context, _, _ string) (entity.Folder, error) {
+func (f *fakeFolderRepo) Get(_ context.Context, userID, folderID string) (entity.Folder, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return f.folder, f.getErr
 }
 
-func (f *fakeFolderRepo) GetRoot(_ context.Context, _ string) (entity.Folder, error) {
+func (f *fakeFolderRepo) GetRoot(_ context.Context, userID string) (entity.Folder, error) {
+	f.lastUserID = userID
+
 	return entity.Folder{}, nil
 }
 
-func (f *fakeFolderRepo) Lock(_ context.Context, _, _ string) (entity.Folder, error) {
+func (f *fakeFolderRepo) Lock(_ context.Context, userID, folderID string) (entity.Folder, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return f.folder, f.getErr
 }
 
-func (f *fakeFolderRepo) LockUser(_ context.Context, _ string) error {
+func (f *fakeFolderRepo) LockUser(_ context.Context, userID string) error {
+	f.lastUserID = userID
+
 	return nil
 }
 
-func (f *fakeFolderRepo) LockSubtree(_ context.Context, _, _ string) error {
+func (f *fakeFolderRepo) LockSubtree(_ context.Context, userID, folderID string) error {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return f.getErr
 }
 
 func (f *fakeFolderRepo) ListPage(
 	_ context.Context,
-	_, _, _ string,
+	userID, parentID, _ string,
 	_ *entity.EntryCursor,
 	_ int,
 ) ([]entity.FolderItem, error) {
+	f.lastUserID = userID
+	f.lastParentID = parentID
+
 	return nil, nil
 }
 
 func (f *fakeFolderRepo) Paths(
 	_ context.Context,
-	_ string,
-	_ []string,
+	userID string,
+	folderIDs []string,
 ) (map[string][]entity.FolderRef, error) {
+	f.lastUserID = userID
+	f.lastIDs = append(f.lastIDs, folderIDs...)
+
 	return nil, nil
 }
 
-func (f *fakeFolderRepo) Breadcrumb(_ context.Context, _, _ string) ([]entity.FolderRef, error) {
+func (f *fakeFolderRepo) Breadcrumb(
+	_ context.Context,
+	userID, folderID string,
+) ([]entity.FolderRef, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return nil, nil
 }
 
-func (f *fakeFolderRepo) NameTaken(_ context.Context, _, _, _ string) (bool, error) {
+func (f *fakeFolderRepo) NameTaken(_ context.Context, userID, folderID, name string) (bool, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+	f.lastName = name
+
 	return f.nameTaken, f.nameErr
 }
 
-func (f *fakeFolderRepo) Rename(_ context.Context, _ *entity.Folder) error {
+func (f *fakeFolderRepo) Rename(_ context.Context, folder *entity.Folder) error {
+	f.lastUserID = folder.UserID
+	f.lastFolderID = folder.ID
+	f.lastName = folder.Name
+
 	return nil
 }
 
-func (f *fakeFolderRepo) Move(_ context.Context, _, _, _ string) error {
+func (f *fakeFolderRepo) Move(_ context.Context, userID, folderID, parentID string) error {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+	f.lastParentID = parentID
+
 	return nil
 }
 
-func (f *fakeFolderRepo) Delete(_ context.Context, _, _ string) error {
+func (f *fakeFolderRepo) Delete(_ context.Context, userID, folderID string) error {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return nil
 }
 
-func (f *fakeFolderRepo) ListAll(_ context.Context, _ string) ([]entity.Folder, error) {
+func (f *fakeFolderRepo) ListAll(_ context.Context, userID string) ([]entity.Folder, error) {
+	f.lastUserID = userID
+
 	return nil, nil
 }
 
@@ -300,6 +394,10 @@ func TestRenameStoresTheNewName(t *testing.T) {
 	if file.Name != "new.txt" || files.renamed == nil || files.renamed.Name != "new.txt" {
 		t.Errorf("renamed file = %q, want %q", file.Name, "new.txt")
 	}
+
+	if files.lastUserID != "user" || files.lastFileID != "file" {
+		t.Errorf("Rename scope = %q/%q, want user/file", files.lastUserID, files.lastFileID)
+	}
 }
 
 func TestDeleteRemovesTheRowAndTheObject(t *testing.T) {
@@ -326,6 +424,10 @@ func TestDeleteRemovesTheRowAndTheObject(t *testing.T) {
 	if storage.removeKey != file.StorageKey {
 		t.Errorf("removed key = %q, want %q", storage.removeKey, file.StorageKey)
 	}
+
+	if files.lastUserID != "user" || files.lastFileID != "file" {
+		t.Errorf("Delete scope = %q/%q, want user/file", files.lastUserID, files.lastFileID)
+	}
 }
 
 func TestDownloadSignsTheObject(t *testing.T) {
@@ -346,6 +448,10 @@ func TestDownloadSignsTheObject(t *testing.T) {
 
 	if link != storage.presign {
 		t.Errorf("Download() link = %q, want %q", link, storage.presign)
+	}
+
+	if files.lastUserID != "user" || files.lastFileID != "file" {
+		t.Errorf("Download scope = %q/%q, want user/file", files.lastUserID, files.lastFileID)
 	}
 }
 
@@ -464,17 +570,22 @@ func checkDownloadPaces(t *testing.T, calls []fakePace, rate, bodyLen int64) {
 
 // fakeUserRepoForFile is a minimal user repository for quota tests.
 type fakeUserRepoForFile struct {
-	user    entity.User
-	updated *entity.User
-	getErr  error
+	user       entity.User
+	updated    *entity.User
+	getErr     error
+	lastUserID string
 }
 
 func (f *fakeUserRepoForFile) Store(_ context.Context, _ *entity.User) error { return nil }
-func (f *fakeUserRepoForFile) GetByID(_ context.Context, _ string) (entity.User, error) {
+func (f *fakeUserRepoForFile) GetByID(_ context.Context, userID string) (entity.User, error) {
+	f.lastUserID = userID
+
 	return f.user, f.getErr
 }
 
-func (f *fakeUserRepoForFile) GetByEmail(_ context.Context, _ string) (entity.User, error) {
+func (f *fakeUserRepoForFile) GetByEmail(_ context.Context, email string) (entity.User, error) {
+	f.lastUserID = email
+
 	return f.user, f.getErr
 }
 
@@ -503,7 +614,8 @@ func (f *fakeUserRepoForFile) SetUserLimits(_ context.Context, _ string, _, _, _
 	return nil
 }
 
-func (f *fakeUserRepoForFile) AdjustStorageUsed(_ context.Context, _ string, delta int64) error {
+func (f *fakeUserRepoForFile) AdjustStorageUsed(_ context.Context, userID string, delta int64) error {
+	f.lastUserID = userID
 	f.user.StorageUsedBytes += delta
 	updated := f.user
 	f.updated = &updated
@@ -528,6 +640,10 @@ func TestDeleteFreesQuota(t *testing.T) {
 	if users.updated == nil || users.updated.StorageUsedBytes != 0 {
 		t.Errorf("usage = %v, want 0", users.updated)
 	}
+
+	if users.lastUserID != "user" {
+		t.Errorf("usage account = %q, want user", users.lastUserID)
+	}
 }
 
 func TestDuplicateChargesQuota(t *testing.T) {
@@ -542,5 +658,17 @@ func TestDuplicateChargesQuota(t *testing.T) {
 	_, err := uc.Duplicate(context.Background(), "user", "file", "folder")
 	if !errors.Is(err, entity.ErrStorageQuotaExceeded) {
 		t.Fatalf("Duplicate() error = %v, want %v", err, entity.ErrStorageQuotaExceeded)
+	}
+
+	if storage.copyKey != "" {
+		t.Errorf("CopyObject key = %q, want no copy over quota", storage.copyKey)
+	}
+
+	if files.stored != nil {
+		t.Error("Duplicate stored a row over quota")
+	}
+
+	if users.lastUserID != "user" {
+		t.Errorf("quota account = %q, want user", users.lastUserID)
 	}
 }

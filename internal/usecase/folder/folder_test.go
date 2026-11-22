@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,10 @@ type fakeFolderRepo struct {
 	renamed    *entity.Folder
 	deletedID  string
 
+	lastUserID   string
+	lastFolderID string
+	lastName     string
+
 	folderPage       func(parentID, search string, after *entity.EntryCursor, limit int) ([]entity.FolderItem, error)
 	pageErr          error
 	lastFolderUserID string
@@ -59,6 +64,10 @@ type fakeFolderRepo struct {
 }
 
 func (f *fakeFolderRepo) Store(_ context.Context, folder *entity.Folder) error {
+	f.lastUserID = folder.UserID
+	f.lastFolderID = folder.ID
+	f.lastName = folder.Name
+
 	if f.storeErr != nil {
 		return f.storeErr
 	}
@@ -68,7 +77,10 @@ func (f *fakeFolderRepo) Store(_ context.Context, folder *entity.Folder) error {
 	return nil
 }
 
-func (f *fakeFolderRepo) Get(_ context.Context, _, folderID string) (entity.Folder, error) {
+func (f *fakeFolderRepo) Get(_ context.Context, userID, folderID string) (entity.Folder, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	if f.getErr != nil {
 		return entity.Folder{}, f.getErr
 	}
@@ -81,19 +93,28 @@ func (f *fakeFolderRepo) Get(_ context.Context, _, folderID string) (entity.Fold
 	return folder, nil
 }
 
-func (f *fakeFolderRepo) GetRoot(_ context.Context, _ string) (entity.Folder, error) {
+func (f *fakeFolderRepo) GetRoot(_ context.Context, userID string) (entity.Folder, error) {
+	f.lastUserID = userID
+
 	return f.root, f.rootErr
 }
 
 func (f *fakeFolderRepo) Lock(ctx context.Context, userID, folderID string) (entity.Folder, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return f.Get(ctx, userID, folderID)
 }
 
-func (f *fakeFolderRepo) LockUser(_ context.Context, _ string) error {
+func (f *fakeFolderRepo) LockUser(_ context.Context, userID string) error {
+	f.lastUserID = userID
+
 	return nil
 }
 
 func (f *fakeFolderRepo) LockSubtree(ctx context.Context, userID, folderID string) error {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
 	_, err := f.Get(ctx, userID, folderID)
 
 	return err
@@ -143,15 +164,29 @@ func (f *fakeFolderRepo) Paths(
 	return map[string][]entity.FolderRef{}, nil
 }
 
-func (f *fakeFolderRepo) Breadcrumb(_ context.Context, _, _ string) ([]entity.FolderRef, error) {
+func (f *fakeFolderRepo) Breadcrumb(
+	_ context.Context,
+	userID, folderID string,
+) ([]entity.FolderRef, error) {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+
 	return f.refs, nil
 }
 
-func (f *fakeFolderRepo) NameTaken(_ context.Context, _, _, _ string) (bool, error) {
+func (f *fakeFolderRepo) NameTaken(_ context.Context, userID, parentID, name string) (bool, error) {
+	f.lastUserID = userID
+	f.lastFolderID = parentID
+	f.lastName = name
+
 	return f.taken, f.nameErr
 }
 
 func (f *fakeFolderRepo) Rename(_ context.Context, folder *entity.Folder) error {
+	f.lastUserID = folder.UserID
+	f.lastFolderID = folder.ID
+	f.lastName = folder.Name
+
 	if f.renameErr != nil {
 		return f.renameErr
 	}
@@ -161,17 +196,25 @@ func (f *fakeFolderRepo) Rename(_ context.Context, folder *entity.Folder) error 
 	return nil
 }
 
-func (f *fakeFolderRepo) Move(_ context.Context, _, _, _ string) error {
+func (f *fakeFolderRepo) Move(_ context.Context, userID, folderID, parentID string) error {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
+	f.lastParentID = parentID
+
 	return f.moveErr
 }
 
-func (f *fakeFolderRepo) Delete(_ context.Context, _, folderID string) error {
+func (f *fakeFolderRepo) Delete(_ context.Context, userID, folderID string) error {
+	f.lastUserID = userID
+	f.lastFolderID = folderID
 	f.deletedID = folderID
 
 	return f.deleteErr
 }
 
-func (f *fakeFolderRepo) ListAll(_ context.Context, _ string) ([]entity.Folder, error) {
+func (f *fakeFolderRepo) ListAll(_ context.Context, userID string) ([]entity.Folder, error) {
+	f.lastUserID = userID
+
 	if f.listAllErr != nil {
 		return nil, f.listAllErr
 	}
@@ -983,6 +1026,10 @@ func TestListPassesTheFolderAndSearchToBothRepos(t *testing.T) {
 	if files.lastFileSearch != "note" {
 		t.Errorf("file search = %q, want %q", files.lastFileSearch, "note")
 	}
+
+	if folders.lastFolderUserID != "user" || files.lastFileUserID != "user" {
+		t.Errorf("repo users = %q/%q, want user/user", folders.lastFolderUserID, files.lastFileUserID)
+	}
 }
 
 func TestSearchRequiresThreeCharacters(t *testing.T) {
@@ -1047,6 +1094,7 @@ func TestSearchScopesTheWholeDriveToTheUser(t *testing.T) {
 	}
 }
 
+//nolint:cyclop,gocyclo // one assertion per path and result row.
 func TestSearchFillsPathsForFoldersAndFiles(t *testing.T) {
 	t.Parallel()
 
@@ -1079,6 +1127,12 @@ func TestSearchFillsPathsForFoldersAndFiles(t *testing.T) {
 
 	if folders.lastPathsID != "user" {
 		t.Errorf("Paths user = %q, want %q", folders.lastPathsID, "user")
+	}
+
+	if len(folders.pathIDs) != 2 ||
+		!slices.Contains(folders.pathIDs, "folder-1") ||
+		!slices.Contains(folders.pathIDs, "folder-2") {
+		t.Errorf("Paths IDs = %v, want folder-1 and folder-2", folders.pathIDs)
 	}
 
 	if len(view.Folders) != 1 || !reflect.DeepEqual(view.Folders[0].Path, folderPath) {
