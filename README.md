@@ -117,12 +117,21 @@ make bin-deps        # air, templ, migrate and the pinned build tools
 make dev             # air + Tailwind watch; needs the services up
 make format          # go fix, gofumpt, gci
 make linter-golangci
-go test ./...
-make pre-commit      # deps, generate, assets, CSS, schema, lint
+make test
+make test-race
+make test-shuffle
+make test-cover
+make test-integration
+make pre-commit      # deps, generate, assets, CSS, schema, test, lint
 ```
 
 `make dev` needs Postgres, Redis and MinIO already running (`make compose-up`).
 air only watches `.go` and `.templ`; the Tailwind watcher handles CSS.
+
+`make test-integration` needs Docker. It starts the Compose `db` and `minio`
+services, creates the `fileuploader_test` database, and runs the build-tagged
+repository tests. The other test targets use fakes and `miniredis`, so they do
+not need the Docker stack.
 
 Two kinds of generated files are committed:
 

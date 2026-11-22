@@ -80,6 +80,38 @@ deps-audit: ### check dependencies vulnerabilities
 	govulncheck ./...
 .PHONY: deps-audit
 
+test: ### run the unit and HTTP tests
+	go test ./...
+.PHONY: test
+
+test-race: ### run every test with the race detector
+	go test -race ./...
+.PHONY: test-race
+
+test-shuffle: ### run every test shuffled ten times
+	go test -shuffle=on -count=10 ./...
+.PHONY: test-shuffle
+
+test-cover: ### write a coverage profile and print the function summary
+	go test -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
+.PHONY: test-cover
+
+test-fuzz: ### fuzz the cursor decoder for ten seconds
+	go test -fuzz=FuzzDecodeEntryCursor -fuzztime=10s ./internal/entity
+.PHONY: test-fuzz
+
+test-integration: ### start Postgres and MinIO, then run tagged integration tests
+	$(BASE_STACK) up -d db minio
+	TEST_PG_ADMIN_URL='postgres://user:password@localhost:5433/postgres?sslmode=disable' \
+	TEST_PG_URL='postgres://user:password@localhost:5433/fileuploader_test?sslmode=disable' \
+	TEST_MINIO_ENDPOINT='localhost:9000' \
+	TEST_MINIO_ACCESS_KEY='minioadmin' \
+	TEST_MINIO_SECRET_KEY='P@55w0rd' \
+	TEST_MINIO_USE_SSL='false' \
+	go test -tags=integration ./internal/repo/persistent/integration/...
+.PHONY: test-integration
+
 fix-diff: ### Show code changes by `go fix`
 	go fix -diff ./...
 .PHONY: fix-diff
@@ -245,5 +277,5 @@ bin-deps: $(TAILWIND) $(ATLAS) ### install pinned tool binaries (air, templ, mig
 	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate
 .PHONY: bin-deps
 
-pre-commit: deps templ-generate assets css-build format schema linter-golangci ### run pre-commit
+pre-commit: deps templ-generate assets css-build format schema test linter-golangci ### run pre-commit
 .PHONY: pre-commit
