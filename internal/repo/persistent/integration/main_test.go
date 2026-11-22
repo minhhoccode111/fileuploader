@@ -25,6 +25,7 @@ import (
 	userRepo "github.com/minhhoccode111/fileuploader/internal/repo/persistent/user"
 	"github.com/minhhoccode111/fileuploader/pkg/minio"
 	"github.com/minhhoccode111/fileuploader/pkg/postgres"
+	miniogo "github.com/minio/minio-go/v7"
 )
 
 var (
@@ -59,7 +60,7 @@ func TestMain(m *testing.M) {
 	testStorageClient, testBucketName = startStorage(ctx)
 	code := m.Run()
 
-	testStorageClient.Client.RemoveBucket(ctx, testBucketName)
+	cleanupBucket(ctx, testStorageClient, testBucketName)
 	testStorageClient.Close()
 	testPG.Close()
 	dropTestDatabase(ctx, admin)
@@ -245,4 +246,22 @@ func testStorage(t *testing.T) *minio.MinIO {
 
 func testBucket() string {
 	return testBucketName
+}
+
+func cleanupBucket(ctx context.Context, storage *minio.MinIO, bucket string) {
+	for object := range storage.Client.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{Recursive: true}) {
+		if object.Err != nil {
+			log.Printf("list test object: %v", object.Err)
+
+			return
+		}
+
+		if err := storage.RemoveObject(ctx, bucket, object.Key); err != nil {
+			log.Printf("remove test object %q: %v", object.Key, err)
+		}
+	}
+
+	if err := storage.Client.RemoveBucket(ctx, bucket); err != nil {
+		log.Printf("remove test bucket %q: %v", bucket, err)
+	}
 }
