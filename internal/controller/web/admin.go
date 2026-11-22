@@ -187,8 +187,8 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, validatorx.ExtractErrors(err))
 	}
 
-	if err := c.validateUserLimits(ctx, &req); err != nil {
-		return err
+	if !c.validateUserLimits(ctx, &req) {
+		return nil
 	}
 
 	user, sessionsEnded, err := c.u.UpdateUser(
@@ -203,16 +203,16 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 		return c.userUpdateError(ctx, err)
 	}
 
-	updatedUser, err := c.applyUserLimits(ctx, &user, &req)
-	if err != nil {
-		return err
+	updatedUser, ok := c.applyUserLimits(ctx, &user, &req)
+	if !ok {
+		return nil
 	}
 
 	user = updatedUser
 
-	ended, err := c.applyUserStatus(ctx, &user, &req, sessionsEnded)
-	if err != nil {
-		return err
+	ended, ok := c.applyUserStatus(ctx, &user, &req, sessionsEnded)
+	if !ok {
+		return nil
 	}
 
 	sessionsEnded = ended
@@ -230,55 +230,49 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 }
 
 // validateUserLimits parses and checks the account's limits before any write.
-func (c *Controller) validateUserLimits(ctx *fiber.Ctx, req *request.UserUpdate) error {
+// It reports whether the request may continue; a false result has already
+// rendered the error response.
+func (c *Controller) validateUserLimits(ctx *fiber.Ctx, req *request.UserUpdate) bool {
 	storageQuota, uploadRate, downloadRate, err := req.Limits()
 	if err != nil {
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"A size or rate must use an optional K, M or G suffix."},
-		)
+		c.renderUnprocessable(ctx, "A size or rate must use an optional K, M or G suffix.")
+
+		return false
 	}
 
 	if storageQuota < 0 || uploadRate < 0 || downloadRate < 0 {
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"A size or rate must not be negative."},
-		)
+		c.renderUnprocessable(ctx, "A size or rate must not be negative.")
+
+		return false
 	}
 
-	return nil
+	return true
 }
 
 // applyUserLimits persists the account's storage and transfer limits when they
-// changed, and reports any failure as a rendered error.
+// changed. The bool is false when the error response was already rendered.
 func (c *Controller) applyUserLimits(
 	ctx *fiber.Ctx,
 	user *entity.User,
 	req *request.UserUpdate,
-) (entity.User, error) {
+) (entity.User, bool) {
 	storageQuota, uploadRate, downloadRate, err := req.Limits()
 	if err != nil {
-		return *user, c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"A size or rate must use an optional K, M or G suffix."},
-		)
+		c.renderUnprocessable(ctx, "A size or rate must use an optional K, M or G suffix.")
+
+		return *user, false
 	}
 
 	if storageQuota < 0 || uploadRate < 0 || downloadRate < 0 {
-		return *user, c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"A size or rate must not be negative."},
-		)
+		c.renderUnprocessable(ctx, "A size or rate must not be negative.")
+
+		return *user, false
 	}
 
 	if storageQuota == user.StorageQuotaBytes &&
 		uploadRate == user.UploadRateBytesPerSec &&
 		downloadRate == user.DownloadRateBytesPerSec {
-		return *user, nil
+		return *user, true
 	}
 
 	updated, err := c.u.SetUserLimits(
@@ -289,33 +283,53 @@ func (c *Controller) applyUserLimits(
 		downloadRate,
 	)
 	if err != nil {
-		return *user, c.userUpdateError(ctx, err)
+		c.renderUserUpdateError(ctx, err)
+
+		return *user, false
 	}
 
-	return updated, nil
+	return updated, true
 }
 
 // applyUserStatus applies a requested lifecycle change and reports whether the
-// account's sessions were ended by it.
+// account's sessions were ended by it. The second bool is false when the error
+// response was already rendered.
 func (c *Controller) applyUserStatus(
 	ctx *fiber.Ctx,
 	user *entity.User,
 	req *request.UserUpdate,
 	sessionsEnded bool,
-) (bool, error) {
+) (ended, ok bool) {
 	if req.Status == "" || entity.UserStatus(req.Status) == user.Status {
-		return sessionsEnded, nil
+		return sessionsEnded, true
 	}
 
 	if err := c.u.SetStatus(ctx.UserContext(), req.ID, entity.UserStatus(req.Status)); err != nil {
-		return sessionsEnded, c.userUpdateError(ctx, err)
+		c.renderUserUpdateError(ctx, err)
+
+		return sessionsEnded, false
 	}
 
 	if entity.UserStatus(req.Status) != entity.UserStatusActive {
 		sessionsEnded = true
 	}
 
-	return sessionsEnded, nil
+	return sessionsEnded, true
+}
+
+// renderUnprocessable writes a 422 error fragment and logs a render failure.
+func (c *Controller) renderUnprocessable(ctx *fiber.Ctx, message string) {
+	if err := c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{message}); err != nil {
+		c.l.Error(fmt.Errorf("web - renderUnprocessable: %w", err))
+	}
+}
+
+// renderUserUpdateError renders the mapped update error and logs a render
+// failure.
+func (c *Controller) renderUserUpdateError(ctx *fiber.Ctx, err error) {
+	if renderErr := c.userUpdateError(ctx, err); renderErr != nil {
+		c.l.Error(fmt.Errorf("web - renderUserUpdateError: %w", renderErr))
+	}
 }
 
 // userUpdateError maps a failed account update to a status and a message the
