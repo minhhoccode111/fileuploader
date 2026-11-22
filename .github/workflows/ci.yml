@@ -69,14 +69,14 @@ jobs:
         with:
           go-version: '1.27'
       - name: Start Postgres and MinIO
-        run: docker compose up -d db minio
+        run: docker compose -p fileuploader up -d db minio
       - name: Wait for Postgres
-        run: docker compose exec -T db pg_isready -U user
+        run: docker compose -p fileuploader exec -T db pg_isready -U user
       - name: Run integration tests
         run: make test-integration
       - name: Stop services
         if: always()
-        run: docker compose down -v
+        run: docker compose -p fileuploader down -v
 
   check-dependencies:
     name: runner / check-dependencies
