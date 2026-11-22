@@ -749,8 +749,8 @@ func TestListStopsAtTheFolderLimit(t *testing.T) {
 		t.Fatalf("List() error = %v, want nil", err)
 	}
 
-	if len(view.Folders) != 100 {
-		t.Fatalf("List() returned %d folders, want 100", len(view.Folders))
+	if len(view.Folders) != _pageSize {
+		t.Fatalf("List() returned %d folders, want %d", len(view.Folders), _pageSize)
 	}
 
 	if files.fileCalls != 0 {
@@ -765,8 +765,9 @@ func TestListStopsAtTheFolderLimit(t *testing.T) {
 		t.Errorf("next kind = %q, want %q", view.Next.Kind, entity.EntryKindFolder)
 	}
 
-	if view.Next.ID != "folder-099" {
-		t.Errorf("next id = %q, want %q", view.Next.ID, "folder-099")
+	lastFolder := pageFolders(_pageSize)[_pageSize-1]
+	if view.Next.ID != lastFolder.ID {
+		t.Errorf("next id = %q, want %q", view.Next.ID, lastFolder.ID)
 	}
 
 	if view.Next.FoldersDone {
@@ -797,12 +798,12 @@ func TestListFillsTheRestWithFiles(t *testing.T) {
 		t.Errorf("List() returned %d folders, want 3", len(view.Folders))
 	}
 
-	if len(view.Files) != 97 {
-		t.Fatalf("List() returned %d files, want 97", len(view.Files))
+	if len(view.Files) != _pageSize-3 {
+		t.Fatalf("List() returned %d files, want %d", len(view.Files), _pageSize-3)
 	}
 
-	if files.lastFileLimit != 98 {
-		t.Errorf("file page limit = %d, want 98", files.lastFileLimit)
+	if files.lastFileLimit != _pageSize-2 {
+		t.Errorf("file page limit = %d, want %d", files.lastFileLimit, _pageSize-2)
 	}
 
 	if files.lastFileAfter != nil {
@@ -813,8 +814,9 @@ func TestListFillsTheRestWithFiles(t *testing.T) {
 		t.Fatalf("List() next = %+v, want a file cursor", view.Next)
 	}
 
-	if view.Next.ID != "file-096" {
-		t.Errorf("next id = %q, want %q", view.Next.ID, "file-096")
+	lastFile := pageFiles(_pageSize - 3)[_pageSize-4]
+	if view.Next.ID != lastFile.ID {
+		t.Errorf("next id = %q, want %q", view.Next.ID, lastFile.ID)
 	}
 }
 
@@ -824,7 +826,7 @@ func TestListDetectsFilesBehindAFullFolderPage(t *testing.T) {
 	folders := &fakeFolderRepo{
 		byID: map[string]entity.Folder{"folder": {ID: "folder", UserID: "user"}},
 		folderPage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FolderItem, error) {
-			return pageFolders(100), nil
+			return pageFolders(_pageSize), nil
 		},
 	}
 	files := &fakeFileRepo{filePage: func(_, _ string, _ *entity.EntryCursor, _ int) ([]entity.FileItem, error) {
@@ -837,8 +839,8 @@ func TestListDetectsFilesBehindAFullFolderPage(t *testing.T) {
 		t.Fatalf("List() error = %v, want nil", err)
 	}
 
-	if len(view.Folders) != 100 {
-		t.Errorf("List() returned %d folders, want 100", len(view.Folders))
+	if len(view.Folders) != _pageSize {
+		t.Errorf("List() returned %d folders, want %d", len(view.Folders), _pageSize)
 	}
 
 	if len(view.Files) != 0 {
@@ -857,8 +859,9 @@ func TestListDetectsFilesBehindAFullFolderPage(t *testing.T) {
 		t.Errorf("next = %+v, want a folder cursor with FoldersDone", view.Next)
 	}
 
-	if view.Next.ID != "folder-099" {
-		t.Errorf("next id = %q, want %q", view.Next.ID, "folder-099")
+	lastFolder := pageFolders(_pageSize)[_pageSize-1]
+	if view.Next.ID != lastFolder.ID {
+		t.Errorf("next id = %q, want %q", view.Next.ID, lastFolder.ID)
 	}
 }
 
@@ -892,12 +895,12 @@ func TestListContinuesAFilePageWithoutFolders(t *testing.T) {
 		t.Errorf("List() returned %d folders, want 0", len(view.Folders))
 	}
 
-	if len(view.Files) != 100 {
-		t.Errorf("List() returned %d files, want 100", len(view.Files))
+	if len(view.Files) != _pageSize {
+		t.Errorf("List() returned %d files, want %d", len(view.Files), _pageSize)
 	}
 
-	if files.lastFileLimit != 101 {
-		t.Errorf("file page limit = %d, want 101", files.lastFileLimit)
+	if files.lastFileLimit != _pageSize+1 {
+		t.Errorf("file page limit = %d, want %d", files.lastFileLimit, _pageSize+1)
 	}
 
 	if view.Next == nil || view.Next.Kind != entity.EntryKindFile {
@@ -911,10 +914,11 @@ func TestListContinuesAFilePageWithoutFolders(t *testing.T) {
 func TestListContinuesAfterAFullFolderPage(t *testing.T) {
 	t.Parallel()
 
+	lastFolder := pageFolders(_pageSize)[_pageSize-1]
 	cursor := &entity.EntryCursor{
 		Kind:        entity.EntryKindFolder,
-		Name:        "folder 099",
-		ID:          "folder-099",
+		Name:        lastFolder.Name,
+		ID:          lastFolder.ID,
 		FoldersDone: true,
 	}
 

@@ -253,10 +253,11 @@ func TestUploadStartRejectsAnInvalidBody(t *testing.T) {
 	}
 }
 
-// A part request must carry a body and a length. A request without one, or
-// with more bytes than one part may carry, is refused before the use case is
-// asked to store anything.
-func TestUploadPartRejectsAWrongContentLength(t *testing.T) {
+// A negative or oversized Content-Length is refused before the use case. A
+// zero-length body reaches the use case, which maps the part mismatch to 422.
+//
+//nolint:funlen,gocognit // two request shapes under one contract.
+func TestUploadPartMapsALengthMismatch(t *testing.T) {
 	t.Parallel()
 
 	t.Run("empty body", func(t *testing.T) {
@@ -279,12 +280,21 @@ func TestUploadPartRejectsAWrongContentLength(t *testing.T) {
 
 		defer res.Body.Close()
 
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatalf("io.ReadAll() error = %v, want nil", err)
+		}
+
 		if res.StatusCode != http.StatusUnprocessableEntity {
 			t.Errorf("status = %d, want %d", res.StatusCode, http.StatusUnprocessableEntity)
 		}
 
 		if files.partCalls != 1 {
 			t.Errorf("UploadPart calls = %d, want 1", files.partCalls)
+		}
+
+		if len(body) == 0 {
+			t.Error("body is empty, want the mismatch message")
 		}
 	})
 

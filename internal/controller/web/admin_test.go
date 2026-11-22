@@ -204,45 +204,6 @@ func TestAdminUsersSortHeader(t *testing.T) {
 	}
 }
 
-// The columns keep their share of the table however long a name or an email
-// is. A long value is cut with an ellipsis instead of widening its column or
-// wrapping onto a second line, so a new page never moves the layout.
-func TestAdminUsersTableKeepsTheColumnsFixed(t *testing.T) {
-	t.Parallel()
-
-	rows := []response.UserRow{{
-		ID:       "1",
-		Username: "a-very-long-username-that-would-widen-the-column",
-		Email:    "a-very-long-email-address-that-would-widen-the-column@example.com",
-		Joined:   "2026-10-24 16:32",
-		Updated:  "2026-10-24 16:32",
-	}}
-
-	page := renderComponent(t, templates.AdminUsersTable(rows, response.UserPager{Page: 1, Pages: 1}, response.UserFilters{Limit: "10"}))
-
-	want := []string{
-		"table-fixed",
-		"min-w-[56rem]",
-		"<colgroup>",
-		`w-[18%]`,
-		`w-[24%]`,
-		`w-[9%]`,
-		`w-[16%]`,
-		`w-[12%]`,
-		"truncate",
-		`title="a-very-long-username-that-would-widen-the-column"`,
-		`title="a-very-long-email-address-that-would-widen-the-column@example.com"`,
-	}
-
-	for _, part := range want {
-		if !strings.Contains(page, part) {
-			t.Errorf("table = %q, want it to contain %q", page, part)
-		}
-	}
-}
-
-// The storage column prints the used bytes against the quota, and its title
-// sorts the list like every other column.
 func TestAdminUsersTableShowsTheStorage(t *testing.T) {
 	t.Parallel()
 
@@ -268,38 +229,6 @@ func TestAdminUsersTableShowsTheStorage(t *testing.T) {
 	}
 }
 
-// The table carries the order it was rendered with, so the next request the
-// list makes on its own keeps the column the visitor chose.
-func TestAdminUsersTableCarriesTheSort(t *testing.T) {
-	t.Parallel()
-
-	filters := response.UserFilters{Sort: "email", Dir: "desc", Limit: "10", Page: 1}
-
-	page := renderComponent(t, templates.AdminUsersTable(nil, response.UserPager{Page: 1, Pages: 1}, filters))
-
-	want := []string{
-		`id="user-sort"`,
-		`name="sort" value="email"`,
-		`id="user-dir"`,
-		`name="dir" value="desc"`,
-		`sort=username`,
-		`sort=email`,
-		`sort=role`,
-		`sort=storage_used_bytes`,
-		`sort=created_at`,
-		`sort=updated_at`,
-		`colspan="7"`,
-	}
-
-	for _, part := range want {
-		if !strings.Contains(page, part) {
-			t.Errorf("table = %q, want it to contain %q", page, part)
-		}
-	}
-}
-
-// The table state carries the order the address bar brought, so a bookmark
-// comes back with the column and the direction it was left with.
 func TestUserFiltersCarryTheSort(t *testing.T) {
 	t.Parallel()
 

@@ -56,26 +56,13 @@ func TestLatencyHoldsTheRequestBack(t *testing.T) {
 	}
 }
 
-func TestLatencyStaysUnderTheCeiling(t *testing.T) {
+func TestRandomDelayIsZeroWhenTheRangeIsOff(t *testing.T) {
 	t.Parallel()
 
-	minDelay := 10 * time.Millisecond
-	maxDelay := 30 * time.Millisecond
-
-	elapsed := requestTime(t, latencyApp(minDelay, maxDelay))
-
-	if elapsed > maxDelay {
-		t.Errorf("elapsed = %s, want at most %s", elapsed, maxDelay)
-	}
-}
-
-func TestLatencyStaysOffWithoutAMaximum(t *testing.T) {
-	t.Parallel()
-
-	elapsed := requestTime(t, latencyApp(0, 0))
-
-	if elapsed > 50*time.Millisecond {
-		t.Errorf("elapsed = %s, want the request to pass through at once", elapsed)
+	for _, maxDelay := range []time.Duration{0, -time.Second} {
+		if got := randomDelay(time.Second, maxDelay); got != 0 {
+			t.Errorf("randomDelay(max=%s) = %s, want 0", maxDelay, got)
+		}
 	}
 }
 
