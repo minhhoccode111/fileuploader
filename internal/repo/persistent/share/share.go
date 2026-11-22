@@ -78,7 +78,7 @@ func (r *Repo) GetActiveByUserAndFolder(ctx context.Context, userID, folderID st
 		Select(_shareColumns).
 		From("shares").
 		Where(sq.Eq{_userIDColumn: userID, _folderIDColumn: folderID}).
-		Where(sq.Expr("expires_at IS NULL OR expires_at > now()")).
+		Where(sq.Expr("(expires_at IS NULL OR expires_at > now())")).
 		OrderBy("created_at DESC").
 		Limit(1).
 		ToSql()
@@ -112,7 +112,7 @@ func (r *Repo) ListByUser(ctx context.Context, userID string) ([]entity.Share, e
 		Select(_shareColumns).
 		From("shares").
 		Where(sq.Eq{_userIDColumn: userID}).
-		Where(sq.Expr("expires_at IS NULL OR expires_at > now()")).
+		Where(sq.Expr("(expires_at IS NULL OR expires_at > now())")).
 		OrderBy("created_at DESC").
 		ToSql()
 	if err != nil {

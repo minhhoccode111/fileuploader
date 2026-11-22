@@ -7,7 +7,7 @@ include .env.example
 export
 endif
 
-BASE_STACK = docker compose -f docker-compose.yml
+BASE_STACK = docker compose -p fileuploader -f docker-compose.yml
 ALL_STACK = $(BASE_STACK)
 MIGRATE = migrate -path migrations -database '$(PG_URL)?sslmode=disable'
 SCHEMA_FILE = docs/schema.sql
