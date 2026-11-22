@@ -71,6 +71,13 @@ func (r *Repo) Get(ctx context.Context, shareID string) (entity.Share, error) {
 	return scanShare(r.Querier(ctx).QueryRow(ctx, sql, args...))
 }
 
+// activeShareWhere keeps the expiry condition in one parenthesized expression.
+// Without the parentheses, AND binds first and unexpired shares from other
+// accounts satisfy the unparenthesized OR.
+func activeShareWhere() sq.Sqlizer {
+	return sq.Expr("(expires_at IS NULL OR expires_at > now())")
+}
+
 // GetActiveByUserAndFolder returns the active share for a folder, if one
 // exists. An expired share is not active, so the caller creates a new one.
 func (r *Repo) GetActiveByUserAndFolder(ctx context.Context, userID, folderID string) (entity.Share, error) {
@@ -78,7 +85,7 @@ func (r *Repo) GetActiveByUserAndFolder(ctx context.Context, userID, folderID st
 		Select(_shareColumns).
 		From("shares").
 		Where(sq.Eq{_userIDColumn: userID, _folderIDColumn: folderID}).
-		Where(sq.Expr("(expires_at IS NULL OR expires_at > now())")).
+		Where(activeShareWhere()).
 		OrderBy("created_at DESC").
 		Limit(1).
 		ToSql()
@@ -112,7 +119,7 @@ func (r *Repo) ListByUser(ctx context.Context, userID string) ([]entity.Share, e
 		Select(_shareColumns).
 		From("shares").
 		Where(sq.Eq{_userIDColumn: userID}).
-		Where(sq.Expr("(expires_at IS NULL OR expires_at > now())")).
+		Where(activeShareWhere()).
 		OrderBy("created_at DESC").
 		ToSql()
 	if err != nil {
