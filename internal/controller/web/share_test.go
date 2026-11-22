@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -339,9 +340,33 @@ type shareStub struct {
 
 	share    entity.Share
 	folder   entity.Folder
+	file     entity.File
 	err      error
 	gets     int
 	resolves int
+
+	shares []entity.Share
+
+	lastListUserID   string
+	listCalls        int
+	createUserID     string
+	createFolderID   string
+	createExpiry     *time.Time
+	createCalls      int
+	createErr        error
+	updateUserID     string
+	updateShareID    string
+	updateExpiry     *time.Time
+	updateCalls      int
+	updateErr        error
+	deleteUserID     string
+	deleteShareID    string
+	deleteCalls      int
+	deleteErr        error
+	resolveFileErr   error
+	resolveFileShare string
+	resolveFileID    string
+	resolveFileCalls int
 }
 
 func (s *shareStub) Get(_ context.Context, _ string) (entity.Share, error) {
