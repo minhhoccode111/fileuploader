@@ -25,3 +25,11 @@ func ConnTimeout(timeout time.Duration) Option {
 		c.connTimeout = timeout
 	}
 }
+
+// WithLogger sets the logger the package reports connection retries and
+// rollback failures through. A Postgres without a logger stays silent.
+func WithLogger(l Logger) Option {
+	return func(c *Postgres) {
+		c.logger = l
+	}
+}

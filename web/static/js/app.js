@@ -1,3 +1,18 @@
+// Every unsafe request carries the double-submit CSRF token the server set as
+// a cookie. htmx picks it up on every request through this hook; the upload
+// driver adds it to its own fetch and XHR calls below.
+function csrfToken() {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+document.addEventListener("htmx:config:request", (event) => {
+  const token = csrfToken();
+  if (!token) return;
+
+  event.detail.ctx.request.headers["X-CSRF-Token"] = token;
+});
+
 // Skip a navigation request when the link points at the page already open: the
 // content is on screen, so a round trip adds nothing.
 //
@@ -208,7 +223,10 @@ async function uploadInParts(file, folder, name, pageFolder, run) {
 async function startUpload(file, folder, name) {
   const response = await fetch("/htmx/uploads", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrfToken(),
+    },
     body: JSON.stringify({
       folder: folder,
       name: name,
@@ -273,6 +291,7 @@ function uploadPart(url, blob, onProgress) {
 
       part.open("PUT", url);
       part.setRequestHeader("Content-Type", "application/octet-stream");
+      part.setRequestHeader("X-CSRF-Token", csrfToken());
       part.timeout = uploadPartTimeout;
 
       part.upload.addEventListener("progress", (event) => {
@@ -343,6 +362,7 @@ async function completeUpload(id, run) {
 
   const response = await fetch("/htmx/uploads/" + id + "/complete" + suffix, {
     method: "POST",
+    headers: { "X-CSRF-Token": csrfToken() },
   });
 
   if (!response.ok) {
@@ -432,7 +452,13 @@ function abortActiveUpload() {
 function abortUpload(id) {
   if (!id) return;
 
-  navigator.sendBeacon("/htmx/uploads/" + id + "/abort");
+  // A beacon cannot send a header, so the abort uses a keepalive fetch that
+  // outlives the page. A refused abort is ignored: the sweeper is the backstop.
+  fetch("/htmx/uploads/" + id + "/abort", {
+    method: "POST",
+    keepalive: true,
+    headers: { "X-CSRF-Token": csrfToken() },
+  }).catch(() => {});
 }
 
 // retryPart reports whether a part is worth sending again. A 4xx names a

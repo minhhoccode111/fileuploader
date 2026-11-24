@@ -1,7 +1,6 @@
 package web
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -55,34 +54,17 @@ func (c *Controller) registerSubmit(ctx *fiber.Ctx) error {
 // may see. Only the entity sentinels are translated; everything else is a server
 // fault and is logged instead of leaked.
 func (c *Controller) registerError(ctx *fiber.Ctx, err error) error {
-	switch {
-	case errors.Is(err, entity.ErrEmailAlreadyExists):
-		return c.renderErrors(
-			ctx,
-			http.StatusConflict,
-			[]string{"That email is already registered."},
-		)
-
-	case errors.Is(err, entity.ErrUsernameAlreadyExists):
-		return c.renderErrors(ctx, http.StatusConflict, []string{"That username is already taken."})
-
-	case errors.Is(err, entity.ErrUserAlreadyExists):
-		return c.renderErrors(
-			ctx,
-			http.StatusConflict,
-			[]string{"That email or username is already taken."},
-		)
-
-	case errors.Is(err, entity.ErrPasswordTooLong):
-		return c.renderErrors(
-			ctx,
-			http.StatusUnprocessableEntity,
-			[]string{"Password is too long."},
-		)
-
-	default:
-		c.l.Error(fmt.Errorf("web - registerSubmit - uc.Register: %w", err))
-
-		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
+	handled, renderErr := c.renderMappedError(ctx, err, []errorCase{
+		{entity.ErrEmailAlreadyExists, http.StatusConflict, "That email is already registered."},
+		{entity.ErrUsernameAlreadyExists, http.StatusConflict, "That username is already taken."},
+		{entity.ErrUserAlreadyExists, http.StatusConflict, "That email or username is already taken."},
+		{entity.ErrPasswordTooLong, http.StatusUnprocessableEntity, "Password is too long."},
+	})
+	if handled {
+		return renderErr
 	}
+
+	c.l.Error(fmt.Errorf("web - registerSubmit - uc.Register: %w", err))
+
+	return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 }

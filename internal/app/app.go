@@ -55,13 +55,16 @@ func initUseCases(
 	shares := shareRepo.New(pg)
 	uploads := uploadRepo.New(rdb)
 	pacer := transferRepo.New(rdb)
+	loginGuard := transferRepo.NewLoginGuard(rdb)
 	limits := usecase.Limits{
 		StorageQuotaBytes:       cfg.Limits.StorageQuotaBytes,
 		DownloadRateBytesPerSec: cfg.Limits.DownloadRateBytesPerSec,
 	}
 
 	return useCases{
-		user:   usecaseUser.New(users, sessionRepo, folders, pg, cfg.Session.TTL),
+		user: usecaseUser.New(
+			users, sessionRepo, folders, pg, loginGuard, cfg.Session.TTL,
+		),
 		folder: usecaseFolder.New(users, folders, files, storage, pg, pacer, cfg.MinIO.Bucket, limits),
 		file: usecaseFile.New(
 			users, files, folders, storage, pg, cfg.MinIO.Bucket,
@@ -129,7 +132,11 @@ func Run(cfg *config.Config) {
 	l := logger.New(cfg.Log.Level)
 
 	// Repository
-	pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.PoolMax))
+	pg, err := postgres.New(
+		cfg.PG.URL,
+		postgres.MaxPoolSize(cfg.PG.PoolMax),
+		postgres.WithLogger(l),
+	)
 	if err != nil {
 		l.Fatal(fmt.Errorf("app - Run - postgres.New: %w", err))
 	}

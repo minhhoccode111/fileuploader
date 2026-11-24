@@ -3,30 +3,67 @@ package user
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	repopkg "github.com/minhhoccode111/fileuploader/internal/repo"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // errStoreFailed is the failure the fake repository reports.
 var errStoreFailed = errors.New("store failed")
 
+// fakeLoginGuard records the buckets a login reserves and clears.
+type fakeLoginGuard struct {
+	blocked  map[repopkg.LoginScope]bool
+	reserved []repopkg.LoginScope
+	resets   []repopkg.LoginScope
+	err      error
+}
+
+func (f *fakeLoginGuard) Reserve(
+	_ context.Context,
+	scope repopkg.LoginScope,
+	_ string,
+	_ int,
+	_ time.Duration,
+) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+
+	f.reserved = append(f.reserved, scope)
+
+	return !f.blocked[scope], nil
+}
+
+func (f *fakeLoginGuard) Reset(_ context.Context, scope repopkg.LoginScope, _ string) error {
+	if f.err != nil {
+		return f.err
+	}
+
+	f.resets = append(f.resets, scope)
+
+	return nil
+}
+
 // fakeUserRepo records what it was asked to store and the filter it was
 // asked to list with.
 type fakeUserRepo struct {
-	stored    *entity.User
-	listed    entity.UserFilter
-	user      entity.User
-	items     []entity.UserListItem
-	role      entity.UserRole
-	roleSet   bool
-	updated   *entity.User
-	err       error
-	statusSet bool
-	status    entity.UserStatus
+	stored          *entity.User
+	getByEmailCalls int
+	listed          entity.UserFilter
+	user            entity.User
+	items           []entity.UserListItem
+	role            entity.UserRole
+	roleSet         bool
+	updated         *entity.User
+	err             error
+	statusSet       bool
+	status          entity.UserStatus
 
 	profileCalled   bool
 	profileUserID   string
@@ -59,6 +96,8 @@ func (f *fakeUserRepo) GetByID(_ context.Context, _ string) (entity.User, error)
 }
 
 func (f *fakeUserRepo) GetByEmail(_ context.Context, _ string) (entity.User, error) {
+	f.getByEmailCalls++
+
 	return f.user, f.err
 }
 
@@ -334,7 +373,7 @@ func TestListUsersClampsTheFilterBeforeItLists(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	_, err := uc.ListUsers(context.Background(), &entity.UserFilter{
 		Query: "  john  ",
@@ -369,7 +408,7 @@ func TestRegisterStoresTheUserInsideTheUnitOfWork(t *testing.T) {
 	repo := &fakeUserRepo{}
 	folders := &fakeFolderRepo{}
 	uow := &fakeUnitOfWork{}
-	uc := New(repo, &fakeSessionRepo{}, folders, uow, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, folders, uow, &fakeLoginGuard{}, time.Hour)
 
 	user, err := uc.Register(context.Background(), "john", "john@example.com", "password")
 	if err != nil {
@@ -410,7 +449,7 @@ func TestRegisterRollsBackWhenTheRepositoryFails(t *testing.T) {
 
 	repo := &fakeUserRepo{err: errStoreFailed}
 	uow := &fakeUnitOfWork{}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, uow, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, uow, &fakeLoginGuard{}, time.Hour)
 
 	_, err := uc.Register(context.Background(), "john", "john@example.com", "password")
 	if !errors.Is(err, errStoreFailed) {
@@ -436,9 +475,9 @@ func TestLoginStoresTheRoleInTheSession(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleAdmin, Status: entity.UserStatusActive, PasswordHash: string(hash)}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
-	_, _, err = uc.Login(context.Background(), "john@example.com", "password")
+	_, _, err = uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
 	if err != nil {
 		t.Fatalf("Login() error = %v, want nil", err)
 	}
@@ -473,9 +512,9 @@ func TestLoginRejectsAnUnknownEmail(t *testing.T) {
 
 	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
-	_, _, err := uc.Login(context.Background(), "missing@example.com", "password")
+	_, _, err := uc.Login(context.Background(), "missing@example.com", "password", "10.0.0.1")
 	if !errors.Is(err, entity.ErrInvalidCredentials) {
 		t.Fatalf("Login() error = %v, want ErrInvalidCredentials", err)
 	}
@@ -509,15 +548,136 @@ func TestLoginRejectsADisabledAccount(t *testing.T) {
 	assertLoginRejected(t, repo, "password", entity.ErrUserDisabled)
 }
 
+func TestLoginRejectsAThrottledEmailBeforeVerifyingCredentials(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+	guard := &fakeLoginGuard{blocked: map[repopkg.LoginScope]bool{repopkg.LoginScopeEmail: true}}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, guard, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
+	if !errors.Is(err, entity.ErrLoginThrottled) {
+		t.Fatalf("Login() error = %v, want ErrLoginThrottled", err)
+	}
+
+	if repo.getByEmailCalls != 0 {
+		t.Error("Login() looked up the account of a throttled email")
+	}
+
+	if sessions.stored != nil {
+		t.Error("Login() stored a session for a throttled email")
+	}
+}
+
+func TestLoginRejectsAThrottledClient(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+	guard := &fakeLoginGuard{blocked: map[repopkg.LoginScope]bool{repopkg.LoginScopeIP: true}}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, guard, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
+	if !errors.Is(err, entity.ErrLoginThrottled) {
+		t.Fatalf("Login() error = %v, want ErrLoginThrottled", err)
+	}
+
+	if repo.getByEmailCalls != 0 {
+		t.Error("Login() looked up the account of a throttled client")
+	}
+}
+
+func TestLoginReservesTheEmailAndClientBuckets(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "rightpass1!"),
+	}}
+	guard := &fakeLoginGuard{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, guard, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", "wrongpass1!", "10.0.0.1")
+	if !errors.Is(err, entity.ErrInvalidCredentials) {
+		t.Fatalf("Login() error = %v, want ErrInvalidCredentials", err)
+	}
+
+	if !slices.Equal(guard.reserved, []repopkg.LoginScope{repopkg.LoginScopeEmail, repopkg.LoginScopeIP}) {
+		t.Errorf("reserved buckets = %v, want the email and client buckets", guard.reserved)
+	}
+
+	if len(guard.resets) != 0 {
+		t.Errorf("Login() reset %v after a failed password, want none", guard.resets)
+	}
+}
+
+func TestLoginResetsTheEmailBucketOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Role:         entity.UserRoleUser,
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+	guard := &fakeLoginGuard{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, guard, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
+	if err != nil {
+		t.Fatalf("Login() error = %v, want nil", err)
+	}
+
+	if !slices.Equal(guard.resets, []repopkg.LoginScope{repopkg.LoginScopeEmail}) {
+		t.Errorf("reset buckets = %v, want only the email bucket", guard.resets)
+	}
+}
+
+func TestLoginReportsAThrottleStoreFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{user: entity.User{
+		ID:           "1",
+		Status:       entity.UserStatusActive,
+		PasswordHash: passwordHash(t, "password"),
+	}}
+	guard := &fakeLoginGuard{err: errStoreFailed}
+	sessions := &fakeSessionRepo{}
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, guard, time.Hour)
+
+	_, _, err := uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
+	if err == nil {
+		t.Fatal("Login() error = nil, want the store failure")
+	}
+
+	if errors.Is(err, entity.ErrLoginThrottled) {
+		t.Error("Login() reported a store failure as a throttled login")
+	}
+
+	if sessions.stored != nil {
+		t.Error("Login() stored a session while the guard was failing")
+	}
+}
+
 // assertLoginRejected sends one login and asserts the sentinel and that no
 // session was stored.
 func assertLoginRejected(t *testing.T, repo *fakeUserRepo, password string, wantErr error) {
 	t.Helper()
 
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
-	_, _, err := uc.Login(context.Background(), "john@example.com", password)
+	_, _, err := uc.Login(context.Background(), "john@example.com", password, "10.0.0.1")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Login() error = %v, want %v", err, wantErr)
 	}
@@ -536,9 +696,9 @@ func TestLoginReportsASessionStoreFailure(t *testing.T) {
 		PasswordHash: passwordHash(t, "password"),
 	}}
 	sessions := &fakeSessionRepo{storeErr: errStoreFailed}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
-	sessionID, user, err := uc.Login(context.Background(), "john@example.com", "password")
+	sessionID, user, err := uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
 	if !errors.Is(err, errStoreFailed) {
 		t.Fatalf("Login() error = %v, want %v", err, errStoreFailed)
 	}
@@ -559,9 +719,9 @@ func TestLoginStoresTheTTL(t *testing.T) {
 		PasswordHash: passwordHash(t, "password"),
 	}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, ttl)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, ttl)
 
-	_, _, err := uc.Login(context.Background(), "john@example.com", "password")
+	_, _, err := uc.Login(context.Background(), "john@example.com", "password", "10.0.0.1")
 	if err != nil {
 		t.Fatalf("Login() error = %v, want nil", err)
 	}
@@ -575,7 +735,7 @@ func TestAuthenticatePassesTheSessionID(t *testing.T) {
 	t.Parallel()
 
 	sessions := &fakeSessionRepo{got: entity.Session{UserID: "1", Role: entity.UserRoleUser}}
-	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	session, err := uc.Authenticate(context.Background(), "session-1")
 	if err != nil {
@@ -595,7 +755,7 @@ func TestAuthenticateReportsAMissingSession(t *testing.T) {
 	t.Parallel()
 
 	sessions := &fakeSessionRepo{getErr: entity.ErrSessionNotFound}
-	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	_, err := uc.Authenticate(context.Background(), "missing")
 	if !errors.Is(err, entity.ErrSessionNotFound) {
@@ -611,7 +771,7 @@ func TestLogoutDeletesTheSession(t *testing.T) {
 	t.Parallel()
 
 	sessions := &fakeSessionRepo{}
-	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	if err := uc.Logout(context.Background(), "session-1"); err != nil {
 		t.Fatalf("Logout() error = %v, want nil", err)
@@ -626,7 +786,7 @@ func TestLogoutReportsADeleteFailure(t *testing.T) {
 	t.Parallel()
 
 	sessions := &fakeSessionRepo{deleteErr: errStoreFailed}
-	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(&fakeUserRepo{}, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err := uc.Logout(context.Background(), "session-1")
 	if !errors.Is(err, errStoreFailed) {
@@ -643,7 +803,7 @@ func TestSetRoleUpdatesTheRoleAndEndsTheSessions(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", Email: "john@example.com"}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err := uc.SetRole(context.Background(), "john@example.com", entity.UserRoleAdmin)
 	if err != nil {
@@ -668,7 +828,7 @@ func TestSetRoleRejectsAnUnknownRole(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1"}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err := uc.SetRole(context.Background(), "john@example.com", entity.UserRole("root"))
 	if !errors.Is(err, entity.ErrInvalidRole) {
@@ -685,7 +845,7 @@ func TestSetRoleReportsAnUnknownAccount(t *testing.T) {
 
 	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err := uc.SetRole(context.Background(), "nobody@example.com", entity.UserRoleAdmin)
 	if !errors.Is(err, entity.ErrUserNotFound) {
@@ -704,7 +864,7 @@ func TestSetStatusEndsSessionsForANonActiveStatus(t *testing.T) {
 
 	repo := &fakeUserRepo{}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	if err := uc.SetStatus(context.Background(), "1", entity.UserStatusDisabled); err != nil {
 		t.Fatalf("SetStatus() error = %v, want nil", err)
@@ -724,7 +884,7 @@ func TestSetStatusKeepsSessionsForAnActiveStatus(t *testing.T) {
 
 	repo := &fakeUserRepo{}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	if err := uc.SetStatus(context.Background(), "1", entity.UserStatusActive); err != nil {
 		t.Fatalf("SetStatus() error = %v, want nil", err)
@@ -744,7 +904,7 @@ func TestSetStatusKeepsTheStatusWhenSessionsCannotBeEnded(t *testing.T) {
 
 	repo := &fakeUserRepo{}
 	sessions := &fakeSessionRepo{deleteAllErr: errStoreFailed}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err := uc.SetStatus(context.Background(), "1", entity.UserStatusDisabled)
 	if !errors.Is(err, errStoreFailed) {
@@ -772,7 +932,7 @@ func TestUpdateUserSavesTheFields(t *testing.T) {
 		Role:         entity.UserRoleUser,
 	}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	user, sessionsEnded, err := uc.UpdateUser(
 		context.Background(), "1", "johndoe", "doe@example.com", entity.UserRoleUser, "",
@@ -828,7 +988,7 @@ func TestUpdateUserEndsTheSessionsOnARoleOrAPasswordChange(t *testing.T) {
 
 			repo := &fakeUserRepo{user: entity.User{ID: "1", Role: entity.UserRoleUser, PasswordHash: string(hash)}}
 			sessions := &fakeSessionRepo{}
-			uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+			uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 			_, sessionsEnded, err := uc.UpdateUser(
 				context.Background(), "1", "john", "john@example.com", tc.role, tc.pass,
@@ -876,7 +1036,7 @@ func TestUpdateUserRejectsAnUnknownRoleOrAccount(t *testing.T) {
 			t.Parallel()
 
 			sessions := &fakeSessionRepo{}
-			uc := New(&tc.repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+			uc := New(&tc.repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 			user, sessionsEnded, err := uc.UpdateUser(
 				context.Background(), "1", "john", "john@example.com", tc.role, "",
@@ -913,7 +1073,7 @@ func TestUpdateUserKeepsThePasswordWhenNoneCameIn(t *testing.T) {
 		PasswordHash: string(hash),
 		Role:         entity.UserRoleUser,
 	}}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	_, _, err = uc.UpdateUser(context.Background(), "1", "john", "john@example.com", entity.UserRoleUser, "")
 	if err != nil {
@@ -929,7 +1089,7 @@ func TestUpdateUserReplacesThePassword(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: "old", Role: entity.UserRoleUser}}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	_, _, err := uc.UpdateUser(context.Background(), "1", "john", "john@example.com", entity.UserRoleUser, "newpass1")
 	if err != nil {
@@ -955,7 +1115,7 @@ func TestUpdateProfileSavesTheEditableFields(t *testing.T) {
 		Role:         entity.UserRoleAdmin,
 		Status:       entity.UserStatusActive,
 	}}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	user, err := uc.UpdateProfile(context.Background(), "1", "johndoe", "doe@example.com")
 	if err != nil {
@@ -1000,7 +1160,7 @@ func TestUpdateProfileReportsAnUnknownAccount(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	_, err := uc.UpdateProfile(context.Background(), "1", "johndoe", "doe@example.com")
 	if !errors.Is(err, entity.ErrUserNotFound) {
@@ -1024,7 +1184,7 @@ func TestChangePasswordReplacesTheHashAndEndsOtherSessions(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err = uc.ChangePassword(context.Background(), "1", "oldpass1!", "newpass1!", "keep")
 	if err != nil {
@@ -1080,7 +1240,7 @@ func TestChangePasswordRejectsAWrongCurrentPassword(t *testing.T) {
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
 	sessions := &fakeSessionRepo{}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err = uc.ChangePassword(context.Background(), "1", "wrongpass1!", "newpass1!", "keep")
 	if !errors.Is(err, entity.ErrInvalidCredentials) {
@@ -1100,7 +1260,7 @@ func TestChangePasswordReportsAnUnknownAccount(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeUserRepo{err: entity.ErrUserNotFound}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err := uc.ChangePassword(context.Background(), "1", "oldpass1!", "newpass1!", "keep")
 	if !errors.Is(err, entity.ErrUserNotFound) {
@@ -1117,7 +1277,7 @@ func TestChangePasswordRejectsATooLongPassword(t *testing.T) {
 	}
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
-	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err = uc.ChangePassword(
 		context.Background(),
@@ -1148,7 +1308,7 @@ func TestChangePasswordKeepsTheOldPasswordWhenTheSessionsCannotBeEnded(t *testin
 
 	repo := &fakeUserRepo{user: entity.User{ID: "1", PasswordHash: string(hash)}}
 	sessions := &fakeSessionRepo{exceptErr: errStoreFailed}
-	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, time.Hour)
+	uc := New(repo, sessions, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
 
 	err = uc.ChangePassword(context.Background(), "1", "oldpass1!", "newpass1!", "keep")
 	if !errors.Is(err, errStoreFailed) {

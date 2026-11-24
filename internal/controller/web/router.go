@@ -49,6 +49,7 @@ func NewRouter(
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
 	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
+	app.Use(middleware.CSRF())
 	app.Use(middleware.BodyLimit(
 		_generalBodyLimitBytes,
 		cfg.Upload.PartBytes+config.UploadOverheadBytes,

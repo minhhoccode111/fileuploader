@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -61,6 +62,28 @@ func (c *Controller) renderErrors(ctx *fiber.Ctx, status int, messages []string)
 	ctx.Status(status)
 
 	return c.renderPage(ctx, templates.ErrorList(response.Errors{Messages: messages}))
+}
+
+// errorCase maps one domain sentinel to the status and message the visitor may
+// see. Every domain handler builds a short table of them so the mapping lives
+// in one shape instead of a switch repeated per handler.
+type errorCase struct {
+	sentinel error
+	status   int
+	message  string
+}
+
+// renderMappedError renders the first case whose sentinel matches err and
+// reports whether one did. An unmatched error is a server fault the caller
+// logs; it is never rendered with the sentinel's message.
+func (c *Controller) renderMappedError(ctx *fiber.Ctx, err error, cases []errorCase) (bool, error) {
+	for _, item := range cases {
+		if errors.Is(err, item.sentinel) {
+			return true, c.renderErrors(ctx, item.status, []string{item.message})
+		}
+	}
+
+	return false, nil
 }
 
 // renderPage renders a templ component as an HTML response.

@@ -16,6 +16,12 @@ const (
 
 	// TransferDownload names the download budget of an account.
 	TransferDownload TransferScope = "download"
+
+	// LoginScopeEmail counts the failed sign-ins of one email address.
+	LoginScopeEmail LoginScope = "login-email:"
+
+	// LoginScopeIP counts the failed sign-ins of one client address.
+	LoginScopeIP LoginScope = "login-ip:"
 )
 
 type (
@@ -126,11 +132,31 @@ type (
 	// does not consume the budget of the other.
 	TransferScope string
 
+	// LoginScope names one bucket a failed sign-in counts against. The email
+	// bucket stops an attacker guessing the password of one account, and the
+	// client bucket stops one address spraying many accounts.
+	LoginScope string
+
 	// TransferLimiter paces the bytes one account sends. Pace reserves bytes
 	// at rate bytes per second and returns once the reservation may transmit,
 	// so a slow account is delayed at the sender and never at the socket.
 	TransferLimiter interface {
 		Pace(ctx context.Context, userID string, scope TransferScope, bytes, rate int64) error
+	}
+
+	// LoginGuard counts sign-in attempts per bucket. Reserve takes one slot and
+	// reports whether the attempt may verify credentials, so concurrent tries
+	// cannot all read the same count and pass together. Reset clears a bucket
+	// after a successful sign-in.
+	LoginGuard interface {
+		Reserve(
+			ctx context.Context,
+			scope LoginScope,
+			id string,
+			limit int,
+			window time.Duration,
+		) (bool, error)
+		Reset(ctx context.Context, scope LoginScope, id string) error
 	}
 
 	// ObjectStorage is the bucket the drive keeps its bytes in. The key is the

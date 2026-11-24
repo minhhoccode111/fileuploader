@@ -42,12 +42,24 @@ func (f *fakePool) Close() {
 	f.closed = true
 }
 
+// fakeLogger records what the package reports through the injected logger.
+type fakeLogger struct {
+	errs []any
+}
+
+func (f *fakeLogger) Info(_ string, _ ...any) {}
+
+func (f *fakeLogger) Error(message any, _ ...any) {
+	f.errs = append(f.errs, message)
+}
+
 // fakeTx records how the transaction ended.
 type fakeTx struct {
 	pgx.Tx
 
-	committed  bool
-	rolledBack bool
+	committed   bool
+	rolledBack  bool
+	rollbackErr error
 }
 
 func (f *fakeTx) Commit(_ context.Context) error {
@@ -59,7 +71,7 @@ func (f *fakeTx) Commit(_ context.Context) error {
 func (f *fakeTx) Rollback(_ context.Context) error {
 	f.rolledBack = true
 
-	return nil
+	return f.rollbackErr
 }
 
 func TestDoCommitsWhenTheCallbackSucceeds(t *testing.T) {
@@ -183,6 +195,26 @@ func TestDoReusesTheRunningTransaction(t *testing.T) {
 
 	if got != Querier(tx) {
 		t.Errorf("Querier() = %v, want the running transaction", got)
+	}
+}
+
+func TestDoLogsARollbackFailureThroughTheInjectedLogger(t *testing.T) {
+	t.Parallel()
+
+	tx := &fakeTx{rollbackErr: errBoom}
+	l := &fakeLogger{}
+	pg := &Postgres{pool: &fakePool{tx: tx}}
+	WithLogger(l)(pg)
+
+	err := pg.Do(context.Background(), func(_ context.Context) error {
+		return errBoom
+	})
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("Do() error = %v, want %v", err, errBoom)
+	}
+
+	if len(l.errs) == 0 {
+		t.Error("Do() did not log the rollback failure")
 	}
 }
 

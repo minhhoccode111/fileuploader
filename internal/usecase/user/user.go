@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,9 +16,23 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// _sessionIDBytes is the size of the random session identifier. 32 bytes (256
-// bits) makes guessing a live session infeasible.
-const _sessionIDBytes = 32
+const (
+	// _sessionIDBytes is the size of the random session identifier. 32 bytes
+	// (256 bits) makes guessing a live session infeasible.
+	_sessionIDBytes = 32
+
+	// _loginEmailLimit is how many failed sign-ins one email address may make
+	// per _loginWindow before it is refused without checking the password.
+	_loginEmailLimit = 5
+
+	// _loginIPLimit is how many failed sign-ins one client address may make per
+	// _loginWindow, so one address cannot spray many accounts.
+	_loginIPLimit = 30
+
+	// _loginWindow is the period a failed sign-in counts against. It is short
+	// enough that a mistyping visitor recovers on their own.
+	_loginWindow = 15 * time.Minute
+)
 
 // UseCase -.
 type UseCase struct {
@@ -25,6 +40,7 @@ type UseCase struct {
 	sessions   repo.SessionRepo
 	folders    repo.FolderRepo
 	uow        repo.UnitOfWork
+	guard      repo.LoginGuard
 	sessionTTL time.Duration
 }
 
@@ -34,6 +50,7 @@ func New(
 	s repo.SessionRepo,
 	f repo.FolderRepo,
 	u repo.UnitOfWork,
+	guard repo.LoginGuard,
 	sessionTTL time.Duration,
 ) usecase.User {
 	return &UseCase{
@@ -41,6 +58,7 @@ func New(
 		sessions:   s,
 		folders:    f,
 		uow:        u,
+		guard:      guard,
 		sessionTTL: sessionTTL,
 	}
 }
@@ -110,44 +128,133 @@ func (uc *UseCase) Register(
 // Login verifies the credentials and opens a session, returning the opaque
 // session identifier the caller stores in its cookie and the account behind
 // it, so the caller can render the page for that role.
-func (uc *UseCase) Login(ctx context.Context, email, password string) (string, entity.User, error) {
-	user, err := uc.repo.GetByEmail(ctx, email)
+//
+// Every attempt takes one slot from the email bucket and the client bucket
+// before the password is checked. The slot is taken atomically, so a burst of
+// concurrent guesses cannot all pass on the same count. Once either bucket is
+// full, the password is not checked at all, which caps both a guessed password
+// and a password spray. A successful sign-in clears the email bucket but not
+// the client one, so one working account cannot reset the budget of the
+// address behind it.
+func (uc *UseCase) Login(
+	ctx context.Context,
+	email, password, clientKey string,
+) (string, entity.User, error) {
+	emailKey := strings.ToLower(strings.TrimSpace(email))
+
+	err := uc.reserveLoginAttempts(ctx, emailKey, clientKey)
+	if err != nil {
+		return "", entity.User{}, err
+	}
+
+	user, err := uc.verifyCredentials(ctx, emailKey, password)
+	if err != nil {
+		return "", entity.User{}, err
+	}
+
+	sessionID, err := uc.openSession(ctx, &user, emailKey)
+	if err != nil {
+		return "", entity.User{}, err
+	}
+
+	return sessionID, user, nil
+}
+
+// verifyCredentials checks the password of an account that passed the throttle.
+// Every rejection reports the same sentinel, so a caller cannot tell an unknown
+// email from a wrong password.
+func (uc *UseCase) verifyCredentials(
+	ctx context.Context,
+	emailKey, password string,
+) (entity.User, error) {
+	user, err := uc.repo.GetByEmail(ctx, emailKey)
 	if err != nil {
 		if errors.Is(err, entity.ErrUserNotFound) {
-			return "", entity.User{}, entity.ErrInvalidCredentials
+			return entity.User{}, entity.ErrInvalidCredentials
 		}
 
-		return "", entity.User{}, fmt.Errorf("UserUseCase - Login - uc.repo.GetByEmail: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - Login - uc.repo.GetByEmail: %w", err)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			return "", entity.User{}, entity.ErrInvalidCredentials
+			return entity.User{}, entity.ErrInvalidCredentials
 		}
 
-		return "", entity.User{}, fmt.Errorf("UserUseCase - Login - bcrypt.CompareHashAndPassword: %w", err)
+		return entity.User{}, fmt.Errorf("UserUseCase - Login - bcrypt.CompareHashAndPassword: %w", err)
 	}
 
+	return user, nil
+}
+
+// openSession checks that the account may sign in and stores the session. The
+// email bucket is cleared only after the password is known to be correct, so a
+// failed attempt cannot free the slot it just took.
+func (uc *UseCase) openSession(
+	ctx context.Context,
+	user *entity.User,
+	emailKey string,
+) (string, error) {
 	if user.Status == entity.UserStatusPending {
-		return "", entity.User{}, entity.ErrUserPending
+		return "", entity.ErrUserPending
 	}
 
 	if !user.Status.CanSignIn() {
-		return "", entity.User{}, entity.ErrUserDisabled
+		return "", entity.ErrUserDisabled
+	}
+
+	err := uc.guard.Reset(ctx, repo.LoginScopeEmail, emailKey)
+	if err != nil {
+		return "", fmt.Errorf("UserUseCase - Login - uc.guard.Reset: %w", err)
 	}
 
 	sessionID, err := newSessionID()
 	if err != nil {
-		return "", entity.User{}, fmt.Errorf("UserUseCase - Login - newSessionID: %w", err)
+		return "", fmt.Errorf("UserUseCase - Login - newSessionID: %w", err)
 	}
 
 	err = uc.sessions.Store(ctx, sessionID, entity.Session{UserID: user.ID, Role: user.Role}, uc.sessionTTL)
 	if err != nil {
-		return "", entity.User{}, fmt.Errorf("UserUseCase - Login - uc.sessions.Store: %w", err)
+		return "", fmt.Errorf("UserUseCase - Login - uc.sessions.Store: %w", err)
 	}
 
-	return sessionID, user, nil
+	return sessionID, nil
+}
+
+// reserveLoginAttempts takes one slot from each bucket and refuses the sign-in
+// once either is full. The email bucket is checked first, so the common case
+// costs one store call. A store error fails closed: a throttle that fails open
+// guards nothing, and the session store is the same Redis a sign-in needs
+// anyway.
+func (uc *UseCase) reserveLoginAttempts(ctx context.Context, emailKey, clientKey string) error {
+	allowed, err := uc.guard.Reserve(
+		ctx, repo.LoginScopeEmail, emailKey, _loginEmailLimit, _loginWindow,
+	)
+	if err != nil {
+		return fmt.Errorf("UserUseCase - Login - uc.guard.Reserve(email): %w", err)
+	}
+
+	if !allowed {
+		return entity.ErrLoginThrottled
+	}
+
+	if clientKey == "" {
+		return nil
+	}
+
+	allowed, err = uc.guard.Reserve(
+		ctx, repo.LoginScopeIP, clientKey, _loginIPLimit, _loginWindow,
+	)
+	if err != nil {
+		return fmt.Errorf("UserUseCase - Login - uc.guard.Reserve(client): %w", err)
+	}
+
+	if !allowed {
+		return entity.ErrLoginThrottled
+	}
+
+	return nil
 }
 
 // Authenticate resolves a session identifier to the session behind it. An

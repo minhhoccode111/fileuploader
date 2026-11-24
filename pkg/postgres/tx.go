@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -61,7 +60,7 @@ func (p *Postgres) Do(ctx context.Context, fn func(context.Context) error) error
 	// connection it holds.
 	defer func() {
 		if !committed {
-			rollback(ctx, tx)
+			p.rollback(ctx, tx)
 		}
 	}()
 
@@ -81,10 +80,11 @@ func (p *Postgres) Do(ctx context.Context, fn func(context.Context) error) error
 }
 
 // rollback undoes a transaction. The context is stripped of its cancellation so
-// a failed request still releases the connection.
-func rollback(ctx context.Context, tx pgx.Tx) {
+// a failed request still releases the connection. A Postgres without a logger
+// reports nothing, so the package stays usable without one.
+func (p *Postgres) rollback(ctx context.Context, tx pgx.Tx) {
 	err := tx.Rollback(context.WithoutCancel(ctx))
-	if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-		log.Printf("postgres - rollback - tx.Rollback: %v", err)
+	if err != nil && !errors.Is(err, pgx.ErrTxClosed) && p.logger != nil {
+		p.logger.Error(fmt.Errorf("postgres - rollback - tx.Rollback: %w", err))
 	}
 }

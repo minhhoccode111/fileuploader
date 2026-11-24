@@ -194,6 +194,20 @@ bare 200 with no body unless htmx expects none. Events another element listens t
 `HX-Trigger`; navigation goes through `middleware.Redirect` so htmx and a plain browser both land on
 the same page.
 
+**CSRF is a contract.** `middleware.CSRF` gives every visitor a `csrf_token` cookie and refuses a
+POST, PUT, PATCH or DELETE whose `X-CSRF-Token` header does not match it with a 403. htmx adds the
+header on every request through the `htmx:config:request` listener in `web/static/js/app.js`. A new
+`fetch` or `XMLHttpRequest` call must add it by hand, and `navigator.sendBeacon` cannot send a
+header at all, so browser code that must outlive the page uses a keepalive fetch instead. An unsafe
+request whose `Origin` names another host (including another port) is refused even with a matching
+token, so a cookie planted by a related subdomain cannot pass.
+
+**Login is throttled.** `repo.LoginGuard` counts failed sign-ins in Redis: five per email address
+and thirty per client address in fifteen minutes. Once a bucket is full the password is not checked.
+The email bucket clears on a successful sign-in; the client bucket does not, so one working account
+cannot reset the budget of the address behind it. `clientIP` trusts `X-Real-IP` because nginx sets
+it, and falls back to the connection address.
+
 ## Testing
 
 `make test` runs the unit and controller tests. They use fakes for repositories and `miniredis` for

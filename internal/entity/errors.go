@@ -8,6 +8,7 @@ var (
 	ErrEmailAlreadyExists    = errors.New("email already exists")
 	ErrUsernameAlreadyExists = errors.New("username already exists")
 	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrLoginThrottled        = errors.New("too many login attempts")
 	ErrPasswordTooLong       = errors.New("password too long")
 	ErrSessionNotFound       = errors.New("session not found")
 	ErrInvalidRole           = errors.New("invalid role")

@@ -4,7 +4,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
@@ -26,7 +25,8 @@ type Postgres struct {
 
 	Builder squirrel.StatementBuilderType
 
-	pool Pool
+	pool   Pool
+	logger Logger
 }
 
 // New -.
@@ -59,7 +59,9 @@ func New(url string, opts ...Option) (*Postgres, error) {
 			break
 		}
 
-		log.Printf("Postgres is trying to connect, attempts left: %d", pg.connAttempts)
+		if pg.logger != nil {
+			pg.logger.Info("Postgres is trying to connect, attempts left: %d", pg.connAttempts)
+		}
 
 		time.Sleep(pg.connTimeout)
 
