@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,8 +30,11 @@ func Metrics(m RequestObserver) func(ctx *fiber.Ctx) error {
 		err := ctx.Next()
 		latency := time.Since(start)
 
+		// ctx.Method() is a string over fasthttp's request buffer, and that
+		// buffer is reused by the next request. A metric label outlives the
+		// request, so it needs its own copy or it mutates after the fact.
 		m.RequestFinished(
-			ctx.Method(),
+			strings.Clone(ctx.Method()),
 			requestRoute(ctx, err),
 			responseStatus(ctx, err),
 			latency.Seconds(),

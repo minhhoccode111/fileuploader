@@ -18,6 +18,7 @@ type fakeObserver struct {
 	route   string
 	status  int
 	bytes   int64
+	methods []string
 }
 
 func (f *fakeObserver) RequestStarted() {
@@ -29,6 +30,7 @@ func (f *fakeObserver) RequestFinished(method, route string, status int, _ float
 	f.route = route
 	f.status = status
 	f.bytes = bytes
+	f.methods = append(f.methods, method)
 }
 
 // metricsGet sends one GET through an app that carries the metrics middleware.
@@ -122,5 +124,44 @@ func TestMetricsPassesStreamSizeThrough(t *testing.T) {
 
 	if observer.bytes != -1 {
 		t.Errorf("bytes = %d, want -1 for a chunked stream", observer.bytes)
+	}
+}
+
+func TestMetricsKeepsTheMethodString(t *testing.T) {
+	t.Parallel()
+
+	observer := &fakeObserver{}
+
+	handler := func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) }
+
+	app := fiber.New()
+	app.Use(Metrics(observer))
+	app.Get("/page", handler)
+	app.Head("/page", handler)
+
+	headResp, err := app.Test(httptest.NewRequestWithContext(
+		context.Background(), http.MethodHead, "/page", http.NoBody,
+	))
+	if err != nil {
+		t.Fatalf("HEAD /page error = %v, want nil", err)
+	}
+
+	headResp.Body.Close()
+
+	getResp, err := app.Test(httptest.NewRequestWithContext(
+		context.Background(), http.MethodGet, "/page", http.NoBody,
+	))
+	if err != nil {
+		t.Fatalf("GET /page error = %v, want nil", err)
+	}
+
+	getResp.Body.Close()
+
+	if len(observer.methods) != 2 {
+		t.Fatalf("recorded methods = %v, want two", observer.methods)
+	}
+
+	if observer.methods[0] != http.MethodHead {
+		t.Errorf("first method = %q, want HEAD", observer.methods[0])
 	}
 }
