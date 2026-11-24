@@ -46,6 +46,7 @@ func NewRouter(
 	}
 
 	// Options
+	app.Use(middleware.RequestID())
 	app.Use(middleware.Logger(l))
 	app.Use(middleware.Recovery(l))
 	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
