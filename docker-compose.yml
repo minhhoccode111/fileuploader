@@ -13,10 +13,14 @@ x-backend-app-environment: &x-backend-app-environment
   APP_VERSION: "1.0.0"
   # HTTP settings
   HTTP_PORT: "8090"
-  HTTP_USE_PREFORK_MODE: "true"
+  HTTP_USE_PREFORK_MODE: "false"
   # Fake network latency
   HTTP_FAKE_LATENCY_MIN: "100ms"
   HTTP_FAKE_LATENCY_MAX: "200ms"
+  # Metrics and pprof listener. Bound to every interface inside the container;
+  # compose publishes it on host loopback only.
+  OBSERVE_ENABLED: "true"
+  OBSERVE_ADDR: "0.0.0.0:9090"
   # Logger
   LOG_LEVEL: "debug"
   # PG
@@ -100,6 +104,7 @@ services:
       <<: *x-backend-app-environment
     ports:
       - "8090:8090"
+      - "127.0.0.1:9090:9090"
     depends_on:
       - db
       - redis

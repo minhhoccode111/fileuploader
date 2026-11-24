@@ -202,11 +202,34 @@ header at all, so browser code that must outlive the page uses a keepalive fetch
 request whose `Origin` names another host (including another port) is refused even with a matching
 token, so a cookie planted by a related subdomain cannot pass.
 
-**Login is throttled.** `repo.LoginGuard` counts failed sign-ins in Redis: five per email address
-and thirty per client address in fifteen minutes. Once a bucket is full the password is not checked.
-The email bucket clears on a successful sign-in; the client bucket does not, so one working account
-cannot reset the budget of the address behind it. `clientIP` trusts `X-Real-IP` because nginx sets
-it, and falls back to the connection address.
+**Login is throttled.** `repo.LoginGuard` counts sign-in attempts in Redis: every attempt takes one
+slot from the email bucket and the client bucket, five per email address and thirty per client
+address in fifteen minutes. Once either bucket is full the password is not checked. The email
+bucket clears on a successful sign-in; the client bucket does not, so one working account cannot
+reset the budget of the address behind it. `clientIP` trusts `X-Real-IP` because nginx sets it, and
+falls back to the connection address.
+
+## Observability
+
+Every request gets an identifier. `middleware.RequestID` keeps an inbound `X-Request-ID` only when it
+is 8–64 characters of `[A-Za-z0-9._-]`, otherwise it generates a UUID, and writes the value on the
+response. nginx sets it from `$request_id`, so the proxy log and the app log name the same request.
+The access line carries the identifier, method, path, status, size and latency. A handler logs
+through `c.requestLogger(ctx)`, so its error line carries the same identifier. `/healthz` and
+`/static/` are counted in metrics but not logged.
+
+`pkg/metrics` owns an explicit Prometheus registry: request count, duration histogram, response
+bytes, in-flight requests, build info, and Postgres pool states. Labels are route templates
+(`/folders/:folder`), never raw paths or account data; a request that matched no route is
+`route="unmatched"`.
+
+Metrics and `net/http/pprof` share one private listener, `OBSERVE_ADDR`, `127.0.0.1:9090` by
+default. It is off when `OBSERVE_ENABLED=false` or when `HTTP_USE_PREFORK_MODE=true`: prefork starts
+one process per worker and every copy would race for the port. The listener bypasses Fiber, so it
+also bypasses the fake latency, CSRF and the body limit. Never publish it on `0.0.0.0`; a heap
+profile can contain secrets. In Docker the app binds `0.0.0.0:9090` inside the container and compose
+publishes `127.0.0.1:9090:9090`, so the host reaches it and the public listener does not. The other
+containers on `app_network` can reach it too; they are the app's own services.
 
 ## Testing
 

@@ -111,9 +111,15 @@ the stack; the database and bucket volumes stay.
 | `UPLOAD_DEFAULT_RATE_BYTES_PER_SEC`   | `0`                    | Default upload rate; `0` means unlimited.                  |
 | `DOWNLOAD_DEFAULT_RATE_BYTES_PER_SEC` | `0`                    | Default download rate; `0` means unlimited.                |
 | `HTTP_FAKE_LATENCY_MIN` / `MAX`       | `100ms` / `200ms`      | Artificial delay. Set max to `0` to turn it off.           |
+| `OBSERVE_ENABLED`                     | `true`                 | Metrics and pprof listener.                                |
+| `OBSERVE_ADDR`                        | `127.0.0.1:9090`       | Where it binds. Loopback only, never a public interface.   |
 | `SESSION_TTL`                         | `24h`                  | Redis session lifetime.                                    |
 
 A per-account value of `0` inherits the global default.
+
+`/metrics` serves Prometheus metrics and `/debug/pprof/` serves Go profiles on `OBSERVE_ADDR`.
+Neither goes through nginx or the app's middleware. The listener is off when `OBSERVE_ENABLED=false`
+or when `HTTP_USE_PREFORK_MODE=true`.
 
 ## Development
 
