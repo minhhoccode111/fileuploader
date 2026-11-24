@@ -24,7 +24,7 @@ const (
 func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
 	if err := c.u.Logout(ctx.UserContext(), ctx.Cookies(_authCookieName)); err != nil &&
 		!errors.Is(err, entity.ErrSessionNotFound) {
-		c.l.Error(fmt.Errorf("web - logoutSubmit - uc.Logout: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - logoutSubmit - uc.Logout: %w", err))
 	}
 
 	c.clearAuthCookie(ctx)

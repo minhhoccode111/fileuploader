@@ -25,7 +25,7 @@ func (c *Controller) shareIndex(ctx *fiber.Ctx) error {
 
 	rows, err := c.shareRows(ctx, userID)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - shareIndex - %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - shareIndex - %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -49,7 +49,7 @@ func (c *Controller) shareRows(ctx *fiber.Ctx, userID string) ([]response.ShareR
 		if err == nil {
 			name = folder.Name
 		} else if !errors.Is(err, entity.ErrFolderNotFound) {
-			c.l.Error(fmt.Errorf("web - shareRows - uc.folders.Get: %w", err))
+			c.requestLogger(ctx).Error(fmt.Errorf("web - shareRows - uc.folders.Get: %w", err))
 		}
 
 		rows = append(rows, response.NewShareRow(&shares[i], name))
@@ -63,7 +63,7 @@ func (c *Controller) shareRows(ctx *fiber.Ctx, userID string) ([]response.ShareR
 func (c *Controller) renderShareRows(ctx *fiber.Ctx, userID string) error {
 	rows, err := c.shareRows(ctx, userID)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - renderShareRows - %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - renderShareRows - %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -110,7 +110,7 @@ func (c *Controller) shareDrawer(ctx *fiber.Ctx) error {
 			return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 		}
 
-		c.l.Error(fmt.Errorf("web - shareDrawer - uc.shares.Get: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - shareDrawer - uc.shares.Get: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -125,7 +125,7 @@ func (c *Controller) shareDrawer(ctx *fiber.Ctx) error {
 	if err == nil {
 		name = folder.Name
 	} else if !errors.Is(err, entity.ErrFolderNotFound) {
-		c.l.Error(fmt.Errorf("web - shareDrawer - uc.folders.Get: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - shareDrawer - uc.folders.Get: %w", err))
 	}
 
 	return c.renderPage(ctx, templates.ShareDrawerContent(response.NewShareRow(&share, name)))
@@ -194,7 +194,7 @@ func (c *Controller) shareUpdateTime(ctx *fiber.Ctx) error {
 			return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 		}
 
-		c.l.Error(fmt.Errorf("web - shareUpdateTime - uc.shares.UpdateExpiry: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - shareUpdateTime - uc.shares.UpdateExpiry: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -222,7 +222,7 @@ func (c *Controller) shareDelete(ctx *fiber.Ctx) error {
 			return c.renderErrors(ctx, http.StatusNotFound, []string{_shareNotFoundMessage})
 		}
 
-		c.l.Error(fmt.Errorf("web - shareDelete - uc.shares.Delete: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - shareDelete - uc.shares.Delete: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -266,7 +266,7 @@ func (c *Controller) sharedFolder(ctx *fiber.Ctx, shareID, folderID string) erro
 
 	view, err := c.folders.List(ctx.UserContext(), share.UserID, folder.ID, ctx.Query("q"), nil)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - sharedFolder - uc.folders.List: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - sharedFolder - uc.folders.List: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -330,7 +330,7 @@ func (c *Controller) sharedFileDownload(ctx *fiber.Ctx) error {
 
 	reader, opened, err := c.files.OpenDownload(ctx.UserContext(), share.UserID, file.ID)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - sharedFileDownload - uc.files.OpenDownload: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - sharedFileDownload - uc.files.OpenDownload: %w", err))
 
 		return c.renderErrors(ctx, http.StatusNotFound, []string{"That file is not here any more."})
 	}
@@ -383,7 +383,7 @@ func (c *Controller) sharedError(ctx *fiber.Ctx, shareID string, err error) erro
 		return middleware.Redirect(ctx, "/share/"+shareID)
 
 	default:
-		c.l.Error(fmt.Errorf("web - shared: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - shared: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}

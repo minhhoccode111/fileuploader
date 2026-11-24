@@ -35,7 +35,7 @@ func (c *Controller) searchPage(ctx *fiber.Ctx) error {
 
 	page, err := c.searchResults(ctx, userID, ctx.Query("q"), from, nil)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - searchPage - uc.folders.Search: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - searchPage - uc.folders.Search: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -65,7 +65,7 @@ func (c *Controller) searchEntries(ctx *fiber.Ctx) error {
 
 	page, err := c.searchResults(ctx, userID, ctx.Query("q"), c.searchFrom(ctx), after)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - searchEntries - uc.folders.Search: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - searchEntries - uc.folders.Search: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}

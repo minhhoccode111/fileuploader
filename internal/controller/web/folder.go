@@ -119,7 +119,7 @@ func (c *Controller) folderRename(ctx *fiber.Ctx) error {
 	parent, err := c.folders.Get(ctx.UserContext(), userID, *folder.ParentID)
 	if err != nil {
 		if !errors.Is(err, entity.ErrFolderNotFound) {
-			c.l.Error(fmt.Errorf("web - folderRename - uc.folders.Get: %w", err))
+			c.requestLogger(ctx).Error(fmt.Errorf("web - folderRename - uc.folders.Get: %w", err))
 		}
 
 		return middleware.Redirect(ctx, withSearch(_homePath, c.entrySearch(ctx)))
@@ -381,7 +381,7 @@ func (c *Controller) folderDelete(ctx *fiber.Ctx) error {
 	}
 
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - folderDelete - uc.folders.Delete: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - folderDelete - uc.folders.Delete: %w", err))
 	}
 
 	path := _homePath
@@ -409,7 +409,7 @@ func (c *Controller) folderDownloadZip(ctx *fiber.Ctx) error {
 
 	reader, filename, err := c.folders.DownloadZip(ctx.UserContext(), userID, folderID)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - folderDownloadZip - uc.folders.DownloadZip: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - folderDownloadZip - uc.folders.DownloadZip: %w", err))
 
 		return middleware.Redirect(ctx, _homePath)
 	}

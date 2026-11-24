@@ -253,7 +253,7 @@ func (c *Controller) fileDelete(ctx *fiber.Ctx) error {
 	}
 
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - fileDelete - uc.files.Delete: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - fileDelete - uc.files.Delete: %w", err))
 	}
 
 	ctx.Set(_hxTriggerHeader, _entrySavedEvent)
@@ -289,7 +289,7 @@ func (c *Controller) fileDownload(ctx *fiber.Ctx) error {
 	reader, file, err := c.files.OpenDownload(ctx.UserContext(), userID, fileID)
 	if err != nil {
 		if !errors.Is(err, entity.ErrFileNotFound) {
-			c.l.Error(fmt.Errorf("web - fileDownload - uc.files.OpenDownload: %w", err))
+			c.requestLogger(ctx).Error(fmt.Errorf("web - fileDownload - uc.files.OpenDownload: %w", err))
 		}
 
 		return middleware.Redirect(ctx, _homePath)

@@ -11,6 +11,7 @@ import (
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/middleware"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
+	"github.com/minhhoccode111/fileuploader/pkg/logger"
 	"github.com/minhhoccode111/fileuploader/web/templates"
 )
 
@@ -86,11 +87,17 @@ func (c *Controller) renderMappedError(ctx *fiber.Ctx, err error, cases []errorC
 	return false, nil
 }
 
+// requestLogger returns the logger tagged with the ID of this request, so an
+// error line can be matched to the access line that reported it.
+func (c *Controller) requestLogger(ctx *fiber.Ctx) logger.Interface {
+	return middleware.RequestLogger(c.l, ctx)
+}
+
 // renderPage renders a templ component as an HTML response.
 func (c *Controller) renderPage(ctx *fiber.Ctx, component templ.Component) error {
 	buf := new(bytes.Buffer)
 	if err := component.Render(ctx.UserContext(), buf); err != nil {
-		c.l.Error(fmt.Errorf("web - renderPage - component.Render: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - renderPage - component.Render: %w", err))
 
 		return ctx.SendStatus(http.StatusInternalServerError)
 	}

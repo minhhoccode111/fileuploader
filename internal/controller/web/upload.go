@@ -237,7 +237,7 @@ func (c *Controller) uploadFailure(ctx *fiber.Ctx, err error, action string) err
 		return ctx.Status(http.StatusTooManyRequests).SendString(_uploadRateMessage)
 
 	default:
-		c.l.Error(fmt.Errorf("web - %s: %w", action, err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - %s: %w", action, err))
 
 		return ctx.Status(http.StatusInternalServerError).SendString(_genericErrorMessage)
 	}

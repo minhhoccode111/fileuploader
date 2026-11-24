@@ -48,7 +48,7 @@ func (c *Controller) adminUsersTable(ctx *fiber.Ctx) error {
 
 	list, err := c.u.ListUsers(ctx.UserContext(), &filter)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - adminUsersTable - uc.ListUsers: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - adminUsersTable - uc.ListUsers: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -158,7 +158,7 @@ func (c *Controller) adminUsersEdit(ctx *fiber.Ctx) error {
 			return c.renderErrors(ctx, http.StatusNotFound, []string{"That account is not registered."})
 		}
 
-		c.l.Error(fmt.Errorf("web - adminUsersEdit - uc.GetUser: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - adminUsersEdit - uc.GetUser: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -320,7 +320,7 @@ func (c *Controller) applyUserStatus(
 // renderUnprocessable writes a 422 error fragment and logs a render failure.
 func (c *Controller) renderUnprocessable(ctx *fiber.Ctx, message string) {
 	if err := c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{message}); err != nil {
-		c.l.Error(fmt.Errorf("web - renderUnprocessable: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - renderUnprocessable: %w", err))
 	}
 }
 
@@ -328,7 +328,7 @@ func (c *Controller) renderUnprocessable(ctx *fiber.Ctx, message string) {
 // failure.
 func (c *Controller) renderUserUpdateError(ctx *fiber.Ctx, err error) {
 	if renderErr := c.userUpdateError(ctx, err); renderErr != nil {
-		c.l.Error(fmt.Errorf("web - renderUserUpdateError: %w", renderErr))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - renderUserUpdateError: %w", renderErr))
 	}
 }
 
@@ -367,7 +367,7 @@ func (c *Controller) userUpdateError(ctx *fiber.Ctx, err error) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Limits must not be negative."})
 
 	default:
-		c.l.Error(fmt.Errorf("web - userUpdateError - uc.UpdateUser: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - userUpdateError - uc.UpdateUser: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -419,7 +419,7 @@ func (c *Controller) roleError(ctx *fiber.Ctx, err error) error {
 		)
 
 	default:
-		c.l.Error(fmt.Errorf("web - roleSubmit - uc.SetRole: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - roleSubmit - uc.SetRole: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -439,7 +439,7 @@ func (c *Controller) adminAccessRequestsTable(ctx *fiber.Ctx) error {
 
 	list, err := c.u.ListUsers(ctx.UserContext(), &filter)
 	if err != nil {
-		c.l.Error(fmt.Errorf("web - adminAccessRequestsTable - uc.ListUsers: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - adminAccessRequestsTable - uc.ListUsers: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}

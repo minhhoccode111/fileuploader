@@ -29,7 +29,7 @@ func (c *Controller) accountPage(ctx *fiber.Ctx) error {
 			return middleware.Redirect(ctx, _loginPath)
 		}
 
-		c.l.Error(fmt.Errorf("web - accountPage - uc.GetUser: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - accountPage - uc.GetUser: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -166,7 +166,7 @@ func (c *Controller) accountError(ctx *fiber.Ctx, err error) error {
 		return c.renderErrors(ctx, http.StatusUnprocessableEntity, []string{"Password is too long."})
 
 	default:
-		c.l.Error(fmt.Errorf("web - accountError - uc.UpdateProfile: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - accountError - uc.UpdateProfile: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}

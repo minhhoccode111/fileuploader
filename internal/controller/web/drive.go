@@ -75,7 +75,7 @@ func (c *Controller) drive(ctx *fiber.Ctx, folderID string) error {
 			return middleware.Redirect(ctx, _homePath)
 		}
 
-		c.l.Error(fmt.Errorf("web - drive - uc.folders.List: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - drive - uc.folders.List: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -193,7 +193,7 @@ func (c *Controller) folderEntries(ctx *fiber.Ctx) error {
 			return middleware.Redirect(ctx, _homePath)
 		}
 
-		c.l.Error(fmt.Errorf("web - folderEntries - uc.folders.List: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - folderEntries - uc.folders.List: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -214,7 +214,7 @@ func (c *Controller) renderEntries(
 			return middleware.Redirect(ctx, _homePath)
 		}
 
-		c.l.Error(fmt.Errorf("web - renderEntries - uc.folders.List: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - renderEntries - uc.folders.List: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
@@ -286,7 +286,7 @@ func (c *Controller) driveError(ctx *fiber.Ctx, err error, action string) error 
 		)
 
 	default:
-		c.l.Error(fmt.Errorf("web - %s: %w", action, err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - %s: %w", action, err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}

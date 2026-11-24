@@ -64,7 +64,7 @@ func (c *Controller) registerError(ctx *fiber.Ctx, err error) error {
 		return renderErr
 	}
 
-	c.l.Error(fmt.Errorf("web - registerSubmit - uc.Register: %w", err))
+	c.requestLogger(ctx).Error(fmt.Errorf("web - registerSubmit - uc.Register: %w", err))
 
 	return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 }

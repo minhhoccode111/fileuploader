@@ -73,7 +73,7 @@ func (c *Controller) loginSubmit(ctx *fiber.Ctx) error {
 			return renderErr
 		}
 
-		c.l.Error(fmt.Errorf("web - loginSubmit - uc.Login: %w", err))
+		c.requestLogger(ctx).Error(fmt.Errorf("web - loginSubmit - uc.Login: %w", err))
 
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
