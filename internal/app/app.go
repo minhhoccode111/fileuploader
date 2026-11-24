@@ -25,6 +25,7 @@ import (
 	usecaseUser "github.com/minhhoccode111/fileuploader/internal/usecase/user"
 	"github.com/minhhoccode111/fileuploader/pkg/httpserver"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
+	"github.com/minhhoccode111/fileuploader/pkg/metrics"
 	"github.com/minhhoccode111/fileuploader/pkg/minio"
 	"github.com/minhhoccode111/fileuploader/pkg/postgres"
 	"github.com/minhhoccode111/fileuploader/pkg/redis"
@@ -96,7 +97,9 @@ func initServers(
 	// Validator
 	v := validatorx.New()
 
-	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, uc.share, l, v, cfg)
+	m := metrics.New(metrics.Options{Version: cfg.App.Version, PoolStats: nil})
+
+	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, uc.share, l, m, v, cfg)
 
 	return servers{
 		http: httpServer,

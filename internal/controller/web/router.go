@@ -32,6 +32,7 @@ func NewRouter(
 	files usecase.File,
 	shares usecase.Share,
 	l logger.Interface,
+	m middleware.RequestObserver,
 	v *validator.Validate,
 	cfg *config.Config,
 ) {
@@ -48,6 +49,7 @@ func NewRouter(
 	// Options
 	app.Use(middleware.RequestID())
 	app.Use(middleware.Logger(l))
+	app.Use(middleware.Metrics(m))
 	app.Use(middleware.Recovery(l))
 	app.Use(middleware.Latency(cfg.HTTP.FakeLatencyMin, cfg.HTTP.FakeLatencyMax))
 	app.Use(middleware.CSRF())
