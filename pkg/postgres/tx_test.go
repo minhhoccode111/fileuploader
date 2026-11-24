@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // errBoom is the failure the fakes report.
@@ -40,6 +41,11 @@ func (f *fakePool) BeginTx(_ context.Context, _ pgx.TxOptions) (pgx.Tx, error) {
 
 func (f *fakePool) Close() {
 	f.closed = true
+}
+
+// Stat returns nil: a fake has no pool to inspect.
+func (f *fakePool) Stat() *pgxpool.Stat {
+	return nil
 }
 
 // fakeLogger records what the package reports through the injected logger.

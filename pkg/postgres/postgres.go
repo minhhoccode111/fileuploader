@@ -77,6 +77,34 @@ func New(url string, opts ...Option) (*Postgres, error) {
 	return pg, nil
 }
 
+// PoolStat is a snapshot of the connection pool, read at scrape time.
+type PoolStat struct {
+	Total    int32
+	Idle     int32
+	Acquired int32
+	Max      int32
+}
+
+// Stat reports the current pool usage. A closed pool, or one that does not
+// expose stats, reports zero.
+func (p *Postgres) Stat() PoolStat {
+	if p.pool == nil {
+		return PoolStat{}
+	}
+
+	stat := p.pool.Stat()
+	if stat == nil {
+		return PoolStat{}
+	}
+
+	return PoolStat{
+		Total:    stat.TotalConns(),
+		Idle:     stat.IdleConns(),
+		Acquired: stat.AcquiredConns(),
+		Max:      stat.MaxConns(),
+	}
+}
+
 // Close -.
 func (p *Postgres) Close() {
 	if p.pool != nil {

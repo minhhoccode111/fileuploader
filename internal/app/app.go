@@ -85,6 +85,7 @@ func initServers(
 	cfg *config.Config,
 	uc useCases,
 	l logger.Interface,
+	pg *postgres.Postgres,
 ) servers {
 	// HTTP Server
 	httpServer := httpserver.New(
@@ -97,7 +98,19 @@ func initServers(
 	// Validator
 	v := validatorx.New()
 
-	m := metrics.New(metrics.Options{Version: cfg.App.Version, PoolStats: nil})
+	m := metrics.New(metrics.Options{
+		Version: cfg.App.Version,
+		PoolStats: func() metrics.PoolStats {
+			stat := pg.Stat()
+
+			return metrics.PoolStats{
+				Total:    stat.Total,
+				Idle:     stat.Idle,
+				Acquired: stat.Acquired,
+				Max:      stat.Max,
+			}
+		},
+	})
 
 	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, uc.share, l, m, v, cfg)
 
@@ -178,7 +191,7 @@ func Run(cfg *config.Config) {
 
 	startUploadSweeper(sweepCtx, uc.file, l)
 
-	s := initServers(cfg, uc, l)
+	s := initServers(cfg, uc, l, pg)
 	s.startServers()
 	s.waitForShutdown(l)
 }

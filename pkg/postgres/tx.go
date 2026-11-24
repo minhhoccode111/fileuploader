@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type (
@@ -21,6 +22,7 @@ type (
 	Pool interface {
 		Querier
 		BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+		Stat() *pgxpool.Stat
 		Close()
 	}
 )
