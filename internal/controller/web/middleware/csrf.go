@@ -40,6 +40,8 @@ func CSRF() fiber.Handler {
 		if token == "" {
 			generated, err := newCSRFToken()
 			if err != nil {
+				markRouteRejected(ctx)
+
 				return fiber.ErrInternalServerError
 			}
 
@@ -62,6 +64,8 @@ func CSRF() fiber.Handler {
 		presented := ctx.Get(_csrfHeaderName)
 
 		if !sameOrigin(ctx) || subtle.ConstantTimeCompare([]byte(presented), []byte(token)) != 1 {
+			markRouteRejected(ctx)
+
 			return ctx.Status(fiber.StatusForbidden).
 				SendString("CSRF token missing or invalid. Reload the page and retry.")
 		}

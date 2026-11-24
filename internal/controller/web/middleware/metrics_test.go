@@ -165,3 +165,59 @@ func TestMetricsKeepsTheMethodString(t *testing.T) {
 		t.Errorf("first method = %q, want HEAD", observer.methods[0])
 	}
 }
+
+func TestMetricsLabelsAPreRouterRefusalAsUnmatched(t *testing.T) {
+	t.Parallel()
+
+	observer := &fakeObserver{}
+
+	app := fiber.New()
+	app.Use(Metrics(observer))
+	app.Use(CSRF())
+	app.Post("/htmx/login", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
+
+	resp, err := app.Test(httptest.NewRequestWithContext(
+		context.Background(), http.MethodPost, "/htmx/login", http.NoBody,
+	))
+	if err != nil {
+		t.Fatalf("POST /htmx/login error = %v, want nil", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	if observer.route != "unmatched" {
+		t.Errorf("route = %q, want unmatched for a pre-router refusal", observer.route)
+	}
+}
+
+func TestMetricsLabelsAnOversizedBodyAsUnmatched(t *testing.T) {
+	t.Parallel()
+
+	observer := &fakeObserver{}
+
+	app := fiber.New()
+	app.Use(Metrics(observer))
+	app.Use(BodyLimit(8, 8, "/htmx/uploads/"))
+	app.Post("/form", func(ctx *fiber.Ctx) error { return ctx.SendStatus(http.StatusOK) })
+
+	resp, err := app.Test(httptest.NewRequestWithContext(
+		context.Background(), http.MethodPost, "/form", strings.NewReader("0123456789"),
+	))
+	if err != nil {
+		t.Fatalf("POST /form error = %v, want nil", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusRequestEntityTooLarge)
+	}
+
+	if observer.route != "unmatched" {
+		t.Errorf("route = %q, want unmatched for a pre-router refusal", observer.route)
+	}
+}

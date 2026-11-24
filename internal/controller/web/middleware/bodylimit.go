@@ -27,10 +27,14 @@ func BodyLimit(general, upload int64, uploadPrefix string) fiber.Handler {
 		length := int64(ctx.Request().Header.ContentLength())
 
 		if length > limit {
+			markRouteRejected(ctx)
+
 			return ctx.Status(http.StatusRequestEntityTooLarge).SendString("Request Entity Too Large")
 		}
 
 		if length < 0 && !allowUnknown && announceUnknownLength(ctx) {
+			markRouteRejected(ctx)
+
 			return ctx.Status(http.StatusLengthRequired).SendString("Length Required")
 		}
 
