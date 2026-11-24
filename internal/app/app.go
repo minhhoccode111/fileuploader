@@ -40,7 +40,11 @@ type useCases struct {
 }
 
 type servers struct {
-	http *httpserver.Server
+	http        *httpserver.Server
+	observe     *observeServer
+	metrics     *metrics.Metrics
+	observeAddr string
+	observeSkip string
 }
 
 func initUseCases(
@@ -114,13 +118,26 @@ func initServers(
 
 	web.NewRouter(httpServer.App, uc.user, uc.folder, uc.file, uc.share, l, m, v, cfg)
 
+	observeAddr, observeSkip := observeAddress(cfg)
+
 	return servers{
-		http: httpServer,
+		http:        httpServer,
+		metrics:     m,
+		observeAddr: observeAddr,
+		observeSkip: observeSkip,
 	}
 }
 
-func (s *servers) startServers() {
+func (s *servers) startServers(l logger.Interface) {
 	s.http.Start()
+
+	if s.observeAddr == "" {
+		l.Info("observe server - disabled: %s", s.observeSkip)
+
+		return
+	}
+
+	s.observe = startObserveServer(s.observeAddr, s.metrics, l)
 }
 
 func (s *servers) waitForShutdown(l logger.Interface) {
@@ -140,6 +157,14 @@ func (s *servers) waitForShutdown(l logger.Interface) {
 func (s *servers) shutdownServers(l logger.Interface) {
 	if err := s.http.Shutdown(); err != nil {
 		l.Error(fmt.Errorf("app - Run - httpServer.Shutdown: %w", err))
+	}
+
+	if s.observe == nil {
+		return
+	}
+
+	if err := s.observe.Shutdown(context.Background()); err != nil {
+		l.Error(fmt.Errorf("app - Run - s.observe.Shutdown: %w", err))
 	}
 }
 
@@ -192,6 +217,6 @@ func Run(cfg *config.Config) {
 	startUploadSweeper(sweepCtx, uc.file, l)
 
 	s := initServers(cfg, uc, l, pg)
-	s.startServers()
+	s.startServers(l)
 	s.waitForShutdown(l)
 }

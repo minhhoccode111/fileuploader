@@ -39,6 +39,8 @@ type (
 		Session session
 		Upload  upload
 		Limits  limits
+
+		Observability observability
 	}
 
 	// App -.
@@ -118,6 +120,17 @@ type (
 		// DownloadRateBytesPerSec is the default download speed limit. A
 		// per-account zero inherits it; a zero default means unlimited.
 		DownloadRateBytesPerSec int64 `env:"DOWNLOAD_DEFAULT_RATE_BYTES_PER_SEC" envDefault:"0"`
+	}
+
+	// Observability -.
+	observability struct {
+		// Enabled turns the private metrics and pprof listener on. It is a
+		// separate switch because envDefault applies to a variable that is set
+		// but empty, so an empty address would otherwise mean the default one.
+		Enabled bool `env:"OBSERVE_ENABLED" envDefault:"true"`
+		// Addr is where the listener binds. Loopback only: it serves heap
+		// profiles and an unauthenticated metrics feed.
+		Addr string `env:"OBSERVE_ADDR" envDefault:"127.0.0.1:9090"`
 	}
 )
 
