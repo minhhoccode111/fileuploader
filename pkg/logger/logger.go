@@ -2,11 +2,15 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/rs/zerolog"
 )
+
+// _requestIDField is the structured field every request-scoped line carries.
+const _requestIDField = "request_id"
 
 // Interface -.
 type Interface interface {
@@ -15,6 +19,9 @@ type Interface interface {
 	Warn(message string, args ...any)
 	Error(message any, args ...any)
 	Fatal(message any, args ...any)
+	// WithRequestID returns a child logger that tags every line with the
+	// request it belongs to. The parent keeps logging without the field.
+	WithRequestID(id string) Interface
 }
 
 // Logger -.
@@ -26,6 +33,12 @@ var _ Interface = (*Logger)(nil)
 
 // New -.
 func New(level string) *Logger {
+	return newWithWriter(os.Stdout, level)
+}
+
+// newWithWriter builds a logger around w. Tests use it to read the JSON lines
+// the logger writes.
+func newWithWriter(w io.Writer, level string) *Logger {
 	var l zerolog.Level
 
 	switch strings.ToLower(level) {
@@ -45,7 +58,7 @@ func New(level string) *Logger {
 
 	skipFrameCount := 3
 	logger := zerolog.
-		New(os.Stdout).
+		New(w).
 		With().
 		Timestamp().
 		CallerWithSkipFrameCount(zerolog.CallerSkipFrameCount + skipFrameCount).
@@ -81,6 +94,14 @@ func (l *Logger) Fatal(message any, args ...any) {
 	l.msg(zerolog.FatalLevel, message, args...)
 
 	os.Exit(1)
+}
+
+// WithRequestID returns a child logger that tags every line with the request
+// it belongs to. The parent keeps logging without the field.
+func (l *Logger) WithRequestID(id string) Interface {
+	child := l.logger.With().Str(_requestIDField, id).Logger()
+
+	return &Logger{logger: &child}
 }
 
 func (l *Logger) log(level zerolog.Level, message string, args ...any) {
