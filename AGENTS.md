@@ -101,7 +101,9 @@ Layout rules:
   **committed**; run `make templ-generate` after every `.templ` edit or the build serves stale HTML.
 - `web/app.css` — the Tailwind input. `@plugin "./plugins/daisyui.mjs"` pulls in daisyUI.
 - `web/static/css/app.css` — the Tailwind output. **Committed**, so the Docker image needs no Node.
-  Never hand-edit it: change classes or `web/app.css`, then `make css-build`.
+  Never hand-edit it: change classes or `web/app.css`, then `make css-build`. `make dev` rewrites it **unminified** — the
+  watcher target (`css-watch`) carries no `--minify` flag — so after a dev session run `make css-build` before committing,
+  or the diff is the watcher's expanded output, not a real change.
 - `web/plugins/daisyui.mjs` and `web/static/js/{htmx,alpine}.min.js` — pinned vendor files,
   fetched by `make assets`. All versions live in the `Makefile` (and `tool` in `go.mod`); bump them
   there, never in the file.
