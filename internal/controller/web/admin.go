@@ -55,7 +55,7 @@ func (c *Controller) adminUsersTable(ctx *fiber.Ctx) error {
 
 	rows := make([]response.UserRow, 0, len(list.Items))
 	for i := range list.Items {
-		rows = append(rows, response.NewUserRow(&list.Items[i]))
+		rows = append(rows, response.NewUserRow(&list.Items[i], c.userDefaults()))
 	}
 
 	c.pushUserListURL(ctx, &req)
@@ -163,7 +163,7 @@ func (c *Controller) adminUsersEdit(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	return c.renderPage(ctx, templates.AdminUsersEditContent(response.NewUserRowFromUser(&user)))
+	return c.renderPage(ctx, templates.AdminUsersEditContent(response.NewUserRowFromUser(&user, c.userDefaults())))
 }
 
 // adminUsersEditSubmit saves the account the drawer edits. The form carries
@@ -225,7 +225,7 @@ func (c *Controller) adminUsersEditSubmit(ctx *fiber.Ctx) error {
 
 	return c.renderPage(
 		ctx,
-		templates.AdminUsersEditDone(response.NewUserRowFromUser(&user), sessionsEnded),
+		templates.AdminUsersEditDone(response.NewUserRowFromUser(&user, c.userDefaults()), sessionsEnded),
 	)
 }
 
@@ -446,7 +446,7 @@ func (c *Controller) adminAccessRequestsTable(ctx *fiber.Ctx) error {
 
 	rows := make([]response.UserRow, 0, len(list.Items))
 	for i := range list.Items {
-		rows = append(rows, response.NewUserRow(&list.Items[i]))
+		rows = append(rows, response.NewUserRow(&list.Items[i], c.userDefaults()))
 	}
 
 	return c.renderPage(

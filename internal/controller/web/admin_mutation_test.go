@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
@@ -155,12 +156,15 @@ func (f *fakeAdminUser) ApproveUser(_ context.Context, userID string) error {
 	return f.approveErr
 }
 
-// adminMutationApp wires the admin handlers behind a session middleware.
-func adminMutationApp(users usecase.User) *fiber.App {
+// adminMutationApp wires the admin handlers behind a session middleware. The
+// config carries the environment defaults the drawer and the rows word an
+// inheriting account against.
+func adminMutationApp(users usecase.User, cfg *config.Config) *fiber.App {
 	c := &Controller{
-		u: users,
-		l: logger.New("error"),
-		v: validatorx.New(),
+		u:   users,
+		l:   logger.New("error"),
+		v:   validatorx.New(),
+		cfg: cfg,
 	}
 
 	app := fiber.New()
@@ -222,7 +226,7 @@ func TestAdminUsersTablePassesTheFilter(t *testing.T) {
 
 	status, _, body := adminResponse(
 		t,
-		adminMutationApp(users),
+		adminMutationApp(users, &config.Config{}),
 		"/htmx/admin/users?q=john&role=admin&sort=email&dir=asc&limit=10&page=2",
 		nil,
 	)
@@ -257,7 +261,7 @@ func TestAdminUsersTableRejectsAMalformedQuery(t *testing.T) {
 
 	users := &fakeAdminUser{}
 
-	status, _, _ := adminResponse(t, adminMutationApp(users), "/htmx/admin/users?sort=password_hash", nil)
+	status, _, _ := adminResponse(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users?sort=password_hash", nil)
 
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d", status, http.StatusUnprocessableEntity)
@@ -273,7 +277,7 @@ func TestAdminUsersTablePushesAChangedURL(t *testing.T) {
 
 	users := &fakeAdminUser{}
 
-	status, headers, _ := adminResponse(t, adminMutationApp(users), "/htmx/admin/users?q=john", nil)
+	status, headers, _ := adminResponse(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users?q=john", nil)
 
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want %d", status, http.StatusOK)
@@ -292,7 +296,7 @@ func TestAdminUsersTableSkipsThePushWhenTheURLIsUnchanged(t *testing.T) {
 
 	status, headers, _ := adminResponse(
 		t,
-		adminMutationApp(users),
+		adminMutationApp(users, &config.Config{}),
 		"/htmx/admin/users?q=john",
 		map[string]string{_hxCurrentURLHeader: "http://x/admin/users?q=john"},
 	)
@@ -311,7 +315,7 @@ func TestAdminUsersTableReportsAListFailure(t *testing.T) {
 
 	users := &fakeAdminUser{listErr: errAdminList}
 
-	status, _, _ := adminResponse(t, adminMutationApp(users), "/htmx/admin/users", nil)
+	status, _, _ := adminResponse(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users", nil)
 
 	if status != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", status, http.StatusInternalServerError)
@@ -331,7 +335,7 @@ func TestAdminUsersEditRendersTheAccount(t *testing.T) {
 
 	status, _, body := adminResponse(
 		t,
-		adminMutationApp(users),
+		adminMutationApp(users, &config.Config{}),
 		"/htmx/admin/users/edit?id="+_adminTestUserID,
 		nil,
 	)
@@ -351,12 +355,50 @@ func TestAdminUsersEditRendersTheAccount(t *testing.T) {
 	}
 }
 
+// The drawer names the default an empty limit field inherits, so the admin
+// sees the limit the account actually runs at instead of a bare zero.
+func TestAdminUsersEditWordsTheInheritedDefaults(t *testing.T) {
+	t.Parallel()
+
+	users := &fakeAdminUser{user: entity.User{
+		ID:       _adminTestUserID,
+		Username: "john",
+		Email:    "john@example.com",
+		Role:     entity.UserRoleUser,
+		Status:   entity.UserStatusActive,
+	}}
+
+	cfg := &config.Config{}
+	cfg.Limits.StorageQuotaBytes = 5368709120
+	cfg.Limits.UploadRateBytesPerSec = 1048576
+
+	status, _, body := adminResponse(
+		t,
+		adminMutationApp(users, cfg),
+		"/htmx/admin/users/edit?id="+_adminTestUserID,
+		nil,
+	)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	for _, part := range []string{
+		"Zero inherits the default. 5.0 GB",
+		"Zero inherits the default. 1.0 MB/s",
+	} {
+		if !strings.Contains(body, part) {
+			t.Errorf("body = %q, want it to contain %q", body, part)
+		}
+	}
+}
+
 func TestAdminUsersEditRejectsABadID(t *testing.T) {
 	t.Parallel()
 
 	users := &fakeAdminUser{}
 
-	status, _, _ := adminResponse(t, adminMutationApp(users), "/htmx/admin/users/edit?id=not-a-uuid", nil)
+	status, _, _ := adminResponse(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit?id=not-a-uuid", nil)
 
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d", status, http.StatusUnprocessableEntity)
@@ -374,7 +416,7 @@ func TestAdminUsersEditRejectsAnUnknownAccount(t *testing.T) {
 
 	status, _, _ := adminResponse(
 		t,
-		adminMutationApp(users),
+		adminMutationApp(users, &config.Config{}),
 		"/htmx/admin/users/edit?id="+_adminTestUserID,
 		nil,
 	)
@@ -396,7 +438,7 @@ func TestAdminUsersEditSubmitUpdatesTheAccount(t *testing.T) {
 		Status:   entity.UserStatusActive,
 	}}
 
-	status, headers, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/users/edit", url.Values{
+	status, headers, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit", url.Values{
 		"id":            {_adminTestUserID},
 		"username":      {"johnny"},
 		"email":         {"johnny@example.com"},
@@ -456,7 +498,7 @@ func TestAdminUsersEditSubmitRejectsInvalidLimits(t *testing.T) {
 
 			users := &fakeAdminUser{user: entity.User{ID: _adminTestUserID, Status: entity.UserStatusActive}}
 
-			status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/users/edit", url.Values{
+			status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit", url.Values{
 				"id":            {_adminTestUserID},
 				"username":      {"johnny"},
 				"email":         {"johnny@example.com"},
@@ -486,7 +528,7 @@ func TestAdminUsersEditSubmitEndsSessionsForANonActiveStatus(t *testing.T) {
 		Status:   entity.UserStatusActive,
 	}}
 
-	status, headers, body := adminForm(t, adminMutationApp(users), "/htmx/admin/users/edit", url.Values{
+	status, headers, body := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit", url.Values{
 		"id":       {_adminTestUserID},
 		"username": {"john"},
 		"email":    {"john@example.com"},
@@ -519,7 +561,7 @@ func TestAdminUsersEditSubmitReportsAConflict(t *testing.T) {
 		updateErr: entity.ErrEmailAlreadyExists,
 	}
 
-	status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/users/edit", url.Values{
+	status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit", url.Values{
 		"id":       {_adminTestUserID},
 		"username": {"johnny"},
 		"email":    {"johnny@example.com"},
@@ -539,7 +581,7 @@ func TestAdminUsersEditSubmitReportsALimitsFailure(t *testing.T) {
 		limitsErr: entity.ErrInvalidLimits,
 	}
 
-	status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/users/edit", url.Values{
+	status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit", url.Values{
 		"id":            {_adminTestUserID},
 		"username":      {"johnny"},
 		"email":         {"johnny@example.com"},
@@ -564,7 +606,7 @@ func TestAdminUsersEditSubmitReportsAStatusFailure(t *testing.T) {
 		statusErr: entity.ErrUserNotFound,
 	}
 
-	status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/users/edit", url.Values{
+	status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/users/edit", url.Values{
 		"id":       {_adminTestUserID},
 		"username": {"johnny"},
 		"email":    {"johnny@example.com"},
@@ -582,7 +624,7 @@ func TestRoleSubmitUpdatesTheRole(t *testing.T) {
 
 	users := &fakeAdminUser{}
 
-	status, headers, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/role", url.Values{
+	status, headers, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/role", url.Values{
 		"email": {"John@Example.COM"},
 		"role":  {"Admin"},
 	})
@@ -609,7 +651,7 @@ func TestRoleSubmitRejectsAnUnknownAccount(t *testing.T) {
 
 	users := &fakeAdminUser{roleErr: entity.ErrUserNotFound}
 
-	status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/role", url.Values{
+	status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/role", url.Values{
 		"email": {"missing@example.com"},
 		"role":  {"admin"},
 	})
@@ -624,7 +666,7 @@ func TestRoleSubmitRejectsAnInvalidRole(t *testing.T) {
 
 	users := &fakeAdminUser{}
 
-	status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/role", url.Values{
+	status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/role", url.Values{
 		"email": {"john@example.com"},
 		"role":  {"root"},
 	})
@@ -643,7 +685,7 @@ func TestAccessRequestsTableForcesPending(t *testing.T) {
 
 	users := &fakeAdminUser{list: entity.UserList{Items: []entity.UserListItem{{ID: _adminTestUserID, Username: "pending"}}}}
 
-	status, _, body := adminResponse(t, adminMutationApp(users), "/htmx/admin/access-requests?q=pending", nil)
+	status, _, body := adminResponse(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/access-requests?q=pending", nil)
 
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want %d", status, http.StatusOK)
@@ -667,7 +709,7 @@ func TestAccessRequestApproveReturnsNoContent(t *testing.T) {
 
 	users := &fakeAdminUser{}
 
-	status, headers, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/access-requests/approve", url.Values{
+	status, headers, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/access-requests/approve", url.Values{
 		"id": {_adminTestUserID},
 	})
 
@@ -689,7 +731,7 @@ func TestAccessRequestApproveRejectsABadID(t *testing.T) {
 
 	users := &fakeAdminUser{}
 
-	status, _, _ := adminForm(t, adminMutationApp(users), "/htmx/admin/access-requests/approve", url.Values{})
+	status, _, _ := adminForm(t, adminMutationApp(users, &config.Config{}), "/htmx/admin/access-requests/approve", url.Values{})
 
 	if status != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", status, http.StatusBadRequest)

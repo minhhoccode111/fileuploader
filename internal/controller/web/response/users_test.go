@@ -32,10 +32,14 @@ func TestNewUserRow(t *testing.T) {
 				Role:      tc.role,
 				CreatedAt: joined,
 				UpdatedAt: joined.AddDate(0, 0, 1),
-			})
+			}, UserDefaults{StorageQuotaBytes: 5368709120})
 
 			if row.IsAdmin != tc.want {
 				t.Errorf("IsAdmin = %v, want %v", row.IsAdmin, tc.want)
+			}
+
+			if row.Defaults.StorageQuotaBytes != 5368709120 {
+				t.Errorf("Defaults.StorageQuotaBytes = %d, want the default passed in", row.Defaults.StorageQuotaBytes)
 			}
 
 			if row.Joined != "2026-10-20 23:52" {
@@ -49,8 +53,10 @@ func TestNewUserRow(t *testing.T) {
 	}
 }
 
-// The storage cell words the bytes of the account against its quota. A quota
-// of zero means no limit, so the cell says so instead of printing zero bytes.
+// The storage cell words the bytes of the account against the quota that
+// actually applies. A stored zero inherits the environment default, so the
+// cell prints the default — and calls it Unlimited only when the default is
+// unlimited too.
 func TestUserRowStorageLabel(t *testing.T) {
 	t.Parallel()
 
@@ -60,7 +66,7 @@ func TestUserRowStorageLabel(t *testing.T) {
 		want string
 	}{
 		{
-			name: "an empty account",
+			name: "an empty account with no defaults",
 			row:  UserRow{},
 			want: "0 B / Unlimited",
 		},
@@ -74,6 +80,20 @@ func TestUserRowStorageLabel(t *testing.T) {
 			row:  UserRow{StorageUsedBytes: 1536, StorageQuotaBytes: 1048576},
 			want: "1.5 KB / 1.0 MB",
 		},
+		{
+			name: "a stored zero inherits the default quota",
+			row:  UserRow{StorageUsedBytes: 1536, Defaults: UserDefaults{StorageQuotaBytes: 5368709120}},
+			want: "1.5 KB / 5.0 GB",
+		},
+		{
+			name: "an override beats the default quota",
+			row: UserRow{
+				StorageUsedBytes:  1536,
+				StorageQuotaBytes: 1048576,
+				Defaults:          UserDefaults{StorageQuotaBytes: 5368709120},
+			},
+			want: "1.5 KB / 1.0 MB",
+		},
 	}
 
 	for _, tc := range cases {
@@ -84,6 +104,40 @@ func TestUserRowStorageLabel(t *testing.T) {
 				t.Errorf("StorageLabel() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// The drawer of the account editor words the limits an inheriting account
+// actually runs at, so the note under an empty field names the default that
+// applies instead of printing the stored zero.
+func TestUserRowWordsInheritedLimits(t *testing.T) {
+	t.Parallel()
+
+	row := UserRow{Defaults: UserDefaults{
+		StorageQuotaBytes:       5368709120,
+		UploadRateBytesPerSec:   1048576,
+		DownloadRateBytesPerSec: 0,
+	}}
+
+	if got := row.EffectiveStorageQuotaLabel(); got != "5.0 GB" {
+		t.Errorf("EffectiveStorageQuotaLabel() = %q, want %q", got, "5.0 GB")
+	}
+
+	if got := row.EffectiveUploadRateLabel(); got != "1.0 MB/s" {
+		t.Errorf("EffectiveUploadRateLabel() = %q, want %q", got, "1.0 MB/s")
+	}
+
+	if got := row.EffectiveDownloadRateLabel(); got != "Unlimited" {
+		t.Errorf("EffectiveDownloadRateLabel() = %q, want %q", got, "Unlimited")
+	}
+
+	override := UserRow{
+		UploadRateBytesPerSec: 2097152,
+		Defaults:              row.Defaults,
+	}
+
+	if got := override.EffectiveUploadRateLabel(); got != "2.0 MB/s" {
+		t.Errorf("EffectiveUploadRateLabel() = %q, want %q", got, "2.0 MB/s")
 	}
 }
 

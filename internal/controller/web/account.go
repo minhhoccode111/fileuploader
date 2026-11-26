@@ -34,7 +34,7 @@ func (c *Controller) accountPage(ctx *fiber.Ctx) error {
 		return c.renderErrors(ctx, http.StatusInternalServerError, []string{_genericErrorMessage})
 	}
 
-	account := response.NewUserRowFromUser(&user)
+	account := response.NewUserRowFromUser(&user, c.userDefaults())
 
 	return c.render(
 		ctx,
@@ -76,7 +76,7 @@ func (c *Controller) accountProfileSubmit(ctx *fiber.Ctx) error {
 
 	return c.renderPage(
 		ctx,
-		templates.AccountProfilePanel(response.NewUserRowFromUser(&user), "Your profile was saved."),
+		templates.AccountProfilePanel(response.NewUserRowFromUser(&user, c.userDefaults()), "Your profile was saved."),
 	)
 }
 

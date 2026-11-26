@@ -16,6 +16,16 @@ const _userPagerFirstPage = 1
 // _userFiltersAllRoles is the role dropdown entry that keeps every role.
 const _userFiltersAllRoles = "all"
 
+// UserDefaults are the environment defaults an account inherits from when
+// one of its limits is stored as zero. The account list and the editor drawer
+// word every inheriting value against them, so an admin sees the limit that
+// actually applies instead of a zero.
+type UserDefaults struct {
+	StorageQuotaBytes       int64
+	UploadRateBytesPerSec   int64
+	DownloadRateBytesPerSec int64
+}
+
 // UserRow is one account in the admin user table. It is a presentation type: the
 // admin flag and the joined date are already what the template prints.
 type UserRow struct {
@@ -27,9 +37,15 @@ type UserRow struct {
 	Joined   string
 	Updated  string
 
+	// Defaults are the environment limits a stored zero inherits. They stay
+	// zero when a caller has none, which keeps every inheriting value
+	// worded as Unlimited.
+	Defaults UserDefaults
+
 	// Per-account storage and transfer limits. The canonical fields mirror the
 	// entity; the aliases keep the row usable by callers that name them
-	// differently.
+	// differently. They hold the stored values, so the editor form shows what
+	// the account carries, not what it inherits.
 	StorageQuotaBytes       int64
 	StorageUsedBytes        int64
 	UploadRateBytesPerSec   int64
@@ -76,15 +92,73 @@ func (r UserRow) StorageUsedValue() int64 {
 	return r.Used
 }
 
-// StorageLabel words the used bytes against the quota. A quota of zero means
-// the account has no limit, so the label says that instead of printing a zero
-// quota.
+// EffectiveStorageQuota returns the quota the account actually stores
+// against: its own override, or the environment default a zero inherits.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) EffectiveStorageQuota() int64 {
+	if quota := r.StorageQuotaValue(); quota != 0 {
+		return quota
+	}
+
+	return r.Defaults.StorageQuotaBytes
+}
+
+// EffectiveUploadRate returns the upload rate the account actually runs at.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) EffectiveUploadRate() int64 {
+	if rate := r.UploadRateValue(); rate != 0 {
+		return rate
+	}
+
+	return r.Defaults.UploadRateBytesPerSec
+}
+
+// EffectiveDownloadRate returns the download rate the account actually runs at.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) EffectiveDownloadRate() int64 {
+	if rate := r.DownloadRateValue(); rate != 0 {
+		return rate
+	}
+
+	return r.Defaults.DownloadRateBytesPerSec
+}
+
+// EffectiveStorageQuotaLabel words the quota an inheriting account runs
+// under, for the note under the editor's quota field.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) EffectiveStorageQuotaLabel() string {
+	return limitLabel(r.EffectiveStorageQuota())
+}
+
+// EffectiveUploadRateLabel words the upload rate an inheriting account runs
+// at, for the note under the editor's upload field.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) EffectiveUploadRateLabel() string {
+	return rateLabel(r.EffectiveUploadRate())
+}
+
+// EffectiveDownloadRateLabel words the download rate an inheriting account
+// runs at, for the note under the editor's download field.
+//
+//nolint:gocritic // value receiver matches the rest of the presentation type
+func (r UserRow) EffectiveDownloadRateLabel() string {
+	return rateLabel(r.EffectiveDownloadRate())
+}
+
+// StorageLabel words the used bytes against the quota that actually applies.
+// A stored zero inherits the environment default, so the label prints the
+// default — and calls it Unlimited only when the default is unlimited too.
 //
 //nolint:gocritic // value receiver matches the rest of the presentation type
 func (r UserRow) StorageLabel() string {
 	used := ByteLabel(r.StorageUsedValue())
 
-	quota := r.StorageQuotaValue()
+	quota := r.EffectiveStorageQuota()
 	if quota <= 0 {
 		return used + " / Unlimited"
 	}
@@ -162,10 +236,12 @@ func (s UserSort) AriaSort() string {
 	return "descending"
 }
 
-// NewUserRow maps the read model to the row the account table renders.
+// NewUserRow maps the read model to the row the account table renders. The
+// defaults are the environment limits a stored zero inherits, so the row can
+// word every inheriting value against them.
 //
 //nolint:dupl // mirrors NewUserRowFromUser by design
-func NewUserRow(item *entity.UserListItem) UserRow {
+func NewUserRow(item *entity.UserListItem, defaults UserDefaults) UserRow {
 	row := UserRow{
 		ID:       item.ID,
 		Username: item.Username,
@@ -174,6 +250,8 @@ func NewUserRow(item *entity.UserListItem) UserRow {
 		Status:   item.Status,
 		Joined:   item.CreatedAt.Format(_joinedLayout),
 		Updated:  item.UpdatedAt.Format(_joinedLayout),
+
+		Defaults: defaults,
 
 		StorageQuotaBytes:       item.StorageQuotaBytes,
 		StorageUsedBytes:        item.StorageUsedBytes,
@@ -193,10 +271,12 @@ func NewUserRow(item *entity.UserListItem) UserRow {
 }
 
 // NewUserRowFromUser maps the account behind an edit or an update to the row
-// shape the account table and the editor drawer render.
+// shape the account table and the editor drawer render. The defaults are the
+// environment limits a stored zero inherits, so the drawer's notes can name
+// the limit that actually applies.
 //
 //nolint:dupl // mirrors NewUserRow by design
-func NewUserRowFromUser(user *entity.User) UserRow {
+func NewUserRowFromUser(user *entity.User, defaults UserDefaults) UserRow {
 	row := UserRow{
 		ID:       user.ID,
 		Username: user.Username,
@@ -205,6 +285,8 @@ func NewUserRowFromUser(user *entity.User) UserRow {
 		Status:   user.Status,
 		Joined:   user.CreatedAt.Format(_joinedLayout),
 		Updated:  user.UpdatedAt.Format(_joinedLayout),
+
+		Defaults: defaults,
 
 		StorageQuotaBytes:       user.StorageQuotaBytes,
 		StorageUsedBytes:        user.StorageUsedBytes,

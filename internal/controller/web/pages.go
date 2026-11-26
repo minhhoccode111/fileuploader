@@ -205,6 +205,17 @@ func (c *Controller) view(ctx *fiber.Ctx) templates.View {
 	return view
 }
 
+// userDefaults reads the environment limits a stored zero inherits, so the
+// account list and the editor drawer word every inheriting value against the
+// limit that actually applies.
+func (c *Controller) userDefaults() response.UserDefaults {
+	return response.UserDefaults{
+		StorageQuotaBytes:       c.cfg.Limits.StorageQuotaBytes,
+		UploadRateBytesPerSec:   c.cfg.Limits.UploadRateBytesPerSec,
+		DownloadRateBytesPerSec: c.cfg.Limits.DownloadRateBytesPerSec,
+	}
+}
+
 // demoLogin returns the try-out account the login page offers, or nil when the
 // environment did not name one. All three variables must be set: a half
 // configured demo account is skipped instead of advertised without a

@@ -490,7 +490,7 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 					value={ strconv.FormatInt(row.StorageQuotaValue(), 10) }
 					inputmode="text"
 				/>
-				<span class="text-xs text-base-content/60">Zero inherits the default. { response.ByteLabel(row.StorageQuotaValue()) }</span>
+				<span class="text-xs text-base-content/60">Zero inherits the default. { row.EffectiveStorageQuotaLabel() }</span>
 			</label>
 			<label class="flex flex-col gap-1">
 				<span class="text-sm font-medium">Storage used (bytes)</span>
@@ -512,7 +512,7 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 					value={ strconv.FormatInt(row.UploadRateValue(), 10) }
 					inputmode="text"
 				/>
-				<span class="text-xs text-base-content/60">Zero inherits the default. { response.ByteLabel(row.UploadRateValue()) }/s</span>
+				<span class="text-xs text-base-content/60">Zero inherits the default. { row.EffectiveUploadRateLabel() }</span>
 			</label>
 			<label class="flex flex-col gap-1">
 				<span class="text-sm font-medium">Download rate (K/M/G or bytes/sec)</span>
@@ -523,7 +523,7 @@ templ adminUsersEditForm(row response.UserRow, note string) {
 					value={ strconv.FormatInt(row.DownloadRateValue(), 10) }
 					inputmode="text"
 				/>
-				<span class="text-xs text-base-content/60">Zero inherits the default. { response.ByteLabel(row.DownloadRateValue()) }/s</span>
+				<span class="text-xs text-base-content/60">Zero inherits the default. { row.EffectiveDownloadRateLabel() }</span>
 			</label>
 			<div id="user-edit-error" class="text-error text-sm" role="alert"></div>
 			<button type="submit" class="btn btn-primary">Save</button>
