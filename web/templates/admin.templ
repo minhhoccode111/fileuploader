@@ -337,25 +337,44 @@ templ AdminUsersPager(pager response.UserPager, limit string) {
 }
 
 // AdminSettings is the settings page of the admin area.
-templ AdminSettings(view View) {
+templ AdminSettings(view View, rows []response.SettingsRow) {
 	@AdminLayout(AdminSettingsTitle, view) {
-		@AdminSettingsContent()
+		@AdminSettingsContent(rows)
 	}
 }
 
 // AdminSettingsContent is the fragment htmx swaps into <main> on client-side navigation.
-templ AdminSettingsContent() {
+// It lists the environment defaults the account editor inherits from; they are
+// read-only, because they live in the environment and no admin action can change them.
+templ AdminSettingsContent(rows []response.SettingsRow) {
 	@PageColumnWide() {
 		<section class="card bg-base-100 shadow">
 			<div class="card-body gap-4">
-				<h1 class="text-4xl font-bold tracking-tight">Hello from Admin Settings</h1>
-				<p class="text-base-content/70 max-w-prose">This page is only reachable when you are signed in as an admin.</p>
-			</div>
-		</section>
-		<section class="card bg-base-100 shadow">
-			<div class="card-body gap-4">
-				<h2 class="text-2xl font-bold tracking-tight">Settings</h2>
-				<p class="text-base-content/70 max-w-prose">The settings of the app land here. Until then, this page only says hello.</p>
+				<h1 class="text-4xl font-bold tracking-tight">Settings</h1>
+				<p class="text-base-content/70 max-w-prose">
+					The defaults below come from the environment. The limits of an account
+					override them per account; a zero on an account inherits the default.
+				</p>
+				<div class="overflow-x-auto">
+					<table class="table">
+						<thead>
+							<tr>
+								<th>Setting</th>
+								<th>Value</th>
+								<th>Notes</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, row := range rows {
+								<tr>
+									<td class="font-medium">{ row.Name }</td>
+									<td>{ row.Value }</td>
+									<td class="text-base-content/70 text-sm">{ row.Note }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</section>
 	}

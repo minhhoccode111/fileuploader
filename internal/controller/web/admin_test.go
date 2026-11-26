@@ -18,9 +18,9 @@ import (
 )
 
 // adminApp wires the admin routes in front of the handlers under test.
-func adminApp() *fiber.App {
+func adminApp(cfg *config.Config) *fiber.App {
 	app := fiber.New()
-	c := &Controller{cfg: &config.Config{}}
+	c := &Controller{cfg: cfg}
 
 	app.Get(_adminPath, c.admin)
 	app.Get(_adminUsersPath, c.adminUsers)
@@ -70,7 +70,7 @@ func TestAdminRedirectsToTheUsersPage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			status, headers, _ := adminResponse(t, adminApp(), tc.path, nil)
+			status, headers, _ := adminResponse(t, adminApp(&config.Config{}), tc.path, nil)
 
 			if status != http.StatusFound {
 				t.Fatalf("status = %d, want %d", status, http.StatusFound)
@@ -86,7 +86,7 @@ func TestAdminRedirectsToTheUsersPage(t *testing.T) {
 func TestAdminRedirectsAnHtmxRequestInPlace(t *testing.T) {
 	t.Parallel()
 
-	status, headers, _ := adminResponse(t, adminApp(), _adminPath, map[string]string{"HX-Request": "true"})
+	status, headers, _ := adminResponse(t, adminApp(&config.Config{}), _adminPath, map[string]string{"HX-Request": "true"})
 
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want %d", status, http.StatusOK)
@@ -108,7 +108,7 @@ func TestAdminRedirectsAnHtmxRequestInPlace(t *testing.T) {
 func TestAdminUsersPageHoldsTheEditDrawer(t *testing.T) {
 	t.Parallel()
 
-	status, _, body := adminResponse(t, adminApp(), _adminUsersPath, nil)
+	status, _, body := adminResponse(t, adminApp(&config.Config{}), _adminUsersPath, nil)
 
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want %d", status, http.StatusOK)
@@ -122,6 +122,41 @@ func TestAdminUsersPageHoldsTheEditDrawer(t *testing.T) {
 	for _, part := range want {
 		if !strings.Contains(body, part) {
 			t.Errorf("body = %q, want it to contain %q", body, part)
+		}
+	}
+}
+
+// The settings page shows the environment-configured defaults, worded the
+// way the account editor words its own values, so an admin knows what a
+// per-account zero inherits before saving an account.
+func TestAdminSettingsShowsTheEnvironmentDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	cfg.Limits.StorageQuotaBytes = 5368709120
+	cfg.Limits.UploadRateBytesPerSec = 1048576
+	cfg.Limits.DownloadRateBytesPerSec = 0
+	cfg.Upload.MaxBytes = 10737418240
+
+	status, _, body := adminResponse(t, adminApp(cfg), _adminSettingsPath, nil)
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	for _, part := range []string{
+		"Default storage quota",
+		"5.0 GB",
+		"Default upload rate",
+		"1.0 MB/s",
+		"Default download rate",
+		"Unlimited",
+		"Max upload file size",
+		"10 GB",
+		"UPLOAD_MAX_BYTES",
+	} {
+		if !strings.Contains(body, part) {
+			t.Errorf("body does not show %q", part)
 		}
 	}
 }
@@ -274,7 +309,7 @@ func TestAdminPagesRenderTheGreeting(t *testing.T) {
 	}{
 		{name: "the users page", path: _adminUsersPath, want: "Users"},
 		{name: "the users page with a trailing slash", path: _adminUsersPath + "/", want: "Users"},
-		{name: "the settings page", path: _adminSettingsPath, want: "Hello from Admin Settings"},
+		{name: "the settings page", path: _adminSettingsPath, want: "Max upload file size"},
 		{
 			name:        "the fragment",
 			path:        _adminUsersPath,
@@ -288,7 +323,7 @@ func TestAdminPagesRenderTheGreeting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			status, _, body := adminResponse(t, adminApp(), tc.path, tc.headers)
+			status, _, body := adminResponse(t, adminApp(&config.Config{}), tc.path, tc.headers)
 
 			if status != http.StatusOK {
 				t.Fatalf("status = %d, want %d", status, http.StatusOK)

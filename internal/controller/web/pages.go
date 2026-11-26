@@ -147,9 +147,13 @@ func (c *Controller) adminUsers(ctx *fiber.Ctx) error {
 }
 
 // adminSettings renders the settings page. The guard has already checked the
-// role, so the handler only renders.
+// role, so the handler only renders: the page lists the environment defaults
+// the account editor's values inherit from, read-only, because they live in
+// the environment and no admin action can change them.
 func (c *Controller) adminSettings(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.AdminSettings(c.view(ctx)), templates.AdminSettingsContent(), templates.AdminSettingsTitle)
+	rows := response.SettingsRows(c.cfg)
+
+	return c.render(ctx, templates.AdminSettings(c.view(ctx), rows), templates.AdminSettingsContent(rows), templates.AdminSettingsTitle)
 }
 
 // adminAccessRequests renders the pending account requests. The guard has
