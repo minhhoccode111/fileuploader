@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Matches the daisyUI light theme primary (oklch(45% .24 277) ~ indigo). -->
+  <rect width="24" height="24" rx="6" fill="#4338CA"/>
+  <!-- The upload glyph the drive already uses: a tray and an arrow rising. -->
+  <g fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17.5 14.5v3.2a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-3.2"/>
+    <path d="M12 14.5V3.5"/>
+    <path d="M7.6 7.6 12 3.2l4.4 4.4"/>
+  </g>
+</svg>
