@@ -1,0 +1,100 @@
+# Production stack for the VPS. Runs next to the host-native Caddy, which
+# proxies https://fileuploader.minhhoccode111.com -> 127.0.0.1:8090.
+#
+# Differences from docker-compose.yml (the dev stack):
+#   - no nginx service: Caddy terminates TLS and sets X-Real-IP
+#   - app image comes from Docker Hub, not a local build
+#   - db/redis/minio publish no ports; only the app is reachable, on loopback
+#   - all values live in .env (gitignored), never in this file
+#
+# Usage (on the VPS): scripts/00_init.sh — see deploy/README.md.
+
+name: fileuploader
+
+services:
+  db:
+    container_name: db-fileuploader
+    image: postgres:18.6-alpine
+    env_file: .env
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  redis:
+    container_name: redis-fileuploader
+    image: redis:8.10.2-alpine
+    command: >
+      redis-server --save 60 1 --loglevel warning
+      --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  minio:
+    container_name: minio-fileuploader
+    image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    command: server /data --console-address ":9001"
+    env_file: .env
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  app:
+    container_name: app-fileuploader
+    platform: linux/amd64
+    pid: "host"
+    # IMAGE_TAG pins the deploy; unset means latest (what CI pushes).
+    image: minhhoccode111/fileuploader:${IMAGE_TAG:-latest}
+    env_file: .env
+    ports:
+      # Caddy proxies the first; the second serves metrics/pprof to the
+      # host only, as in the dev stack.
+      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1Gb
+        reservations:
+          cpus: '0.50'
+          memory: 512Mb
+    restart: unless-stopped
+    networks:
+      - app_network
+
+networks:
+  app_network:
+
+volumes:
+  db_data:
+  redis_data:
+  minio_data:
