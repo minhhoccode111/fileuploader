@@ -1,4 +1,0 @@
-# dotenv-linter config. The .env.example files group their keys by topic with
-# a comment per section, so the alphabetical-order rule does not apply.
-UnorderedKey:
-  enabled: false

@@ -48,6 +48,9 @@ jobs:
       - uses: dotenv-linter/action-dotenv-linter@v3
         with:
           reporter: github-check
+          # The .env.example files group their keys by topic with a comment
+          # per section, so the alphabetical-order rule does not apply.
+          dotenv_linter_flags: '--skip UnorderedKey'
 
   test:
     name: runner / go test
