@@ -97,19 +97,19 @@ func LoginContent(demo *DemoLogin) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"><h1 class=\"text-3xl font-bold tracking-tight\">Welcome back</h1><p class=\"text-base-content/70\">Sign in with your email and password.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"><h1 class=\"text-3xl font-bold tracking-tight\">Welcome back</h1><p class=\"text-base-content/70\">Sign in with your email and password.</p><form id=\"login-form\" class=\"flex flex-col gap-4 py-2\" hx-post=\"/htmx/login\" hx-target=\"#login-error\" hx-swap=\"innerHTML\" novalidate><label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Email</span> <input class=\"input input-bordered w-full\" type=\"email\" name=\"email\" required autocomplete=\"email\" x-ref=\"email\"></label> <label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Password</span> <input class=\"input input-bordered w-full\" type=\"password\" name=\"password\" required autocomplete=\"current-password\" x-ref=\"password\"></label> <button class=\"btn btn-primary\" type=\"submit\">Login</button><div id=\"login-error\" class=\"text-sm text-error\" role=\"alert\"></div></form><p class=\"text-sm\">No account? <a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"link link-primary\">Register</a></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if demo != nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div role=\"alert\" class=\"alert alert-info alert-soft text-sm\"><div>Just looking around? Try the demo account: <span class=\"font-mono\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"divider\"></div><div class=\"flex items-center justify-between gap-2\"><span class=\"text-sm text-base-content/70\">Try the demo: <span class=\"font-mono\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(demo.Email)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 22, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 67, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -122,18 +122,18 @@ func LoginContent(demo *DemoLogin) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(demo.Password)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 24, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 69, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</span></div><button type=\"button\" class=\"btn btn-sm\" @click=\"$refs.email.value = demoEmail; $refs.password.value = demoPassword\">Fill in</button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</span></span> <button type=\"button\" class=\"btn btn-ghost btn-xs\" @click=\"$refs.email.value = demoEmail; $refs.password.value = demoPassword\">Fill in</button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<form id=\"login-form\" class=\"flex flex-col gap-4 py-2\" hx-post=\"/htmx/login\" hx-target=\"#login-error\" hx-swap=\"innerHTML\" novalidate><label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Email</span> <input class=\"input input-bordered w-full\" type=\"email\" name=\"email\" required autocomplete=\"email\" x-ref=\"email\"></label> <label class=\"flex flex-col gap-1\"><span class=\"text-sm font-medium\">Password</span> <input class=\"input input-bordered w-full\" type=\"password\" name=\"password\" required autocomplete=\"current-password\" x-ref=\"password\"></label> <button class=\"btn btn-primary\" type=\"submit\">Login</button><div id=\"login-error\" class=\"text-sm text-error\" role=\"alert\"></div></form><p class=\"text-sm\">No account? <a href=\"/register\" hx-get=\"/register\" hx-target=\"#page-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" class=\"link link-primary\">Register</a></p></div></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

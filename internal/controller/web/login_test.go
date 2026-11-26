@@ -152,7 +152,7 @@ func TestLoginHidesTheDemoHintWithoutConfiguration(t *testing.T) {
 		t.Fatalf("read body error = %v, want nil", err)
 	}
 
-	if strings.Contains(string(body), "Try the demo account") {
+	if strings.Contains(string(body), "Fill in") {
 		t.Errorf("body offers a demo account without a seeded one:\n%s", body)
 	}
 }

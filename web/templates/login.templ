@@ -15,21 +15,6 @@ templ LoginContent(demo *DemoLogin) {
 		<div class="card-body" x-data={ templ.JSONString(demo.State()) }>
 			<h1 class="text-3xl font-bold tracking-tight">Welcome back</h1>
 			<p class="text-base-content/70">Sign in with your email and password.</p>
-			if demo != nil {
-				<div role="alert" class="alert alert-info alert-soft text-sm">
-					<div>
-						Just looking around? Try the demo account:
-						<span class="font-mono">{ demo.Email }</span>
-						/
-						<span class="font-mono">{ demo.Password }</span>
-					</div>
-					<button
-						type="button"
-						class="btn btn-sm"
-						@click="$refs.email.value = demoEmail; $refs.password.value = demoPassword"
-					>Fill in</button>
-				</div>
-			}
 			<form
 				id="login-form"
 				class="flex flex-col gap-4 py-2"
@@ -74,6 +59,22 @@ templ LoginContent(demo *DemoLogin) {
 					class="link link-primary"
 				>Register</a>
 			</p>
+			if demo != nil {
+				<div class="divider"></div>
+				<div class="flex items-center justify-between gap-2">
+					<span class="text-sm text-base-content/70">
+						Try the demo:
+						<span class="font-mono">{ demo.Email }</span>
+						/
+						<span class="font-mono">{ demo.Password }</span>
+					</span>
+					<button
+						type="button"
+						class="btn btn-ghost btn-xs"
+						@click="$refs.email.value = demoEmail; $refs.password.value = demoPassword"
+					>Fill in</button>
+				</div>
+			}
 		</div>
 	</section>
 	}
