@@ -81,6 +81,82 @@ func loginRequest(clientIP string) *http.Request {
 	return req
 }
 
+// loginPageApp wires the login page on its own, so a test sees the plain
+// handler without the guards the router adds.
+func loginPageApp(cfg *config.Config) *fiber.App {
+	c := &Controller{
+		l:   logger.New("error"),
+		v:   validatorx.New(),
+		cfg: cfg,
+	}
+
+	app := fiber.New()
+	app.Get("/login", c.login)
+
+	return app
+}
+
+// loginPageConfig returns the config a page test renders with.
+func loginPageConfig(demo bool) *config.Config {
+	cfg := &config.Config{}
+
+	if demo {
+		cfg.Seed.DemoEmail = "demo@example.com"
+		cfg.Seed.DemoUsername = "demo"
+		cfg.Seed.DemoPassword = "Demo123!"
+	}
+
+	return cfg
+}
+
+func TestLoginOffersTheDemoCredentialsWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	resp, err := loginPageApp(loginPageConfig(true)).Test(
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/login", http.NoBody),
+	)
+	if err != nil {
+		t.Fatalf("GET /login error = %v, want nil", err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body error = %v, want nil", err)
+	}
+
+	if !strings.Contains(string(body), "demo@example.com") {
+		t.Errorf("body does not show the demo email:\n%s", body)
+	}
+
+	if !strings.Contains(string(body), "Demo123!") {
+		t.Errorf("body does not show the demo password:\n%s", body)
+	}
+}
+
+func TestLoginHidesTheDemoHintWithoutConfiguration(t *testing.T) {
+	t.Parallel()
+
+	resp, err := loginPageApp(loginPageConfig(false)).Test(
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/login", http.NoBody),
+	)
+	if err != nil {
+		t.Fatalf("GET /login error = %v, want nil", err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body error = %v, want nil", err)
+	}
+
+	if strings.Contains(string(body), "Try the demo account") {
+		t.Errorf("body offers a demo account without a seeded one:\n%s", body)
+	}
+}
+
 func TestLoginSubmitAnswersTooManyRequestsWhenThrottled(t *testing.T) {
 	t.Parallel()
 

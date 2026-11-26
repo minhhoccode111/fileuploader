@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
@@ -250,7 +251,7 @@ func (f *searchFolder) Search(
 // searchApp wires the search page and partial routes behind a middleware that
 // parks the session the auth guard would park.
 func searchApp(folders usecase.Folder) *fiber.App {
-	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders}
+	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders, cfg: &config.Config{}}
 
 	app := fiber.New()
 

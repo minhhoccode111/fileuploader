@@ -402,6 +402,145 @@ func TestListUsersClampsTheFilterBeforeItLists(t *testing.T) {
 	}
 }
 
+func TestSeedUserStoresTheAccountWithTheGivenRoleAndStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	folders := &fakeFolderRepo{}
+	uow := &fakeUnitOfWork{}
+	uc := New(repo, &fakeSessionRepo{}, folders, uow, &fakeLoginGuard{}, time.Hour)
+
+	user, err := uc.SeedUser(
+		context.Background(),
+		"demo", "demo@example.com", "Demo123!",
+		entity.UserRoleUser, entity.UserStatusActive,
+	)
+	if err != nil {
+		t.Fatalf("SeedUser() error = %v, want nil", err)
+	}
+
+	if !uow.committed {
+		t.Error("SeedUser() did not commit the unit of work")
+	}
+
+	if repo.stored == nil {
+		t.Fatal("SeedUser() did not store the user")
+	}
+
+	if repo.stored.Email != "demo@example.com" {
+		t.Errorf("stored email = %q, want %q", repo.stored.Email, "demo@example.com")
+	}
+
+	if repo.stored.Role != entity.UserRoleUser {
+		t.Errorf("stored role = %q, want %q", repo.stored.Role, entity.UserRoleUser)
+	}
+
+	if repo.stored.Status != entity.UserStatusActive {
+		t.Errorf("stored status = %q, want %q", repo.stored.Status, entity.UserStatusActive)
+	}
+
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(repo.stored.PasswordHash), []byte("Demo123!"),
+	); err != nil {
+		t.Errorf("stored password hash does not match the seeded password: %v", err)
+	}
+
+	if folders.stored == nil {
+		t.Fatal("SeedUser() did not create the root folder")
+	}
+
+	if folders.stored.UserID != user.ID {
+		t.Errorf("root folder user ID = %q, want %q", folders.stored.UserID, user.ID)
+	}
+}
+
+func TestSeedUserSeedsAnAdminWithoutGrantingItByHand(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, &fakeUnitOfWork{}, &fakeLoginGuard{}, time.Hour)
+
+	_, err := uc.SeedUser(
+		context.Background(),
+		"admin", "admin@example.com", "Admin123!",
+		entity.UserRoleAdmin, entity.UserStatusActive,
+	)
+	if err != nil {
+		t.Fatalf("SeedUser() error = %v, want nil", err)
+	}
+
+	if repo.stored.Role != entity.UserRoleAdmin {
+		t.Errorf("stored role = %q, want %q", repo.stored.Role, entity.UserRoleAdmin)
+	}
+
+	if !repo.stored.Status.CanSignIn() {
+		t.Errorf("stored status = %q, want an account that may sign in", repo.stored.Status)
+	}
+}
+
+func TestSeedUserRejectsAnUnknownRole(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	uow := &fakeUnitOfWork{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, uow, &fakeLoginGuard{}, time.Hour)
+
+	_, err := uc.SeedUser(
+		context.Background(),
+		"admin", "admin@example.com", "Admin123!",
+		entity.UserRole("root"), entity.UserStatusActive,
+	)
+	if !errors.Is(err, entity.ErrInvalidRole) {
+		t.Fatalf("SeedUser() error = %v, want %v", err, entity.ErrInvalidRole)
+	}
+
+	if uow.called {
+		t.Error("SeedUser() opened the unit of work for an invalid role")
+	}
+}
+
+func TestSeedUserRejectsAnUnknownStatus(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{}
+	uow := &fakeUnitOfWork{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, uow, &fakeLoginGuard{}, time.Hour)
+
+	_, err := uc.SeedUser(
+		context.Background(),
+		"demo", "demo@example.com", "Demo123!",
+		entity.UserRoleUser, entity.UserStatus("banned"),
+	)
+	if !errors.Is(err, entity.ErrInvalidStatus) {
+		t.Fatalf("SeedUser() error = %v, want %v", err, entity.ErrInvalidStatus)
+	}
+
+	if uow.called {
+		t.Error("SeedUser() opened the unit of work for an invalid status")
+	}
+}
+
+func TestSeedUserKeepsTheSentinelOfATakenEmail(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeUserRepo{err: entity.ErrEmailAlreadyExists}
+	uow := &fakeUnitOfWork{}
+	uc := New(repo, &fakeSessionRepo{}, &fakeFolderRepo{}, uow, &fakeLoginGuard{}, time.Hour)
+
+	_, err := uc.SeedUser(
+		context.Background(),
+		"demo", "demo@example.com", "Demo123!",
+		entity.UserRoleUser, entity.UserStatusActive,
+	)
+	if !errors.Is(err, entity.ErrEmailAlreadyExists) {
+		t.Fatalf("SeedUser() error = %v, want %v", err, entity.ErrEmailAlreadyExists)
+	}
+
+	if !uow.rolledBack {
+		t.Error("SeedUser() did not roll back the unit of work")
+	}
+}
+
 func TestRegisterStoresTheUserInsideTheUnitOfWork(t *testing.T) {
 	t.Parallel()
 

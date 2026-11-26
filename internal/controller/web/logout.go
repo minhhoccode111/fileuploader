@@ -33,11 +33,15 @@ func (c *Controller) logoutSubmit(ctx *fiber.Ctx) error {
 	ctx.Set(_hxPushURLHeader, _loginPath)
 
 	// The session is gone, so the sidebar must drop the logout item and show the
-	// guest links again: swap it out of band alongside the login fragment.
+	// guest links again: swap it out of band alongside the login fragment. The
+	// visitor lands on the login page, so it keeps the demo hint a direct
+	// visit would show; the session is over, so the rest of the view is empty.
+	loginView := templates.View{DemoLogin: c.demoLogin()}
+
 	return c.render(
 		ctx,
-		templates.Login(templates.View{}),
-		templ.Join(templates.LoginContent(), templates.SidebarNavUpdate(templates.View{})),
+		templates.Login(loginView),
+		templ.Join(templates.LoginContent(loginView.DemoLogin), templates.SidebarNavUpdate(templates.View{})),
 		templates.LoginTitle,
 	)
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
@@ -415,7 +416,13 @@ func (f *sharedFolderStub) List(
 // sharedApp wires the page and partial routes of a share behind a middleware
 // that parks the session of the visitor the way the auth guard would.
 func sharedApp(shares usecase.Share, folders usecase.Folder) *fiber.App {
-	c := &Controller{l: logger.New("error"), v: validator.New(), shares: shares, folders: folders}
+	c := &Controller{
+		l:       logger.New("error"),
+		v:       validator.New(),
+		shares:  shares,
+		folders: folders,
+		cfg:     &config.Config{},
+	}
 
 	app := fiber.New()
 

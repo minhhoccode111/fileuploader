@@ -211,6 +211,8 @@ func Run(cfg *config.Config) {
 
 	uc := initUseCases(pg, redisConn, minioClient, cfg)
 
+	seedUsers(context.Background(), uc.user, cfg, l)
+
 	sweepCtx, stopSweep := context.WithCancel(context.Background())
 	defer stopSweep()
 

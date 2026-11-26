@@ -39,6 +39,7 @@ type (
 		Session session
 		Upload  upload
 		Limits  limits
+		Seed    seed
 
 		Observability observability
 	}
@@ -80,8 +81,8 @@ type (
 		Endpoint  string `env:"MINIO_ENDPOINT,required"`
 		AccessKey string `env:"MINIO_ACCESS_KEY,required"`
 		SecretKey string `env:"MINIO_SECRET_KEY,required"`
-		UseSSL    bool   `env:"MINIO_USE_SSL" envDefault:"false"`
-		Bucket    string `env:"MINIO_BUCKET" envDefault:"files"`
+		UseSSL    bool   `env:"MINIO_USE_SSL"             envDefault:"false"`
+		Bucket    string `env:"MINIO_BUCKET"              envDefault:"files"`
 		// PublicEndpoint is the host the browser reaches the bucket at. It
 		// defaults to Endpoint, which is right when both run on one host.
 		PublicEndpoint string `env:"MINIO_PUBLIC_ENDPOINT"`
@@ -120,6 +121,22 @@ type (
 		// DownloadRateBytesPerSec is the default download speed limit. A
 		// per-account zero inherits it; a zero default means unlimited.
 		DownloadRateBytesPerSec int64 `env:"DOWNLOAD_DEFAULT_RATE_BYTES_PER_SEC" envDefault:"0"`
+	}
+
+	// Seed -.
+	seed struct {
+		// AdminEmail, AdminUsername and AdminPassword name the account the
+		// first run creates with the admin role, so the deployment does not
+		// need a second admin to grant the first one out of band.
+		AdminEmail    string `env:"ADMIN_EMAIL"`
+		AdminUsername string `env:"ADMIN_USERNAME"`
+		AdminPassword string `env:"ADMIN_PASSWORD"`
+		// DemoEmail, DemoUsername and DemoPassword name the try-out account
+		// the login page offers to a visitor. All three must be set; the
+		// page shows nothing while any of them is empty.
+		DemoEmail    string `env:"DEMO_EMAIL"`
+		DemoUsername string `env:"DEMO_USERNAME"`
+		DemoPassword string `env:"DEMO_PASSWORD"`
 	}
 
 	// Observability -.

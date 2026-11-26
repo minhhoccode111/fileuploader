@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
@@ -184,6 +185,7 @@ func shareManageApp(
 		u:       users,
 		l:       logger.New("error"),
 		v:       validatorx.New(),
+		cfg:     &config.Config{},
 	}
 
 	app := fiber.New()

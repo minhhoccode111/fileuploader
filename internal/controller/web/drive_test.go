@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/entity"
 	"github.com/minhhoccode111/fileuploader/internal/usecase"
 	"github.com/minhhoccode111/fileuploader/pkg/logger"
@@ -21,7 +22,7 @@ func TestDriveErrorMapsStorageQuotaExceeded(t *testing.T) {
 	t.Parallel()
 
 	app := fiber.New()
-	c := &Controller{l: logger.New("error")}
+	c := &Controller{l: logger.New("error"), cfg: &config.Config{}}
 
 	app.Get("/", func(ctx *fiber.Ctx) error {
 		return c.driveError(ctx, entity.ErrStorageQuotaExceeded, "test")
@@ -355,7 +356,7 @@ func TestEntrySearchReadsTheHtmxCurrentURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			c := &Controller{l: logger.New("error")}
+			c := &Controller{l: logger.New("error"), cfg: &config.Config{}}
 
 			app := fiber.New()
 			app.Get("/probe", func(ctx *fiber.Ctx) error {
@@ -565,7 +566,7 @@ func (f *driveFolder) Delete(_ context.Context, _, _ string) (entity.Folder, err
 // drivePageApp wires the page and create routes of the drive behind a
 // middleware that parks the session the auth guard would park.
 func drivePageApp(folders usecase.Folder) *fiber.App {
-	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders}
+	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders, cfg: &config.Config{}}
 
 	app := fiber.New()
 
@@ -615,7 +616,7 @@ func folderEntriesResponse(t *testing.T, folders usecase.Folder, path string) (s
 	t.Helper()
 
 	app := fiber.New()
-	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders}
+	c := &Controller{l: logger.New("error"), v: validator.New(), folders: folders, cfg: &config.Config{}}
 
 	app.Get("/htmx/folders/:folder/entries", func(ctx *fiber.Ctx) error {
 		ctx.Locals(_sessionLocal, entity.Session{UserID: "550e8400-e29b-41d4-a716-446655440001"})

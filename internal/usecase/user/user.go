@@ -125,6 +125,72 @@ func (uc *UseCase) Register(
 	return user, nil
 }
 
+// SeedUser creates an account with an explicit role and status, plus its root
+// folder, inside the unit of work. Registration refuses both on purpose — a
+// self-service account starts pending and plain — so seeding is the one path
+// that may grant the admin role without a second admin already existing.
+// The caller decides what a taken email means; the sentinel survives the
+// wrapping, so an already-seeded account is a skip, not a failure.
+func (uc *UseCase) SeedUser(
+	ctx context.Context,
+	username, email, password string,
+	role entity.UserRole,
+	status entity.UserStatus,
+) (entity.User, error) {
+	if !role.IsValid() {
+		return entity.User{}, entity.ErrInvalidRole
+	}
+
+	if !status.IsValid() {
+		return entity.User{}, entity.ErrInvalidStatus
+	}
+
+	hash, err := newPasswordHash(password)
+	if err != nil {
+		return entity.User{}, err
+	}
+
+	now := time.Now().UTC()
+
+	user := entity.User{
+		ID:           uuid.New().String(),
+		Username:     username,
+		Email:        email,
+		PasswordHash: hash,
+		Role:         role,
+		Status:       status,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	root := entity.Folder{
+		ID:        uuid.New().String(),
+		UserID:    user.ID,
+		Name:      entity.RootFolderName,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	err = uc.uow.Do(ctx, func(ctx context.Context) error {
+		storeErr := uc.repo.Store(ctx, &user)
+		if storeErr != nil {
+			return fmt.Errorf("uc.repo.Store: %w", storeErr)
+		}
+
+		rootErr := uc.folders.Store(ctx, &root)
+		if rootErr != nil {
+			return fmt.Errorf("uc.folders.Store: %w", rootErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return entity.User{}, fmt.Errorf("UserUseCase - SeedUser - uc.uow.Do: %w", err)
+	}
+
+	return user, nil
+}
+
 // Login verifies the credentials and opens a session, returning the opaque
 // session identifier the caller stores in its cookie and the account behind
 // it, so the caller can render the page for that role.

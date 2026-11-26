@@ -78,8 +78,14 @@ were not loaded; the Makefile is what exports them.
 
 ### The first account
 
-Open `/register` and create an account. It will be pending. The first
-administrator has to be promoted by hand:
+The deployment can seed both accounts at startup (see `.env.example`):
+an administrator from `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD`,
+and a try-out account from `DEMO_EMAIL` / `DEMO_USERNAME` / `DEMO_PASSWORD`
+— the login page offers the demo credentials to a visitor. An account whose
+email is already taken is skipped, so a restart never rewrites one.
+
+Without the seed, open `/register` and create an account. It will be
+pending. The first administrator has to be promoted by hand:
 
 ```sh
 docker compose -p fileuploader exec db psql -U user -d fileuploader -c \
@@ -492,6 +498,32 @@ Things that cost me time, in no particular order.
 - The bundled nginx sets `client_max_body_size 110m`, `X-Real-IP`, and
   `X-Request-ID`, but not `X-Forwarded-Proto`; it also forwards `Host $host`,
   which drops a non-default port.
+
+### CI and deploy
+
+- A push to `main` is the whole pipeline: `go test -race` first, then the image
+  builds and pushes to Docker Hub as `latest` and the commit sha, then one ssh
+  line reaches the VPS. `concurrency` with `cancel-in-progress: false` queues a
+  second push instead of killing a deploy mid-run.
+- The ssh command ends with the word `deploy`, and that word does nothing. The
+  key in the VPS `authorized_keys` is pinned with
+  `restrict,command=".../scripts/ci-deploy.sh"`: sshd runs the forced command
+  and discards whatever the client asked for — the request lands in
+  `SSH_ORIGINAL_COMMAND`, which nothing reads. The word exists only because
+  non-interactive ssh wants some remote request; the workflow comment says so.
+- The forced command is least privilege. A leaked key or a compromised runner
+  can only pull and restart the app, never open a shell; `restrict` also kills
+  pty, port forwarding and agent forwarding. No CI command crosses the wire, so
+  there is nothing to inject, and the script is version-controlled like any
+  other code.
+- `ci-deploy.sh` reads `IMAGE_TAG` from the server's `.env` (default `latest`),
+  runs `docker compose pull app`, `up -d app`, prunes old images and prints
+  `compose ps`. Rollback is pinning `IMAGE_TAG` to a sha in `.env` — every
+  build is already on Docker Hub under its commit sha.
+- The private key lands in `~/.ssh/vps_key` with `chmod 600`, because ssh
+  refuses a group- or world-readable key. The host key comes from
+  `VPS_KNOWN_HOSTS`, not first-use trust, so there is no interactive prompt and
+  no MITM window on the first connect.
 
 ### Browser code
 

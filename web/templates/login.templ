@@ -2,17 +2,34 @@ package templates
 
 templ Login(view View) {
 	@Layout(LoginTitle, view) {
-		@LoginContent()
+		@LoginContent(view.DemoLogin)
 	}
 }
 
-// LoginContent is the fragment htmx swaps into <main>.
-templ LoginContent() {
+// LoginContent is the fragment htmx swaps into <main>. The demo hint appears
+// only when a demo account is seeded; the x-data scope is empty without one,
+// so the form works exactly as it did before.
+templ LoginContent(demo *DemoLogin) {
 	@PageColumn() {
 		<section class="card bg-base-100 mx-auto w-full max-w-md shadow">
-		<div class="card-body">
+		<div class="card-body" x-data={ templ.JSONString(demo.State()) }>
 			<h1 class="text-3xl font-bold tracking-tight">Welcome back</h1>
 			<p class="text-base-content/70">Sign in with your email and password.</p>
+			if demo != nil {
+				<div role="alert" class="alert alert-info alert-soft text-sm">
+					<div>
+						Just looking around? Try the demo account:
+						<span class="font-mono">{ demo.Email }</span>
+						/
+						<span class="font-mono">{ demo.Password }</span>
+					</div>
+					<button
+						type="button"
+						class="btn btn-sm"
+						@click="$refs.email.value = demoEmail; $refs.password.value = demoPassword"
+					>Fill in</button>
+				</div>
+			}
 			<form
 				id="login-form"
 				class="flex flex-col gap-4 py-2"
@@ -23,11 +40,25 @@ templ LoginContent() {
 			>
 				<label class="flex flex-col gap-1">
 					<span class="text-sm font-medium">Email</span>
-					<input class="input input-bordered w-full" type="email" name="email" required autocomplete="email"/>
+					<input
+						class="input input-bordered w-full"
+						type="email"
+						name="email"
+						required
+						autocomplete="email"
+						x-ref="email"
+					/>
 				</label>
 				<label class="flex flex-col gap-1">
 					<span class="text-sm font-medium">Password</span>
-					<input class="input input-bordered w-full" type="password" name="password" required autocomplete="current-password"/>
+					<input
+						class="input input-bordered w-full"
+						type="password"
+						name="password"
+						required
+						autocomplete="current-password"
+						x-ref="password"
+					/>
 				</label>
 				<button class="btn btn-primary" type="submit">Login</button>
 				<div id="login-error" class="text-sm text-error" role="alert"></div>

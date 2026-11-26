@@ -11,6 +11,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/gofiber/fiber/v2"
+	"github.com/minhhoccode111/fileuploader/config"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/request"
 	"github.com/minhhoccode111/fileuploader/internal/controller/web/response"
 	"github.com/minhhoccode111/fileuploader/web/templates"
@@ -19,7 +20,7 @@ import (
 // adminApp wires the admin routes in front of the handlers under test.
 func adminApp() *fiber.App {
 	app := fiber.New()
-	c := &Controller{}
+	c := &Controller{cfg: &config.Config{}}
 
 	app.Get(_adminPath, c.admin)
 	app.Get(_adminUsersPath, c.adminUsers)

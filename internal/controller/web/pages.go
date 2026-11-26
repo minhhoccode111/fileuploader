@@ -119,7 +119,9 @@ func (c *Controller) render(ctx *fiber.Ctx, full, fragment templ.Component, titl
 }
 
 func (c *Controller) login(ctx *fiber.Ctx) error {
-	return c.render(ctx, templates.Login(c.view(ctx)), templates.LoginContent(), templates.LoginTitle)
+	view := c.view(ctx)
+
+	return c.render(ctx, templates.Login(view), templates.LoginContent(view.DemoLogin), templates.LoginTitle)
 }
 
 func (c *Controller) register(ctx *fiber.Ctx) error {
@@ -186,13 +188,33 @@ func (c *Controller) logout(ctx *fiber.Ctx) error {
 // the session it resolved, so a handler never has to look the visitor up: an
 // anonymous request gets the empty view.
 func (c *Controller) view(ctx *fiber.Ctx) templates.View {
+	view := templates.View{DemoLogin: c.demoLogin()}
+
 	session, ok := ctx.Locals(_sessionLocal).(entity.Session)
 	if !ok {
-		return templates.View{}
+		return view
 	}
 
-	return templates.View{
-		Authenticated: true,
-		Admin:         session.Role == entity.UserRoleAdmin,
+	view.Authenticated = true
+	view.Admin = session.Role == entity.UserRoleAdmin
+
+	return view
+}
+
+// demoLogin returns the try-out account the login page offers, or nil when the
+// environment did not name one. All three variables must be set: a half
+// configured demo account is skipped instead of advertised without a
+// password.
+func (c *Controller) demoLogin() *templates.DemoLogin {
+	seed := c.cfg.Seed
+
+	if seed.DemoEmail == "" || seed.DemoUsername == "" || seed.DemoPassword == "" {
+		return nil
+	}
+
+	return &templates.DemoLogin{
+		Email:    seed.DemoEmail,
+		Username: seed.DemoUsername,
+		Password: seed.DemoPassword,
 	}
 }

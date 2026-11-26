@@ -343,9 +343,12 @@ change and commit it — the diff is the schema change.
 
 `users.role` holds `admin` or `user`, and the database enforces it with a CHECK constraint
 (`users_role_check`). `users.status` holds `pending`, `active` or `disabled`; registration creates a
-`pending` plain user, and only an admin moves it to `active`. The first admin is granted out of
-band with `UPDATE users SET role = 'admin', status = 'active' WHERE email = '...';` — the admin page
-cannot do it, because the page itself needs an admin.
+`pending` plain user, and only an admin moves it to `active`. The first admin is seeded at startup:
+set `ADMIN_EMAIL`, `ADMIN_USERNAME` and `ADMIN_PASSWORD` and `internal/app/seed.go` creates it with
+the admin role, active, plus a `DEMO_*` try-out account when those three are set too. An account
+whose email is already taken is skipped, so a restart never rewrites one. Without the seed the
+fallback is the out-of-band `UPDATE users SET role = 'admin', status = 'active' WHERE email =
+'...';` — the admin page cannot do it, because the page itself needs an admin.
 
 The role travels with the session: Redis holds `{user_id, role}` under `session:<id>`, next to the
 index of that account's live sessions under `user-sessions:<user_id>`. A guard therefore reads the
